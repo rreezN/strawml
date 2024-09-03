@@ -1,3 +1,9 @@
+# venv
+strawenv/
+
+# Data
+data/
+
 docs/site/
 
 # test cache
