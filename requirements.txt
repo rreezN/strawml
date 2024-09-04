@@ -5,3 +5,7 @@ torchaudio
 
 numpy
 matplotlib
+h5py
+tqdm
+os
+datetime
