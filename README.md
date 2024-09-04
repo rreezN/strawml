@@ -4,7 +4,7 @@
 [<img src="https://img.shields.io/badge/Weights_&_Biases-FFBE00?style=for-the-badge&logo=WeightsAndBiases&logoColor=white">]()
 [<img src="https://img.shields.io/badge/Python-FFD43B?style=for-the-badge&logo=python&logoColor=blue">]()
 
-This repository contains code made for the Master's project _Machine Learning for Continuous Straw Level Measurement_ for the Fall 2024 semester. The project is done by [David Ari Ostenfeldt (194237)](https://www.linkedin.com/in/david-ostenfeldt/) and [Dennis Chenxi Zhuang (194247)](https://www.linkedin.com/in/dennis-chenxi-zhuang/) at [The Technical University of Denmark](https://www.dtu.dk/) in collaboration with [Meliora Bio](https://meliora-bio.com/) and [Helix Lab](https://helixlab.dk/).
+This repository contains code developed for the Master's project _Machine Learning for Continuous Straw Level Measurement_ for the Fall 2024 semester. The project is done by [David Ari Ostenfeldt (194237)](https://www.linkedin.com/in/david-ostenfeldt/) and [Dennis Chenxi Zhuang (194247)](https://www.linkedin.com/in/dennis-chenxi-zhuang/) at [The Technical University of Denmark](https://www.dtu.dk/) in collaboration with [Meliora Bio](https://meliora-bio.com/) and [Helix Lab](https://helixlab.dk/).
 # Quick Guide
 
 
