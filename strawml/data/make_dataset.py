@@ -60,6 +60,7 @@ def extract_frames_from_video(video_name: str,
         if not ret:
             break  # Break the loop if no more frames are left
         # save frame to temp_images folder
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         if save_individual_images:
             cv2.imwrite(f'data/raw/temp_images/frame_{image_id}.jpg', frame)
         
