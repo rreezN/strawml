@@ -198,7 +198,7 @@ class MainApplication(ttk.Frame):
         
         self.parent.title("AnnotateGUI")
 
-        self.load_image_list()
+        self.current_image = 0
         
         self.image_box = ImageBox(self)
         self.fullness_box = FullnessBox(self)
@@ -223,42 +223,70 @@ class MainApplication(ttk.Frame):
         self.progress_bar.grid(row=4, column=2, sticky='NW', padx=5, pady=(0, 5))
         self.progress_label.grid(row=4, column=3, sticky="W", padx=5, pady=5)
         self.next_button.grid(row=4, column=4, sticky="W", padx=5, pady=(0, 5))
-    
+        
+        self.load_image_list()
+
+        
     def load_image_list(self):
         with h5py.File('data/raw/images/images.hdf5', 'r') as hf:
             image_list = list(hf.keys())
+            image_list = self.sort_image_list(image_list)
+  
         self.image_list = image_list
+        self.update_progress_bar()
 
+    def sort_image_list(self, image_list):
+        return sorted(image_list, key=lambda x: int(x.split('_')[1]))
+    
+    def update_progress_bar(self):
+        self.progress_bar['value'] = self.current_image/len(self.image_list)*100
+        self.progress_label['text'] = f"{self.current_image+1}/{len(self.image_list)}"
+    
     def next(self):
         # TODO: UPDATE PROGRESS BAR
         # TODO: UPDATE SAVE METHOD
-        img_box = self.image_box
-        bboxes = [[img_box.start_x, img_box.start_y, img_box.curX, img_box.curY], [img_box.start_x2, img_box.start_y2, img_box.curX2, img_box.curY2]]
-        fullness = self.fullness_box.full_amount.get()
-        obstructed = self.obstructed_box.obstructed.get()
+        # img_box = self.image_box
+        # bboxes = [[img_box.start_x, img_box.start_y, img_box.curX, img_box.curY], [img_box.start_x2, img_box.start_y2, img_box.curX2, img_box.curY2]]
+        # fullness = self.fullness_box.full_amount.get()
+        # obstructed = self.obstructed_box.obstructed.get()
         
-        json_values = {
-            'bbox_chute': bboxes[0],
-            'bbox_straw': bboxes[1],
-            'fullness': fullness,
-            'obstructed': obstructed
-        }
+        # json_values = {
+        #     'bbox_chute': bboxes[0],
+        #     'bbox_straw': bboxes[1],
+        #     'fullness': fullness,
+        #     'obstructed': obstructed
+        # }
         
-        save_file = open('data/processed/annotations.json', 'w')
-        json.dump(json_values, save_file, indent=6)
-        save_file.close()
+        # save_file = open('data/processed/annotations.json', 'w')
+        # json.dump(json_values, save_file, indent=6)
+        # save_file.close()
+        
+        if self.current_image == len(self.image_list)-1:
+            self.change_image(0)
+        else:
+            self.change_image(self.current_image+1)
     
     def reset(self):
         self.image_box.reset()
         
     # TODO: Implement back functionality
     def back(self):
-        pass
+        if self.current_image == 0:
+            self.change_image(len(self.image_list)-1)
+        else:
+            self.change_image(self.current_image-1)
 
     # TODO: Implement select image functionality
     def select_image(self):
         pass
     
+    def change_image(self, new_image_index):
+        self.image_box.set_image(image_group=self.image_list[new_image_index])
+        self.image_box.display_image(self.image_box.image)
+        self.current_image = new_image_index
+        self.update_progress_bar()
+        
+        
 if __name__ == '__main__':
     root = tk.Tk()
     root.resizable(False, False)
