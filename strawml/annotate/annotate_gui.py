@@ -1,6 +1,7 @@
 # Code inspired from: https://github.com/Arka-Bhowmik/bounding_box_gui/tree/main
 
 
+from __init__ import *
 
 import tkinter as tk
 from tkinter import ttk
@@ -9,28 +10,40 @@ from PIL import Image, ImageTk
 import numpy as np
 
 import json # Temporary TODO: REPLACE with h5py
+import h5py
+
+from strawml.data.make_dataset import decode_binary_image
+
 
 
 class ImageBox(ttk.Frame):
-    def __init__(self, parent, *args, **kwargs):
+    def __init__(self, parent, images_hdf5='data/raw/images/images.hdf5', *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
         
+        self.images_hdf5 = images_hdf5
+        self.image = None
         
-        img = self.load_image()
-        
-        self.image_size = img.shape[:2]
+        self.set_image()
         
         self.canvas = tk.Canvas(self, cursor="cross", width=self.image_size[1], height=self.image_size[0])
         self.canvas.pack(side="top", fill="both", expand=True)
 
-        self.display_image(img)
+        self.display_image(self.image)
     
-    def load_image(self, image_path='data/raw/images/frame_test.png'):
-        # TODO: Proper loading of hdf5 file
-        img = cv2.imread(image_path)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        return img
+    def set_image(self, image_group=None):
+        with h5py.File(self.images_hdf5, 'r') as hf:
+            if image_group is None:
+                frame = list(hf.keys())[0]
+            else:
+                frame = image_group
+            
+            image_bytes = hf[frame]['image'][...]
+            image = decode_binary_image(image_bytes)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            self.image = image
+            self.image_size = self.image.shape[:2]
+
     
     def display_image(self, image):
         self.canvas.delete('all')
@@ -50,7 +63,7 @@ class ImageBox(ttk.Frame):
         self.start_y2 = None
         
         self.new_image = ImageTk.PhotoImage(Image.fromarray(image))
-        self.canvas.create_image(400/2, 525/2, image=self.new_image)
+        self.canvas.create_image(self.image_size[1]/2, self.image_size[0]/2, image=self.new_image)
     
     def on_button_press(self, event):
         if not self.rect:
@@ -185,6 +198,8 @@ class MainApplication(ttk.Frame):
         
         self.parent.title("AnnotateGUI")
 
+        self.load_image_list()
+        
         self.image_box = ImageBox(self)
         self.fullness_box = FullnessBox(self)
         self.obstructed_box = ObstructedBox(self)
@@ -208,7 +223,11 @@ class MainApplication(ttk.Frame):
         self.progress_bar.grid(row=4, column=2, sticky='NW', padx=5, pady=(0, 5))
         self.progress_label.grid(row=4, column=3, sticky="W", padx=5, pady=5)
         self.next_button.grid(row=4, column=4, sticky="W", padx=5, pady=(0, 5))
-        
+    
+    def load_image_list(self):
+        with h5py.File('data/raw/images/images.hdf5', 'r') as hf:
+            image_list = list(hf.keys())
+        self.image_list = image_list
 
     def next(self):
         # TODO: UPDATE PROGRESS BAR
