@@ -20,7 +20,8 @@ def decode_binary_image(image: bytes) -> np.ndarray:
     image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
     return image
 
-def calculate_frame_diffs(frames: list, binary_format: bool) -> list:
+def calculate_frame_diffs(frames: list, 
+                          binary_format: bool) -> list:
     frame_diffs = []
     for i in range(1, len(frames)):
         diff = cv2.absdiff(frames[i], frames[i-1])
@@ -116,13 +117,13 @@ def save_frames_to_hdf5(frames: list,
     return frame_nr + len(frames)
 
 def image_extractor(video_folder: str, 
-         hdf5_file: str, 
-         dataset_name: str = "straw-chute", 
-         description: str = "Dataset create for a master's project at Meliora Bio.",
-         overwrite_seconds: int = 3,
-         save_individual_images: bool = False,
-         binary_format: bool = True
-         ) -> None:
+                    hdf5_file: str, 
+                    dataset_name: str = "straw-chute", 
+                    description: str = "Dataset create for a master's project at Meliora Bio.",
+                    overwrite_seconds: int = 3,
+                    save_individual_images: bool = False,
+                    binary_format: bool = True
+                    ) -> None:
 
     video_files = os.listdir(video_folder) # Get the paths inside of the video folder
 
@@ -181,7 +182,9 @@ def validate_image_extraction(hdf5_file: str) -> None:
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-def print_hdf5_tree(hdf5_file: str, group_name: str = "/", indent: int = 0):
+def print_hdf5_tree(hdf5_file: str, 
+                    group_name: str = "/", 
+                    indent: int = 0) -> None:
     """
     Recursively prints the structure of an HDF5 file.
     
@@ -230,7 +233,6 @@ def main(args: Namespace) -> None:
     elif args.mode == 'tree':
         print_hdf5_tree(args.hdf5_file)
         
-
 def get_args() -> Namespace:
     # Create the parser
     parser = ArgumentParser()
