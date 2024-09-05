@@ -73,7 +73,8 @@ def extract_frames_from_video(video_name: str,
             success, frame = cv2.imencode('.jpg', frame)
             if success:
                 frames.append(frame.tobytes())
-        image_id += 1
+        if save_individual_images:
+            image_id += 1
         pbar.update(1)
 
     pbar.close() # Close the progress bar
@@ -147,17 +148,19 @@ def image_extractor(video_folder: str,
 
     if save_individual_images:
         image_id = 0
+    else:
+        image_id = None
 
     # Loop through the video files and extract the frames
     frame_nr = 0
     for file_nr, video_name in enumerate(video_files):
         frames, frame_diffs, image_id = extract_frames_from_video(video_name=video_name, 
-                                           video_path=os.path.join(video_folder, video_name), 
-                                           current_video_nr=file_nr+1,
-                                           total_nr_videos=len(video_files),
-                                           save_individual_images=save_individual_images,
-                                           image_id=image_id,
-                                           binary_format=binary_format)
+                                        video_path=os.path.join(video_folder, video_name), 
+                                        current_video_nr=file_nr+1,
+                                        total_nr_videos=len(video_files),
+                                        save_individual_images=save_individual_images,
+                                        image_id=image_id,
+                                        binary_format=binary_format)
         # Save the frames to the HDF5 file
         frame_nr = save_frames_to_hdf5(frames, frame_diffs, hf, unique_video_ids[file_nr], frame_nr)
     hf.close()  # close the hdf5 file
