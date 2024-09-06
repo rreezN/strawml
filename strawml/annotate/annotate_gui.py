@@ -8,9 +8,9 @@ from tkinter import ttk
 import cv2
 from PIL import Image, ImageTk
 import numpy as np
-
-import json # Temporary TODO: REPLACE with h5py
+import datetime
 import h5py
+import os
 
 from strawml.data.make_dataset import decode_binary_image
 
@@ -23,6 +23,8 @@ class ImageBox(ttk.Frame):
         
         self.images_hdf5 = images_hdf5
         self.image = None
+        self.image_size = None
+        self.current_image_group = None
         
         self.set_image()
         
@@ -37,6 +39,7 @@ class ImageBox(ttk.Frame):
                 frame = list(hf.keys())[0]
             else:
                 frame = image_group
+            self.current_image_group = frame
             
             image_bytes = hf[frame]['image'][...]
             image = decode_binary_image(image_bytes)
@@ -121,8 +124,8 @@ class ImageBox(ttk.Frame):
         self.rect = None
         self.rect2 = None
         self.canvas.delete('all')
-        img = self.load_image()
-        self.display_image(img)
+        self.set_image(self.current_image_group)
+        self.display_image(self.image)
     
     
     
@@ -132,7 +135,7 @@ class FullnessBox(ttk.Frame):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
         
-        self.full_amount = tk.DoubleVar()
+        self.full_amount = tk.DoubleVar(value=-1)
         
         empty = ttk.Radiobutton(self, text='0%', value=0, variable=self.full_amount)
         five = ttk.Radiobutton(self, text='5%', value=0.05, variable=self.full_amount)
@@ -191,14 +194,16 @@ class ObstructedBox(ttk.Frame):
 
 
 class MainApplication(ttk.Frame):
-    def __init__(self, parent, *args, **kwargs):
+    def __init__(self, parent, images_hdf5='data/raw/images/images.hdf5', *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
 
         
         self.parent.title("AnnotateGUI")
 
-        self.load_image_list()
+        self.current_image = 0
+        
+        self.images_hdf5 = images_hdf5
         
         self.image_box = ImageBox(self)
         self.fullness_box = FullnessBox(self)
@@ -223,42 +228,142 @@ class MainApplication(ttk.Frame):
         self.progress_bar.grid(row=4, column=2, sticky='NW', padx=5, pady=(0, 5))
         self.progress_label.grid(row=4, column=3, sticky="W", padx=5, pady=5)
         self.next_button.grid(row=4, column=4, sticky="W", padx=5, pady=(0, 5))
-    
-    def load_image_list(self):
-        with h5py.File('data/raw/images/images.hdf5', 'r') as hf:
-            image_list = list(hf.keys())
-        self.image_list = image_list
+        
+        self.load_image_list()
 
+        
+    def load_image_list(self):
+        if not os.path.exists(self.images_hdf5):
+            raise FileNotFoundError(f"The file {self.images_hdf5} does not exist.")
+        
+        with h5py.File(self.images_hdf5, 'r') as hf:
+            image_list = list(hf.keys())
+            image_list = self.sort_image_list(image_list)
+  
+        self.image_list = image_list
+        self.update_progress_bar()
+
+    def sort_image_list(self, image_list):
+        return sorted(image_list, key=lambda x: int(x.split('_')[1]))
+    
+    def update_progress_bar(self):
+        self.progress_bar['value'] = self.current_image/len(self.image_list)*100
+        self.progress_label['text'] = f"{self.current_image+1}/{len(self.image_list)}"
+    
     def next(self):
         # TODO: UPDATE PROGRESS BAR
         # TODO: UPDATE SAVE METHOD
-        img_box = self.image_box
-        bboxes = [[img_box.start_x, img_box.start_y, img_box.curX, img_box.curY], [img_box.start_x2, img_box.start_y2, img_box.curX2, img_box.curY2]]
-        fullness = self.fullness_box.full_amount.get()
-        obstructed = self.obstructed_box.obstructed.get()
+        # img_box = self.image_box
+        # bboxes = [[img_box.start_x, img_box.start_y, img_box.curX, img_box.curY], [img_box.start_x2, img_box.start_y2, img_box.curX2, img_box.curY2]]
+        # fullness = self.fullness_box.full_amount.get()
+        # obstructed = self.obstructed_box.obstructed.get()
         
-        json_values = {
-            'bbox_chute': bboxes[0],
-            'bbox_straw': bboxes[1],
-            'fullness': fullness,
-            'obstructed': obstructed
-        }
+        # json_values = {
+        #     'bbox_chute': bboxes[0],
+        #     'bbox_straw': bboxes[1],
+        #     'fullness': fullness,
+        #     'obstructed': obstructed
+        # }
         
-        save_file = open('data/processed/annotations.json', 'w')
-        json.dump(json_values, save_file, indent=6)
-        save_file.close()
+        # save_file = open('data/processed/annotations.json', 'w')
+        # json.dump(json_values, save_file, indent=6)
+        # save_file.close()
+        self.save_current_frame(printing=True)
+        
+        if self.current_image == len(self.image_list)-1:
+            self.change_image(0)
+        else:
+            self.change_image(self.current_image+1)
     
     def reset(self):
         self.image_box.reset()
         
-    # TODO: Implement back functionality
     def back(self):
-        pass
+        if self.current_image == 0:
+            self.change_image(len(self.image_list)-1)
+        else:
+            self.change_image(self.current_image-1)
 
     # TODO: Implement select image functionality
     def select_image(self):
         pass
     
+    def change_image(self, new_image_index):
+        self.image_box.set_image(image_group=self.image_list[new_image_index])
+        self.image_box.display_image(self.image_box.image)
+        self.current_image = new_image_index
+        self.update_progress_bar()
+    
+    # TODO: Implement saving annotations
+    def save_current_frame(self, 
+             new_hdf5_file='data/processed/annotated_images.hdf5',
+             printing=False):
+        
+        new_hf = h5py.File(new_hdf5_file, 'w') # Open the HDF5 file in write mode
+        old_hf = h5py.File(self.images_hdf5, 'r') # Open the original HDF5 file in read mode
+        
+        # Copy the attributes from the original HDF5 file to the new HDF5 file
+        new_hf.attrs['dataset_name'] = old_hf.attrs['dataset_name']
+        new_hf.attrs['description'] = old_hf.attrs['description']
+        new_hf.attrs['date_created'] = np.bytes_(str(datetime.datetime.now()))
+        
+        
+        # Create a new group for the current frame
+        frame = f'frame_{self.current_image+1}' #TODO: remove +1 after new run
+        
+        # Overwrite the frame if it already exists
+        if frame in new_hf.keys():
+            del new_hf[frame]
+        
+        group = new_hf.create_group(frame)
+        
+        # Copy the original image and image_diff to the new HDF5 file
+        old_hf.copy(old_hf[frame]['image'], group)
+        old_hf.copy(old_hf[frame]['image_diff'], group) 
+        group.attrs['video ID'] = old_hf[frame].attrs['video ID']
+        
+        # Create a new group for the annotations
+        annotation_group = group.create_group('annotations')
+        
+        # Save the bounding box coordinates
+        img_box = self.image_box
+        if img_box.start_x != None:
+            chute_bbox = [img_box.start_x, img_box.start_y, img_box.curX, img_box.curY]
+            annotation_group.create_dataset('bbox_chute', data=chute_bbox)
+        if img_box.start_x2 != None:
+            straw_bbox = [img_box.start_x2, img_box.start_y2, img_box.curX2, img_box.curY2]
+            annotation_group.create_dataset('bbox_straw', data=straw_bbox)
+        
+        # Save the fullness and obstructed values
+        fullness = self.fullness_box.full_amount.get()
+        obstructed = self.obstructed_box.obstructed.get()
+        if fullness > 0: # If the fullness is not set, don't save it
+            annotation_group.create_dataset('fullness', data=fullness)
+        annotation_group.create_dataset('obstructed', data=obstructed)
+        
+        if printing:
+            print(f'Saved annotations for frame {frame}')
+            print(new_hf.keys())
+            print(new_hf.attrs.keys())
+            print(new_hf[frame].keys())
+            print(new_hf[frame].attrs.keys())
+            print(new_hf[frame]['annotations'].keys())
+            if 'bbox_chute' in new_hf[frame]['annotations'].keys():
+                print('bbox_chute:')
+                print(new_hf[frame]['annotations']['bbox_chute'][...])
+            if 'bbox_straw' in new_hf[frame]['annotations'].keys():
+                print('bbox_straw:')
+                print(new_hf[frame]['annotations']['bbox_straw'][...])
+            if 'fullness' in new_hf[frame]['annotations'].keys():
+                print('fullness:')
+                print(new_hf[frame]['annotations']['fullness'][...])
+            if 'obstructed' in new_hf[frame]['annotations'].keys():
+                print('obstructed:')
+                print(new_hf[frame]['annotations']['obstructed'][...])
+
+        old_hf.close()  # close the original hdf5 file
+        new_hf.close()  # close the hdf5 file
+        
 if __name__ == '__main__':
     root = tk.Tk()
     root.resizable(False, False)
