@@ -22,9 +22,20 @@ class ImageBox(ttk.Frame):
         self.parent = parent
         
         self.images_hdf5 = images_hdf5
+        self.annotated_hdf5 = 'data/processed/annotated_images.hdf5'
         self.image = None
         self.image_size = None
         self.current_image_group = None
+        self.chute_annotated = False
+        self.straw_annotated = False
+        self.rect = None
+        self.start_x = None
+        self.start_y = None
+        
+        self.rect2 = None
+        self.start_x2 = None
+        self.start_y2 = None
+        
         
         self.set_image()
         
@@ -34,22 +45,55 @@ class ImageBox(ttk.Frame):
         self.display_image(self.image)
     
     def set_image(self, image_group=None):
+        # TODO: rewrite to load frames from both files into a list, and then check from there....
+        # Load image from raw images HDF5 file
         with h5py.File(self.images_hdf5, 'r') as hf:
             if image_group is None:
                 frame = list(hf.keys())[0]
             else:
                 frame = image_group
             self.current_image_group = frame
-            
             image_bytes = hf[frame]['image'][...]
-            image = decode_binary_image(image_bytes)
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image = cv2.resize(image, (0, 0), fx=0.5, fy=0.5)
-            self.image = image
-            self.image_size = self.image.shape[:2]
+        
+        # If the image already exists in annotated, then we load it instead (overwrite)
+        with h5py.File(self.annotated_hdf5, 'r') as hf:
+            if image_group is None:
+                frame = list(hf.keys())[0]
+            else:
+                frame = image_group
+            if frame in hf.keys():
+                self.current_image_group = frame
+                image_bytes = hf[frame]['image'][...]
+                
+                if 'annotations' in hf[frame].keys():
+                    # load bboxes
+                    if 'bbox_chute' in hf[frame]['annotations'].keys():
+                        self.chute_annotated = True
+                        self.start_x = hf[frame]['annotations']['bbox_chute'][...][0]//2
+                        self.start_y = hf[frame]['annotations']['bbox_chute'][...][1]//2
+                        self.curX = hf[frame]['annotations']['bbox_chute'][...][2]//2
+                        self.curY = hf[frame]['annotations']['bbox_chute'][...][3]//2
+                    if 'bbox_straw' in hf[frame]['annotations'].keys():
+                        self.straw_annotated = True
+                        self.start_x2 = hf[frame]['annotations']['bbox_straw'][...][0]//2
+                        self.start_y2 = hf[frame]['annotations']['bbox_straw'][...][1]//2
+                        self.curX2 = hf[frame]['annotations']['bbox_straw'][...][2]//2
+                        self.curY2 = hf[frame]['annotations']['bbox_straw'][...][3]//2
+                    
+                    # load fullness and obstructed
+                    if 'fullness' in hf[frame]['annotations'].keys():
+                        self.parent.fullness_box.full_amount.set(hf[frame]['annotations']['fullness'][...])
+                    if 'obstructed' in hf[frame]['annotations'].keys():
+                        self.parent.obstructed_box.obstructed.set(str(hf[frame]['annotations']['obstructed'][...]))  
 
+        image = decode_binary_image(image_bytes)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.resize(image, (0, 0), fx=self.parent.image_scale, fy=self.parent.image_scale)
+        self.image = image
+        self.image_size = self.image.shape[:2]
     
     def display_image(self, image):
+        # TODO: Display annotations on the image if loaded
         self.canvas.delete('all')
 
         # Define events for canvas mouse clicks
@@ -57,17 +101,27 @@ class ImageBox(ttk.Frame):
         self.canvas.bind("<B1-Motion>", self.on_move_press)
         self.canvas.bind("<ButtonRelease-1>", self.on_button_release)
         
-        # Initialize bounding box parameters
-        self.rect = None
-        self.start_x = None
-        self.start_y = None
-        
-        self.rect2 = None
-        self.start_x2 = None
-        self.start_y2 = None
-        
+        # Show image
         self.new_image = ImageTk.PhotoImage(Image.fromarray(image))
         self.canvas.create_image(self.image_size[1]/2, self.image_size[0]/2, image=self.new_image)
+        
+        # Initialize bounding box parameters
+        if not self.chute_annotated:
+            self.rect = None
+            self.start_x = None
+            self.start_y = None
+        else:
+            self.rect = self.canvas.create_rectangle(self.start_x, self.start_y, self.curX, self.curY, outline='green', width=2)
+            self.current_rect = self.rect
+            
+        if not self.straw_annotated:
+            self.rect2 = None
+            self.start_x2 = None
+            self.start_y2 = None
+        else:
+            self.rect2 = self.canvas.create_rectangle(self.start_x2, self.start_y2, self.curX2, self.curY2, outline='red', width=2)
+            self.current_rect = self.rect2
+        
     
     def on_button_press(self, event):
         if not self.rect:
@@ -203,12 +257,12 @@ class MainApplication(ttk.Frame):
         self.parent.title("AnnotateGUI")
 
         self.current_image = 0
-        
+        self.image_scale = 0.5
         self.images_hdf5 = images_hdf5
         
-        self.image_box = ImageBox(self)
         self.fullness_box = FullnessBox(self)
         self.obstructed_box = ObstructedBox(self)
+        self.image_box = ImageBox(self)
         
         self.reset_button = ttk.Button(self, text="Reset bboxes", command=self.reset)
         self.back_button = ttk.Button(self, text="Back", command=self.back)
@@ -263,6 +317,8 @@ class MainApplication(ttk.Frame):
         self.image_box.reset()
         
     def back(self):
+        self.save_current_frame(printing=False)
+        
         if self.current_image == 0:
             self.change_image(len(self.image_list)-1)
         else:
@@ -273,12 +329,13 @@ class MainApplication(ttk.Frame):
         pass
     
     def change_image(self, new_image_index):
+        self.fullness_box.full_amount.set(-1)
+        self.obstructed_box.obstructed.set(False)
         self.image_box.set_image(image_group=self.image_list[new_image_index])
         self.image_box.display_image(self.image_box.image)
         self.current_image = new_image_index
         self.update_progress_bar()
     
-    # TODO: Implement saving annotations
     def save_current_frame(self, 
              new_hdf5_file='data/processed/annotated_images.hdf5',
              printing=False):
@@ -293,7 +350,7 @@ class MainApplication(ttk.Frame):
         
         
         # Create a new group for the current frame
-        frame = f'frame_{self.current_image+1}' #TODO: remove +1 after new run
+        frame = f'frame_{self.current_image}'
         
         # Overwrite the frame if it already exists
         if frame in new_hf.keys():
@@ -309,13 +366,13 @@ class MainApplication(ttk.Frame):
         # Create a new group for the annotations
         annotation_group = group.create_group('annotations')
         
-        # Save the bounding box coordinates
+        # Save the bounding box coordinates (scaled to correct size)
         img_box = self.image_box
         if img_box.start_x != None:
-            chute_bbox = [img_box.start_x, img_box.start_y, img_box.curX, img_box.curY]
+            chute_bbox = [img_box.start_x*2, img_box.start_y*2, img_box.curX*2, img_box.curY*2]
             annotation_group.create_dataset('bbox_chute', data=chute_bbox)
         if img_box.start_x2 != None:
-            straw_bbox = [img_box.start_x2, img_box.start_y2, img_box.curX2, img_box.curY2]
+            straw_bbox = [img_box.start_x2*2, img_box.start_y2*2, img_box.curX2*2, img_box.curY2*2]
             annotation_group.create_dataset('bbox_straw', data=straw_bbox)
         
         # Save the fullness and obstructed values
