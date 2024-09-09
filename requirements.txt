@@ -1,11 +1,12 @@
---index-url https://download.pytorch.org/whl/cu118
-torch 
-torchvision
-torchaudio
-
 numpy
 matplotlib
 h5py
 tqdm
 datetime
 opencv-python
+psutil
+
+--index-url https://download.pytorch.org/whl/cu118
+torch 
+torchvision
+torchaudio
