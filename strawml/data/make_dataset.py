@@ -7,6 +7,8 @@ from tqdm import tqdm
 import datetime
 import time
 from argparse import ArgumentParser, Namespace
+import psutil
+
 
 def decode_binary_image(image: bytes) -> np.ndarray:
     """
@@ -20,103 +22,101 @@ def decode_binary_image(image: bytes) -> np.ndarray:
     image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
     return image
 
-def calculate_frame_diffs(frames: list, 
-                          binary_format: bool) -> list:
-    frame_diffs = []
-    for i in range(1, len(frames)):
-        diff = cv2.absdiff(frames[i], frames[i-1])
-        if binary_format:
-            success, diff = cv2.imencode('.jpg', diff)
-            if success:
-                diff = diff.tobytes()
-        frame_diffs.append(diff)
-    return frame_diffs
-
 def extract_frames_from_video(video_name: str, 
                               video_path: str, 
                               current_video_nr: int, 
                               total_nr_videos: int, 
-                              binary_format: bool = True, 
-                              save_individual_images: bool = False, 
-                              image_id: int = None) -> list:
+                              hdf5_file: str,
+                              video_id: str,
+                              frame_nr: int,
+                              save_individual_images: bool = False,
+                              image_id: int = None,
+                              fbf: int = 30 # frames between frames
+                              ) -> list:
+    print("Frame extraction started...")
     cap = cv2.VideoCapture(video_path)
     # Check if the video file opened successfully
     if not cap.isOpened():
         print("Error: Could not open video.")
         exit()
     
-    # List to store frames
-    frames = []
-    frames_4_diff = []
-    
     # Get the total number of frames in the video
     video_length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    pbar = tqdm(total = video_length, desc=f"Extracting frames from {video_name} ({current_video_nr}/{total_nr_videos})", position=0) # Create a progress bar
-
-    # Read frames from the video
+    pbar = tqdm(total = video_length // fbf, desc=f"Extracting frames from '{video_name}' ({current_video_nr}/{total_nr_videos})", position=0) # Create a progress bar
+    # save the current frame as the previous frame for the next iteration
+    prev_frame = None
+    # A counter to keep track of the number of frames processed so far in the video -> thereby allowing for fpf (frames per frame) extraction
+    count = -1
+    # A counter to keep track of the number of frames saved to the HDF5 file so far -> allowing for continous numbering of the frames
+    frame_count = 0
     while True:
+        # Skip the first frame as it will be used as the previous frame
+        if (count == 0) or (count % fbf != 0):
+            count += 1
+            continue
+        pbar.set_postfix_str(f"RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}")
         ret, frame = cap.read()
         if not ret:
             break  # Break the loop if no more frames are left
-        # save frame to temp_images folder
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        # save frame to temp_images folder
         if save_individual_images:
             cv2.imwrite(f'data/raw/temp_images/frame_{image_id}.jpg', frame)
+
+        # Save the current frame as the previous frame for the next iteration
+        prev_frame = frame    
+
+        # Calculate the difference between consecutive frames
+        frame_diff = cv2.absdiff(frame, prev_frame)
         
-        # We save the frame to calculate the difference between consecutive frames 
-        frames_4_diff.append(frame)
-        
-        # Convert the frame to binary format if required
-        if not binary_format:
-            frames.append(frame)
-        else:
-            success, frame = cv2.imencode('.jpg', frame)
+        # Save the frames to the HDF5 file
+        success, frame = cv2.imencode('.jpg', frame)
+        if success:
+            success, frame_diff = cv2.imencode('.jpg', frame_diff)
             if success:
-                frames.append(frame.tobytes())
+                save_frames_to_hdf5(frame, frame_diff, hdf5_file, video_id, frame_nr+frame_count)
         if save_individual_images:
             image_id += 1
+        
+        count += 1
+        frame_count += 1
         pbar.update(1)
+
+        if frame_count == video_length // fbf:
+            break
 
     pbar.close() # Close the progress bar
     cap.release() # Release the video capture object
+    return frame_nr + frame_count + 1
 
-    # Calculate the difference between consecutive frames
-    frame_diffs = calculate_frame_diffs(frames_4_diff, binary_format=binary_format)
-    # frames now contain all the frames from the video   
-    return frames[1:], frame_diffs, image_id
-
-def save_frames_to_hdf5(frames: list,
-                        frame_diffs: list,
-                        hf,
+def save_frames_to_hdf5(frame: np.ndarray,
+                        frame_diff: np.ndarray,
+                        hdf5_file: str,
                         video_id: str,
                         frame_nr: int):
-    
-    for i, (image,  image_diff) in tqdm(enumerate(zip(frames, frame_diffs), 1), total=len(frames), desc=f"Saving frames to HDF5 file", position=0):
+    # print(frame_nr)
+    with h5py.File(hdf5_file, 'a') as hf:
         # create a group for the video
-        group_name = f'frame_{i+frame_nr}'
-
+        group_name = f'frame_{frame_nr}'
         if group_name in hf:
             print(f"Warning: The group {group_name} already exists. Skipping...")
-            continue
-
+            return
         # Create a group for the video
         group = hf.create_group(group_name)
 
         # add image as datasets to the group
         dataset_name_image = 'image'
-        image = np.asarray(image)
+        image = np.asarray(frame)
         group.create_dataset(dataset_name_image, data=image)
 
         # add image_diff as datasets to the group
         dataset_name_diff = 'image_diff'
-        image_diff = np.asarray(image_diff)
+        image_diff = np.asarray(frame_diff)
         group.create_dataset(dataset_name_diff, data=image_diff)
 
         # Add the video ID as an attribute to the dataset
         group.attrs['video ID'] = video_id
-
-    return frame_nr + len(frames)
 
 def image_extractor(video_folder: str, 
                     hdf5_file: str, 
@@ -124,7 +124,7 @@ def image_extractor(video_folder: str,
                     description: str = "Dataset create for a master's project at Meliora Bio.",
                     overwrite_seconds: int = 3,
                     save_individual_images: bool = False,
-                    binary_format: bool = True
+                    fbf: int = 24
                     ) -> None:
 
     video_files = os.listdir(video_folder) # Get the paths inside of the video folder
@@ -140,12 +140,11 @@ def image_extractor(video_folder: str,
         # remove the file
         os.remove(hdf5_file)
 
-    hf = h5py.File(hdf5_file, 'w') # Open the HDF5 file in write mode
-
-    # add global features
-    hf.attrs['dataset_name'] = dataset_name
-    hf.attrs['description'] = description
-    hf.attrs['date_created'] = np.bytes_(str(datetime.datetime.now()))
+    with h5py.File(hdf5_file, 'a') as hf:
+        # add global features
+        hf.attrs['dataset_name'] = dataset_name
+        hf.attrs['description'] = description
+        hf.attrs['date_created'] = np.bytes_(str(datetime.datetime.now()))
 
     if save_individual_images:
         image_id = 0
@@ -155,16 +154,16 @@ def image_extractor(video_folder: str,
     # Loop through the video files and extract the frames
     frame_nr = 0
     for file_nr, video_name in enumerate(video_files):
-        frames, frame_diffs, image_id = extract_frames_from_video(video_name=video_name, 
+        frame_nr = extract_frames_from_video(video_name=video_name, 
                                         video_path=os.path.join(video_folder, video_name), 
                                         current_video_nr=file_nr+1,
                                         total_nr_videos=len(video_files),
                                         save_individual_images=save_individual_images,
                                         image_id=image_id,
-                                        binary_format=binary_format)
-        # Save the frames to the HDF5 file
-        frame_nr = save_frames_to_hdf5(frames, frame_diffs, hf, unique_video_ids[file_nr], frame_nr)
-    hf.close()  # close the hdf5 file
+                                        hdf5_file=hdf5_file,
+                                        video_id=unique_video_ids[file_nr], 
+                                        frame_nr=frame_nr,
+                                        fbf=fbf)
 
 def validate_image_extraction(hdf5_file: str) -> None:
     # make sure the temp_images folder exists
@@ -231,7 +230,7 @@ def main(args: Namespace) -> None:
                         description=args.description, 
                         overwrite_seconds=args.overwrite_seconds, 
                         save_individual_images=args.save_individual_images,
-                        binary_format=args.binary_format)
+                        fbf=args.fbf)
     elif args.mode == 'validate':
         validate_image_extraction(args.hdf5_file)
     elif args.mode == 'tree':
@@ -248,7 +247,7 @@ def get_args() -> Namespace:
     parser.add_argument('--overwrite_seconds', type=int, default=3, help='The number of seconds to wait before overwriting the hdf5 file.')
     parser.add_argument('--description', type=str, default='Dataset created for a master\'s project at Meliora Bio.', help='The description of the dataset.')
     parser.add_argument('--dataset_name', type=str, default='straw-chute', help='The name of the dataset.')
-    parser.add_argument('--binary_format', type=bool, default=True, help='Whether to save the images in binary format.')
+    parser.add_argument('--fbf', type=int, default=30, help='Number of frames between frames to extract.')
     return parser.parse_args()
 
 if __name__ == '__main__':
