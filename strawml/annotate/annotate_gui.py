@@ -44,6 +44,7 @@ class ImageBox(ttk.Frame):
             image_bytes = hf[frame]['image'][...]
             image = decode_binary_image(image_bytes)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = cv2.resize(image, (0, 0), fx=0.5, fy=0.5)
             self.image = image
             self.image_size = self.image.shape[:2]
 
@@ -251,24 +252,7 @@ class MainApplication(ttk.Frame):
         self.progress_label['text'] = f"{self.current_image+1}/{len(self.image_list)}"
     
     def next(self):
-        # TODO: UPDATE PROGRESS BAR
-        # TODO: UPDATE SAVE METHOD
-        # img_box = self.image_box
-        # bboxes = [[img_box.start_x, img_box.start_y, img_box.curX, img_box.curY], [img_box.start_x2, img_box.start_y2, img_box.curX2, img_box.curY2]]
-        # fullness = self.fullness_box.full_amount.get()
-        # obstructed = self.obstructed_box.obstructed.get()
-        
-        # json_values = {
-        #     'bbox_chute': bboxes[0],
-        #     'bbox_straw': bboxes[1],
-        #     'fullness': fullness,
-        #     'obstructed': obstructed
-        # }
-        
-        # save_file = open('data/processed/annotations.json', 'w')
-        # json.dump(json_values, save_file, indent=6)
-        # save_file.close()
-        self.save_current_frame(printing=True)
+        self.save_current_frame(printing=False)
         
         if self.current_image == len(self.image_list)-1:
             self.change_image(0)

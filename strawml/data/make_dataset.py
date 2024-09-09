@@ -88,7 +88,7 @@ def extract_frames_from_video(video_name: str,
 
     pbar.close() # Close the progress bar
     cap.release() # Release the video capture object
-    return frame_nr + frame_count + 1
+    return frame_nr + frame_count
 
 def save_frames_to_hdf5(frame: np.ndarray,
                         frame_diff: np.ndarray,
@@ -165,12 +165,30 @@ def image_extractor(video_folder: str,
                                         frame_nr=frame_nr,
                                         fbf=fbf)
 
-def validate_image_extraction(hdf5_file: str) -> None:
+def validate_image_extraction(hdf5_file: str,
+                              save_individual_images) -> None:
     # make sure the temp_images folder exists
-    if not os.path.exists('data/raw/temp_images'):
+    if not os.path.exists('data/raw/temp_images') and save_individual_images:
         FileNotFoundError("The temp_images folder does not exist. Please run the image_extractor function with the save_individual_images argument set to True.")
 
     with h5py.File(hdf5_file, 'r') as hf:
+        all_frames = hf.keys()
+        
+        # sort frames by number
+        all_frames = sorted([int(frame.split('_')[1]) for frame in all_frames])
+        
+        for i, frame in enumerate(all_frames):
+            # Skip first frame
+            if i == 0:
+                continue
+            # check if frames are continuous
+            if frame - all_frames[i-1] != 1:
+                print(f"Warning: Frame {frame-1} is missing. Frame {frame} is not continuous with the previous frame {all_frames[i-1]}")
+            
+        
+        if not save_individual_images:
+            return
+        
         # randomly select a frame
         frame = np.random.choice(list(hf.keys()))
         image_bytes = hf[frame]['image'][...]
@@ -232,7 +250,7 @@ def main(args: Namespace) -> None:
                         save_individual_images=args.save_individual_images,
                         fbf=args.fbf)
     elif args.mode == 'validate':
-        validate_image_extraction(args.hdf5_file)
+        validate_image_extraction(args.hdf5_file, args.save_individual_images)
     elif args.mode == 'tree':
         print_hdf5_tree(args.hdf5_file)
         
