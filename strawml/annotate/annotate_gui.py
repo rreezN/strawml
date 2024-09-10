@@ -256,11 +256,11 @@ class ImageBox(ttk.Frame):
         Args:
             event (tk.Event): The event object from the mouse wheel scroll.
         """
-        if event.delta > 0:
+        if event.delta < 0:
             if self.rect is not None and self.rect2 is not None and self.parent.fullness_box.full_amount.get() != -1:
                 self.parent.save_current_frame()
             self.parent.change_image(self.parent.current_image-1)
-        elif event.delta < 0:
+        elif event.delta > 0:
             if self.rect is not None and self.rect2 is not None and self.parent.fullness_box.full_amount.get() != -1:
                 self.parent.save_current_frame()
             self.parent.change_image(self.parent.current_image+1)
