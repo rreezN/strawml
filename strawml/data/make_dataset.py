@@ -54,7 +54,7 @@ def extract_frames_from_video(video_name: str,
         if (count == 0) or (count % fbf != 0):
             count += 1
             continue
-        pbar.set_postfix_str(f"RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}")
+        pbar.set_postfix_str(f"Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}")
         ret, frame = cap.read()
         if not ret:
             break  # Break the loop if no more frames are left
