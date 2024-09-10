@@ -129,7 +129,7 @@ class Straw(torch.utils.data.Dataset):
                 all_data = image
             else:
                 all_data = np.vstack((all_data, image))
-
+                
             if self.inc_heatmap:
                 heatmap = decode_binary_image(frame['image_diff'][...])
                 if len(all_hm_data) == 0:
@@ -183,7 +183,7 @@ if __name__ == '__main__':
     import time
     from torch.utils.data import DataLoader
 
-    trainset = Straw(data_type='train')
+    trainset = Straw(data_type='train', inc_heatmap=True)
     # trainset.plot_data()
     # test_set = Platoon(data_type='test', pm_windowsize=2)
     # test_set.plot_data()
