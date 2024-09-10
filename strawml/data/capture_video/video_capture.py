@@ -3,7 +3,7 @@ import threading
 import time
 import cv2
 import os
-
+from tqdm import tqdm
 
 # Define video capture class
 class VideoCaptureAsync:
@@ -13,6 +13,8 @@ class VideoCaptureAsync:
             self.cap = cv2.VideoCapture(self.src)
         else:
             self.cap = cv2.VideoCapture(self.src, driver)
+        self.cap.set(cv2.CAP_PROP_FPS, fps)
+
         self.duration = duration
         self.fps = fps
         self.data_path = data_path
@@ -46,33 +48,35 @@ class VideoCaptureAsync:
         size = (frame_width, frame_height) 
         
         file_index = 0
-        while os.path.exists(f'{self.data_path}/filename_{file_index}.avi'):
+        while os.path.exists(f'{self.data_path}/video_recording_{file_index}.avi'):
             file_index += 1
         
-        self.out = cv2.VideoWriter(f'{self.data_path}/filename_{file_index}.avi', 
+        self.out = cv2.VideoWriter(f'{self.data_path}/video_recording_{file_index}.avi', 
                                 cv2.VideoWriter_fourcc(*'MJPG'), 
                                 self.fps, size)
         
-        frames = 0
+        n_frames = self.duration * self.fps
+        curr_frame = 0
+        pbar = tqdm(total=n_frames, ncols=0)
         
-        time_end = time.time() + self.duration
-        while time.time() <= time_end:
+        while curr_frame < n_frames:
             grabbed, frame = self.cap.read()
             with self.read_lock:
                 self.grabbed = grabbed
                 self.frame = frame
             if grabbed:
                 self.out.write(frame)
-                frames += 1
+                curr_frame += 1
+                pbar.update(1)
 
             # Check file size
-            if os.path.exists(f'{self.data_path}/filename_{file_index}.avi'):
-                if os.path.getsize(f'{self.data_path}/filename_{file_index}.avi') > self.byte_limit:  # 1e9 bytes = 1 GB # 1e6 bytes = 1 MB
+            if os.path.exists(f'{self.data_path}/video_recording_{file_index}.avi'):
+                if os.path.getsize(f'{self.data_path}/video_recording_{file_index}.avi') > self.byte_limit:  # 1e9 bytes = 1 GB # 1e6 bytes = 1 MB
                     # Close current file
                     self.out.release()
                     # Open new file with incremented index
                     file_index += 1
-                    self.out = cv2.VideoWriter(f'{self.data_path}/filename_{file_index}.avi', 
+                    self.out = cv2.VideoWriter(f'{self.data_path}/video_recording_{file_index}.avi', 
                                         cv2.VideoWriter_fourcc(*'MJPG'), 
                                         self.fps, size)
         self.started = False

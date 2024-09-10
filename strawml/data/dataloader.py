@@ -9,7 +9,7 @@ from strawml.data.make_dataset import decode_binary_image
 from torchvision import transforms
 import psutil
 
-class Platoon(torch.utils.data.Dataset):
+class Straw(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/annotated_images.hdf5', data_type: str = 'train', inc_heatmap: bool = True,
                  random_state: int = 42) -> None:
                 
@@ -89,8 +89,6 @@ class Platoon(torch.utils.data.Dataset):
         labels = (bbox_chute, bbox_straw, obstructed, fullness)
         return frame_data, labels
 
-
-
     def extract_means_and_stds(self):
         """Extracts the mean and standard deviation of the training data for normalization.
 
@@ -110,7 +108,7 @@ class Platoon(torch.utils.data.Dataset):
                 all_data = image
             else:
                 all_data = np.vstack((all_data, image))
-
+                
             if self.inc_heatmap:
                 heatmap = decode_binary_image(frame['image_diff'][...])
                 if len(all_hm_data) == 0:
@@ -164,7 +162,7 @@ if __name__ == '__main__':
     import time
     from torch.utils.data import DataLoader
 
-    trainset = Platoon(data_type='train')
+    trainset = Straw(data_type='train', inc_heatmap=True)
     # trainset.plot_data()
     # test_set = Platoon(data_type='test', pm_windowsize=2)
     # test_set.plot_data()
