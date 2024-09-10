@@ -454,7 +454,7 @@ class MainApplication(ttk.Frame):
         """Updates the progress bar and label with the current image number and total number of images.
         """
         self.progress_bar['value'] = self.current_image/len(self.image_list)*100
-        self.progress_label['text'] = f"{self.current_image+1}/{len(self.image_list)}"
+        self.progress_label['text'] = f"{self.current_image}/{len(self.image_list)-1}"
     
     def next(self) -> None:
         """Saves the current frame and annotations and moves to the next image.
