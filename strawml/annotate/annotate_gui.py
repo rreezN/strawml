@@ -12,17 +12,17 @@ import datetime
 import h5py
 import os
 
-from strawml.data.make_dataset import decode_binary_image
+from strawml.data.make_dataset import decode_binary_image, print_hdf5_tree
 
 
 
 class ImageBox(ttk.Frame):
-    def __init__(self, parent, images_hdf5='data/raw/images/images.hdf5', *args, **kwargs):
+    def __init__(self, parent, images_hdf5='data/raw/images/images.hdf5', annotated_images='data/processed/annotated_images.hdf5', *args, **kwargs):
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
         
         self.images_hdf5 = images_hdf5
-        self.annotated_hdf5 = 'data/processed/annotated_images.hdf5'
+        self.annotated_hdf5 = annotated_images
         self.image = None
         self.image_size = None
         self.current_image_group = None
@@ -36,6 +36,7 @@ class ImageBox(ttk.Frame):
         self.start_x2 = None
         self.start_y2 = None
         
+        self.canvas = None 
         
         self.set_image()
         
@@ -45,52 +46,55 @@ class ImageBox(ttk.Frame):
         self.display_image(self.image)
     
     def set_image(self, image_group=None):
-        # TODO: rewrite to load frames from both files into a list, and then check from there....
-        # Load image from raw images HDF5 file
-        with h5py.File(self.images_hdf5, 'r') as hf:
-            if image_group is None:
-                frame = list(hf.keys())[0]
-            else:
-                frame = image_group
-            self.current_image_group = frame
-            image_bytes = hf[frame]['image'][...]
+        if self.canvas != None: self.canvas.delete('all')
         
-        # If the image already exists in annotated, then we load it instead (overwrite)
-        with h5py.File(self.annotated_hdf5, 'r') as hf:
-            if image_group is None:
-                frame = list(hf.keys())[0]
-            else:
-                frame = image_group
-            if frame in hf.keys():
-                self.current_image_group = frame
-                image_bytes = hf[frame]['image'][...]
+        images = h5py.File(self.images_hdf5, 'r')
+        annotated = None
+        if os.path.exists(self.annotated_hdf5):
+            annotated = h5py.File(self.annotated_hdf5, 'r')
+        
+        if image_group is None:
+            image_group = list(images.keys())[0]
+        
+        self.chute_annotated = False
+        self.straw_annotated = False
+        if not annotated is None and image_group in annotated.keys():
+            self.current_image_group = image_group
+            image_bytes = annotated[image_group]['image'][...]
+            if 'annotations' in annotated[image_group].keys():
+                # load bboxes
+                if 'bbox_chute' in annotated[image_group]['annotations'].keys():
+                    self.chute_annotated = True
+                    self.start_x = annotated[image_group]['annotations']['bbox_chute'][...][0]//2
+                    self.start_y = annotated[image_group]['annotations']['bbox_chute'][...][1]//2
+                    self.curX = annotated[image_group]['annotations']['bbox_chute'][...][2]//2
+                    self.curY = annotated[image_group]['annotations']['bbox_chute'][...][3]//2
+                if 'bbox_straw' in annotated[image_group]['annotations'].keys():
+                    self.straw_annotated = True
+                    self.start_x2 = annotated[image_group]['annotations']['bbox_straw'][...][0]//2
+                    self.start_y2 = annotated[image_group]['annotations']['bbox_straw'][...][1]//2
+                    self.curX2 = annotated[image_group]['annotations']['bbox_straw'][...][2]//2
+                    self.curY2 = annotated[image_group]['annotations']['bbox_straw'][...][3]//2
                 
-                if 'annotations' in hf[frame].keys():
-                    # load bboxes
-                    if 'bbox_chute' in hf[frame]['annotations'].keys():
-                        self.chute_annotated = True
-                        self.start_x = hf[frame]['annotations']['bbox_chute'][...][0]//2
-                        self.start_y = hf[frame]['annotations']['bbox_chute'][...][1]//2
-                        self.curX = hf[frame]['annotations']['bbox_chute'][...][2]//2
-                        self.curY = hf[frame]['annotations']['bbox_chute'][...][3]//2
-                    if 'bbox_straw' in hf[frame]['annotations'].keys():
-                        self.straw_annotated = True
-                        self.start_x2 = hf[frame]['annotations']['bbox_straw'][...][0]//2
-                        self.start_y2 = hf[frame]['annotations']['bbox_straw'][...][1]//2
-                        self.curX2 = hf[frame]['annotations']['bbox_straw'][...][2]//2
-                        self.curY2 = hf[frame]['annotations']['bbox_straw'][...][3]//2
-                    
-                    # load fullness and obstructed
-                    if 'fullness' in hf[frame]['annotations'].keys():
-                        self.parent.fullness_box.full_amount.set(hf[frame]['annotations']['fullness'][...])
-                    if 'obstructed' in hf[frame]['annotations'].keys():
-                        self.parent.obstructed_box.obstructed.set(str(hf[frame]['annotations']['obstructed'][...]))  
-
+                # load fullness and obstructed
+                if 'fullness' in annotated[image_group]['annotations'].keys():
+                    self.parent.fullness_box.full_amount.set(annotated[image_group]['annotations']['fullness'][...])
+                if 'obstructed' in annotated[image_group]['annotations'].keys():
+                    self.parent.obstructed_box.obstructed.set(str(annotated[image_group]['annotations']['obstructed'][...])) 
+        elif image_group in images.keys():
+            self.current_image_group = image_group
+            image_bytes = images[image_group]['image'][...]
+        else:
+            raise FileNotFoundError(f"Could not find image group {image_group} in either HDF5 file.")
+            
         image = decode_binary_image(image_bytes)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.resize(image, (0, 0), fx=self.parent.image_scale, fy=self.parent.image_scale)
         self.image = image
         self.image_size = self.image.shape[:2]
+        
+        if not annotated is None: annotated.close()
+        images.close()
     
     def display_image(self, image):
         # TODO: Display annotations on the image if loaded
@@ -340,7 +344,7 @@ class MainApplication(ttk.Frame):
              new_hdf5_file='data/processed/annotated_images.hdf5',
              printing=False):
         
-        new_hf = h5py.File(new_hdf5_file, 'w') # Open the HDF5 file in write mode
+        new_hf = h5py.File(new_hdf5_file, 'a') # Open the HDF5 file in write mode
         old_hf = h5py.File(self.images_hdf5, 'r') # Open the original HDF5 file in read mode
         
         # Copy the attributes from the original HDF5 file to the new HDF5 file
@@ -404,6 +408,7 @@ class MainApplication(ttk.Frame):
 
         old_hf.close()  # close the original hdf5 file
         new_hf.close()  # close the hdf5 file
+        
         
 if __name__ == '__main__':
     root = tk.Tk()
