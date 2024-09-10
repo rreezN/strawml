@@ -524,6 +524,9 @@ class MainApplication(ttk.Frame):
             printing (bool, optional): Whether to print information about the saved annotations or not. Defaults to False.
         """
         
+        if self.image_box.rect is None and self.image_box.rect2 is None and self.fullness_box.full_amount.get() == -1:
+            return
+        
         new_hf = h5py.File(new_hdf5_file, 'a') # Open the HDF5 file in write mode
         old_hf = h5py.File(self.images_hdf5, 'r') # Open the original HDF5 file in read mode
         
