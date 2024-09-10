@@ -81,14 +81,33 @@ class Straw(torch.utils.data.Dataset):
             bbox_straw = anno['bbox_straw'][...]
             fullness = anno['fullness'][...]
             obstructed = anno['obstructed'][...]
+            
+            fullness = self.convert_fullness_to_class(fullness)
+            
         except KeyError as e:
             # If the annotations are not present, print the error and the keys of the frame
             print(f'\nKeyError: {e} in frame {self.indices[idx]}')
             print(frame['annotations'].keys(), "\n")
-
         labels = (bbox_chute, bbox_straw, obstructed, fullness)
         return frame_data, labels
 
+    def convert_fullness_to_class(self, fullness: float) -> list[int]:
+        """Converts the fullness value to a class label.
+
+        Parameters:
+        fullness (float): The fullness value to convert.
+
+        Returns:
+        list(int): The class label. 
+        """
+        
+        idx = int((fullness * 10)/0.5)
+        label = [0] * 20
+        label[idx] = 1
+        
+        return label
+        
+       
 
 
     def extract_means_and_stds(self):
@@ -164,7 +183,7 @@ if __name__ == '__main__':
     import time
     from torch.utils.data import DataLoader
 
-    trainset = Platoon(data_type='train')
+    trainset = Straw(data_type='train')
     # trainset.plot_data()
     # test_set = Platoon(data_type='test', pm_windowsize=2)
     # test_set.plot_data()

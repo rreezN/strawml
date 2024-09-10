@@ -1,5 +1,6 @@
 import argparse
 import torch
+from tqdm import tqdm
 
 import data.dataloader as dl
 import models.cnn_classifier as cnn
@@ -12,30 +13,38 @@ def train_model(args, model, train_loader, val_loader):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     loss_fn = torch.nn.functional.cross_entropy
     
-    for epoch in args.epochs:
+    for epoch in range(args.epochs):
+        train_iterator = tqdm(train_loader, unit="batch", position=0, leave=False)
+        train_iterator.set_description(f'Epoch {epoch+1}/{args.epochs}')
         model.train()
-        for i, (data, target) in enumerate(train_loader):
+        for (data, target) in train_iterator:
+            
+            frame_data = data[0]
+            fullness = target[3]
+            
             # Forward pass
-            output = model(data)
-            loss = loss_fn(output, target)
+            output = model(frame_data)
+            loss = loss_fn(output, torch.Tensor(fullness))
             
             # Backward pass
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             
-            if i % 100 == 0:
-                print(f'Epoch: {epoch}, Batch: {i}, Loss: {loss.item()}')
+            train_iterator.set_postfix(loss=loss.item())
                 
         model.eval()
         with torch.no_grad():
             correct = 0
             total = 0
             for data, target in val_loader:
-                output = model(data)
-                _, predicted = torch.max(output, 1)
-                total += target.size(0)
-                correct += (predicted == target).sum().item()
+                frame_data = data[0]
+                fullness = target[3]
+                
+                output = model(frame_data)
+                _, predicted = torch.max(output, 0)
+                total += 1
+                correct += (predicted == target)
                 
             print(f'Epoch: {epoch}, Validation Accuracy: {100*correct/total}')
             
@@ -62,8 +71,8 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
     
-    train_loader = dl.Straw(data_path=args.data_path, data_type='train', batch_size=args.batch_size, inc_heatmap=args.inc_heatmap, seed=args.seed)
-    test_loader = dl.Straw(data_path=args.data_path, data_type='test', batch_size=args.batch_size, inc_heatmap=args.inc_heatmap, seed=args.seed)
+    train_loader = dl.Straw(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, random_state=args.seed)
+    test_loader = dl.Straw(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, random_state=args.seed)
     
     cnn_model = cnn.CNNClassifier()
     
