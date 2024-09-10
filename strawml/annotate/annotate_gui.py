@@ -1,5 +1,7 @@
 # Code inspired from: https://github.com/Arka-Bhowmik/bounding_box_gui/tree/main
 
+# TODO: Comment code
+# TODO: Typing
 
 from __init__ import *
 
@@ -97,13 +99,14 @@ class ImageBox(ttk.Frame):
         images.close()
     
     def display_image(self, image):
-        # TODO: Display annotations on the image if loaded
         self.canvas.delete('all')
 
         # Define events for canvas mouse clicks
         self.canvas.bind("<ButtonPress-1>", self.on_button_press)
         self.canvas.bind("<B1-Motion>", self.on_move_press)
         self.canvas.bind("<ButtonRelease-1>", self.on_button_release)
+        self.canvas.bind("<ButtonPress-3>", self.on_right_press)
+        self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)
         
         # Show image
         self.new_image = ImageTk.PhotoImage(Image.fromarray(image))
@@ -177,15 +180,35 @@ class ImageBox(ttk.Frame):
         elif self.curY > self.image_size[0]:
             self.curY = self.image_size[0]
         
+        self.parent.update_next_button()
         self.canvas.coords(self.rect, self.start_x, self.start_y, self.curX, self.curY)
+    
+    def on_right_press(self, event):
+        if self.rect2 is not None:
+            self.canvas.delete(self.rect2)
+            self.rect2 = None
+            self.start_x2 = None
+            self.start_y2 = None
+        elif self.rect is not None:
+            self.canvas.delete(self.rect)
+            self.rect = None
+            self.start_x = None
+            self.start_y = None
     
     def reset(self):
         self.rect = None
         self.rect2 = None
+        self.parent.update_next_button()
         self.canvas.delete('all')
         self.set_image(self.current_image_group)
         self.display_image(self.image)
     
+    def on_mouse_wheel(self, event):
+        if event.delta > 0:
+            self.parent.change_image(self.parent.current_image-1)
+        elif event.delta < 0:
+            self.parent.change_image(self.parent.current_image+1)
+        
     
     
 
@@ -196,27 +219,27 @@ class FullnessBox(ttk.Frame):
         
         self.full_amount = tk.DoubleVar(value=-1)
         
-        empty = ttk.Radiobutton(self, text='0%', value=0, variable=self.full_amount)
-        five = ttk.Radiobutton(self, text='5%', value=0.05, variable=self.full_amount)
-        ten = ttk.Radiobutton(self, text='10%', value=0.10, variable=self.full_amount)
-        fifteen = ttk.Radiobutton(self, text='15%', value=0.15, variable=self.full_amount)
-        twenty = ttk.Radiobutton(self, text='20%', value=0.20, variable=self.full_amount)
-        twenty_five = ttk.Radiobutton(self, text='25%', value=0.25, variable=self.full_amount)
-        thirty = ttk.Radiobutton(self, text='30%', value=0.30, variable=self.full_amount)
-        thirty_five = ttk.Radiobutton(self, text='35%', value=0.35, variable=self.full_amount)
-        forty = ttk.Radiobutton(self, text='40%', value=0.40, variable=self.full_amount)
-        forty_five = ttk.Radiobutton(self, text='45%', value=0.45, variable=self.full_amount)
-        fifty = ttk.Radiobutton(self, text='50%', value=0.50, variable=self.full_amount)
-        fifty_five = ttk.Radiobutton(self, text='55%', value=0.55, variable=self.full_amount)
-        sixty = ttk.Radiobutton(self, text='60%', value=0.60, variable=self.full_amount)
-        sixty_five = ttk.Radiobutton(self, text='65%', value=0.65, variable=self.full_amount)
-        seventy = ttk.Radiobutton(self, text='70%', value=0.70, variable=self.full_amount)
-        seventy_five = ttk.Radiobutton(self, text='75%', value=0.75, variable=self.full_amount)
-        eighty = ttk.Radiobutton(self, text='80%', value=0.80, variable=self.full_amount)
-        eighty_five = ttk.Radiobutton(self, text='85%', value=0.85, variable=self.full_amount)
-        ninety = ttk.Radiobutton(self, text='90%', value=0.90, variable=self.full_amount)
-        ninety_five = ttk.Radiobutton(self, text='95%', value=0.95, variable=self.full_amount)
-        full = ttk.Radiobutton(self, text='100%', value=1.0, variable=self.full_amount)
+        empty = ttk.Radiobutton(self, text='0%', value=0, variable=self.full_amount, command=self.parent.update_next_button)
+        five = ttk.Radiobutton(self, text='5%', value=0.05, variable=self.full_amount, command=self.parent.update_next_button)
+        ten = ttk.Radiobutton(self, text='10%', value=0.10, variable=self.full_amount, command=self.parent.update_next_button)
+        fifteen = ttk.Radiobutton(self, text='15%', value=0.15, variable=self.full_amount, command=self.parent.update_next_button)
+        twenty = ttk.Radiobutton(self, text='20%', value=0.20, variable=self.full_amount, command=self.parent.update_next_button)
+        twenty_five = ttk.Radiobutton(self, text='25%', value=0.25, variable=self.full_amount, command=self.parent.update_next_button)
+        thirty = ttk.Radiobutton(self, text='30%', value=0.30, variable=self.full_amount, command=self.parent.update_next_button)
+        thirty_five = ttk.Radiobutton(self, text='35%', value=0.35, variable=self.full_amount, command=self.parent.update_next_button)
+        forty = ttk.Radiobutton(self, text='40%', value=0.40, variable=self.full_amount, command=self.parent.update_next_button)
+        forty_five = ttk.Radiobutton(self, text='45%', value=0.45, variable=self.full_amount, command=self.parent.update_next_button)
+        fifty = ttk.Radiobutton(self, text='50%', value=0.50, variable=self.full_amount, command=self.parent.update_next_button)
+        fifty_five = ttk.Radiobutton(self, text='55%', value=0.55, variable=self.full_amount, command=self.parent.update_next_button)
+        sixty = ttk.Radiobutton(self, text='60%', value=0.60, variable=self.full_amount, command=self.parent.update_next_button)
+        sixty_five = ttk.Radiobutton(self, text='65%', value=0.65, variable=self.full_amount, command=self.parent.update_next_button)
+        seventy = ttk.Radiobutton(self, text='70%', value=0.70, variable=self.full_amount, command=self.parent.update_next_button)
+        seventy_five = ttk.Radiobutton(self, text='75%', value=0.75, variable=self.full_amount, command=self.parent.update_next_button)
+        eighty = ttk.Radiobutton(self, text='80%', value=0.80, variable=self.full_amount, command=self.parent.update_next_button)
+        eighty_five = ttk.Radiobutton(self, text='85%', value=0.85, variable=self.full_amount, command=self.parent.update_next_button)
+        ninety = ttk.Radiobutton(self, text='90%', value=0.90, variable=self.full_amount, command=self.parent.update_next_button)
+        ninety_five = ttk.Radiobutton(self, text='95%', value=0.95, variable=self.full_amount, command=self.parent.update_next_button)
+        full = ttk.Radiobutton(self, text='100%', value=1.0, variable=self.full_amount, command=self.parent.update_next_button)
         
         full.pack()
         ninety_five.pack()
@@ -259,10 +282,11 @@ class MainApplication(ttk.Frame):
 
         
         self.parent.title("AnnotateGUI")
-
+        self.image_list = []
         self.current_image = 0
         self.image_scale = 0.5
         self.images_hdf5 = images_hdf5
+        
         
         self.fullness_box = FullnessBox(self)
         self.obstructed_box = ObstructedBox(self)
@@ -270,13 +294,16 @@ class MainApplication(ttk.Frame):
         
         self.reset_button = ttk.Button(self, text="Reset bboxes", command=self.reset)
         self.back_button = ttk.Button(self, text="Back", command=self.back)
-        self.select_image_button = ttk.Button(self, text="Select Image", command=self.select_image)
+        
+        self.selected_image = tk.StringVar()
+        self.select_image_button = ttk.Combobox(self, text="Select Image", textvariable=self.selected_image)
+        self.select_image_button.bind("<<ComboboxSelected>>", self.select_image)
         self.next_button = ttk.Button(self, text="Next", command=self.next)
         self.progress_label = ttk.Label(self, text="0/5000000")
         
-        
-        self.progress_bar = ttk.Progressbar(self, orient = 'horizontal', length=150, mode='determinate')
+        self.progress_bar = ttk.Progressbar(self, orient = 'horizontal', length=500, mode='determinate')
         self.progress_bar['value'] = 50
+        
         
         self.image_box.grid(row=0, column=0, sticky="NW", padx=5, pady=5, rowspan=4, columnspan=4)
         self.reset_button.grid(row=0, column=4, stick = "W", padx=5, pady=5)
@@ -287,9 +314,9 @@ class MainApplication(ttk.Frame):
         self.progress_bar.grid(row=4, column=2, sticky='NW', padx=5, pady=(0, 5))
         self.progress_label.grid(row=4, column=3, sticky="W", padx=5, pady=5)
         self.next_button.grid(row=4, column=4, sticky="W", padx=5, pady=(0, 5))
-        
-        self.load_image_list()
 
+        self.load_image_list()
+        self.select_image_button['values'] = self.image_list
         
     def load_image_list(self):
         if not os.path.exists(self.images_hdf5):
@@ -328,17 +355,28 @@ class MainApplication(ttk.Frame):
         else:
             self.change_image(self.current_image-1)
 
-    # TODO: Implement select image functionality
-    def select_image(self):
-        pass
+    def select_image(self, event=None):
+        selected_image = self.selected_image.get()
+        if selected_image in self.image_list:
+            self.save_current_frame(printing=False)
+            self.change_image(self.image_list.index(selected_image))
+        else:
+            print(f"Could not find image {selected_image} in the image list.")
     
     def change_image(self, new_image_index):
+        # if below 0, go to the last image
+        if new_image_index < 0:
+            new_image_index = len(self.image_list)-1
+        # if above the last image, go to the first image
+        elif new_image_index >= len(self.image_list):
+            new_image_index = 0
         self.fullness_box.full_amount.set(-1)
         self.obstructed_box.obstructed.set(False)
         self.image_box.set_image(image_group=self.image_list[new_image_index])
         self.image_box.display_image(self.image_box.image)
         self.current_image = new_image_index
         self.update_progress_bar()
+        self.update_next_button()
     
     def save_current_frame(self, 
              new_hdf5_file='data/processed/annotated_images.hdf5',
@@ -408,8 +446,13 @@ class MainApplication(ttk.Frame):
 
         old_hf.close()  # close the original hdf5 file
         new_hf.close()  # close the hdf5 file
-        
-        
+    
+    def update_next_button(self):
+        if self.fullness_box.full_amount.get() != -1 and self.image_box.rect != None and self.image_box.rect2 != None:
+            self.next_button.config(state='normal')
+        else:
+            self.next_button.config(state='disabled')
+                
 if __name__ == '__main__':
     root = tk.Tk()
     root.resizable(False, False)
