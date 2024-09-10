@@ -205,11 +205,41 @@ class ImageBox(ttk.Frame):
     
     def on_mouse_wheel(self, event):
         if event.delta > 0:
+            if self.rect is not None and self.rect2 is not None and self.parent.fullness_box.full_amount.get() != -1:
+                self.parent.save_current_frame()
             self.parent.change_image(self.parent.current_image-1)
         elif event.delta < 0:
+            if self.rect is not None and self.rect2 is not None and self.parent.fullness_box.full_amount.get() != -1:
+                self.parent.save_current_frame()
             self.parent.change_image(self.parent.current_image+1)
         
+
+class HelpWindow(ttk.Frame):
+    def __init__(self, parent):
+        ttk.Frame.__init__(self, parent)
+        self.parent = parent
     
+        self.help_text = """
+        Welcome to the AnnotateGUI!
+        
+        This GUI is used to annotate images of the straw chute and straw itself.
+        
+        Actions:
+        Left click and drag to draw a bounding box around the chute.
+        Left click and drag again to draw a bounding box around the straw in the chute.
+        Right click to delete the last bounding box drawn.
+        Scroll the mouse wheel to move to the next or previous image.
+        Select an image from the dropdown menu to move to a specific image.
+        Click the 'Next' button to save the annotations and move to the next image.
+        Click the 'Back' button to save the annotations and move to the previous image.
+        Set the fullness of the chute using the radio buttons.
+        Check the 'Obstructed' box if the chute is obstructed.
+        
+        The progress bar at the bottom of the window shows the current image number and the total number of images.
+        """
+        
+        self.help_label = ttk.Label(self, text=self.help_text)
+        self.help_label.pack()
     
 
 class FullnessBox(ttk.Frame):
@@ -292,28 +322,30 @@ class MainApplication(ttk.Frame):
         self.obstructed_box = ObstructedBox(self)
         self.image_box = ImageBox(self)
         
+        self.help_button = ttk.Button(self, text="Help", command=self.open_help)
         self.reset_button = ttk.Button(self, text="Reset bboxes", command=self.reset)
         self.back_button = ttk.Button(self, text="Back", command=self.back)
         
         self.selected_image = tk.StringVar()
         self.select_image_button = ttk.Combobox(self, text="Select Image", textvariable=self.selected_image)
         self.select_image_button.bind("<<ComboboxSelected>>", self.select_image)
+        
         self.next_button = ttk.Button(self, text="Next", command=self.next)
         self.progress_label = ttk.Label(self, text="0/5000000")
-        
         self.progress_bar = ttk.Progressbar(self, orient = 'horizontal', length=500, mode='determinate')
         self.progress_bar['value'] = 50
         
         
-        self.image_box.grid(row=0, column=0, sticky="NW", padx=5, pady=5, rowspan=4, columnspan=4)
-        self.reset_button.grid(row=0, column=4, stick = "W", padx=5, pady=5)
-        self.fullness_box.grid(row=1, column=4, sticky="W", padx=5, pady=5)
-        self.obstructed_box.grid(row=2, column=4, sticky="W", padx=5, pady=5)
-        self.back_button.grid(row=4, column=0, sticky='NW', padx=5, pady=(0, 5))
-        self.select_image_button.grid(row=4, column=1, sticky="NW", padx=5, pady=(0, 5))
-        self.progress_bar.grid(row=4, column=2, sticky='NW', padx=5, pady=(0, 5))
-        self.progress_label.grid(row=4, column=3, sticky="W", padx=5, pady=5)
-        self.next_button.grid(row=4, column=4, sticky="W", padx=5, pady=(0, 5))
+        self.image_box.grid(row=0, column=0, sticky="NW", padx=5, pady=5, rowspan=5, columnspan=4)
+        self.help_button.grid(row=0, column=4, stick="W", padx=5, pady=5)
+        self.reset_button.grid(row=1, column=4, stick = "W", padx=5, pady=5)
+        self.fullness_box.grid(row=2, column=4, sticky="W", padx=5, pady=5)
+        self.obstructed_box.grid(row=3, column=4, sticky="W", padx=5, pady=5)
+        self.back_button.grid(row=5, column=0, sticky='NW', padx=5, pady=(0, 5))
+        self.select_image_button.grid(row=5, column=1, sticky="NW", padx=5, pady=(0, 5))
+        self.progress_bar.grid(row=5, column=2, sticky='NW', padx=5, pady=(0, 5))
+        self.progress_label.grid(row=5, column=3, sticky="W", padx=5, pady=5)
+        self.next_button.grid(row=5, column=4, sticky="W", padx=5, pady=(0, 5))
 
         self.load_image_list()
         self.select_image_button['values'] = self.image_list
@@ -452,7 +484,14 @@ class MainApplication(ttk.Frame):
             self.next_button.config(state='normal')
         else:
             self.next_button.config(state='disabled')
-                
+    
+    def open_help(self):
+        help_window = tk.Toplevel(self)
+        help_window.title("Help")
+        help_window.resizable(False, False)
+        HelpWindow(help_window).pack(side="top", fill="both", expand=True)
+    
+    
 if __name__ == '__main__':
     root = tk.Tk()
     root.resizable(False, False)
