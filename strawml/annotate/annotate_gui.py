@@ -1,8 +1,5 @@
 # Code inspired from: https://github.com/Arka-Bhowmik/bounding_box_gui/tree/main
 
-# TODO: Comment code
-# TODO: Typing
-
 from __init__ import *
 
 import tkinter as tk
@@ -14,7 +11,7 @@ import datetime
 import h5py
 import os
 
-from strawml.data.make_dataset import decode_binary_image, print_hdf5_tree
+from strawml.data.make_dataset import decode_binary_image
 
 
 
