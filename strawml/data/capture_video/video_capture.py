@@ -1,12 +1,13 @@
 # TODO: Save data continuously to a video file to account for memory limitations
-# Written by Luis Mesas
 import threading
 import time
 import cv2
+import os
+
 
 # Define video capture class
 class VideoCaptureAsync:
-    def __init__(self, duration, fps, src=0, driver=None):
+    def __init__(self, duration, fps, src=0, driver=None, data_path='data/raw/videos', byte_limit=1e9):
         self.src = src
         if driver is None:
             self.cap = cv2.VideoCapture(self.src)
@@ -14,12 +15,13 @@ class VideoCaptureAsync:
             self.cap = cv2.VideoCapture(self.src, driver)
         self.duration = duration
         self.fps = fps
-        self.frame_period = 1.0 / fps  # time between frames in seconds
+        self.data_path = data_path
         self.grabbed, self.frame = self.cap.read()
         self.started = False
         self.read_lock = threading.Lock()
         self.thread = None
         self.out = None
+        self.byte_limit = byte_limit # 1e9 bytes = 1 GB # 1e6 bytes = 1 MB
 
     def get(self, var1):
         return self.cap.get(var1)
@@ -37,7 +39,6 @@ class VideoCaptureAsync:
         return self
 
     def update(self):
-        time_end = time.time() + self.duration
         
         frame_width = int(self.cap.get(3))
         frame_height = int(self.cap.get(4))
@@ -45,12 +46,17 @@ class VideoCaptureAsync:
         size = (frame_width, frame_height) 
         
         file_index = 0
-        self.out = cv2.VideoWriter(f'filename_{file_index}.avi', 
+        while os.path.exists(f'{self.data_path}/filename_{file_index}.avi'):
+            file_index += 1
+        
+        self.out = cv2.VideoWriter(f'{self.data_path}/filename_{file_index}.avi', 
                                 cv2.VideoWriter_fourcc(*'MJPG'), 
-                                self.fps, size) 
+                                self.fps, size)
+        
         frames = 0
+        
+        time_end = time.time() + self.duration
         while time.time() <= time_end:
-            start_time = time.time()  # start time of the loop
             grabbed, frame = self.cap.read()
             with self.read_lock:
                 self.grabbed = grabbed
@@ -58,24 +64,24 @@ class VideoCaptureAsync:
             if grabbed:
                 self.out.write(frame)
                 frames += 1
-                # sleep for the remaining time to maintain the desired frame rate
-                time.sleep(max(0, self.frame_period - (time.time() - start_time)))
 
             # Check file size
-            if os.path.getsize(f'filename_{file_index}.avi') > 1e9:  # 1e9 bytes = 1 GB
-                # Close current file
-                self.out.release()
-                # Open new file with incremented index
-                file_index += 1
-                self.out = cv2.VideoWriter(f'filename_{file_index}.avi', 
-                                    cv2.VideoWriter_fourcc(*'MJPG'), 
-                                    self.fps, size)
+            if os.path.exists(f'{self.data_path}/filename_{file_index}.avi'):
+                if os.path.getsize(f'{self.data_path}/filename_{file_index}.avi') > self.byte_limit:  # 1e9 bytes = 1 GB # 1e6 bytes = 1 MB
+                    # Close current file
+                    self.out.release()
+                    # Open new file with incremented index
+                    file_index += 1
+                    self.out = cv2.VideoWriter(f'{self.data_path}/filename_{file_index}.avi', 
+                                        cv2.VideoWriter_fourcc(*'MJPG'), 
+                                        self.fps, size)
+        self.started = False
 
     def read(self):
         with self.read_lock:
             frame = self.frame.copy()
             grabbed = self.grabbed
-        return grabbed, frame
+        return grabbed, frame, self.started
 
     def stop(self):
         self.started = False
