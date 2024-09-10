@@ -8,14 +8,23 @@ import os
 
 def record_video(duration, fps=30, data_path='data/raw/videos', byte_limit=1e9):
     print("STARTED: record_video\n")
-    capture = VideoCaptureAsync(src=0, duration=duration, fps=fps, data_path=data_path, byte_limit=byte_limit)
+    capture = VideoCaptureAsync(src=1, duration=duration, fps=fps, data_path=data_path, byte_limit=byte_limit)
+    # start_time = time.time()
     # Initialize tqdm with a custom format to show only the elapsed time
+    # pbar = tqdm(bar_format='{l_bar}{bar} | Elapsed Time: {elapsed}', ncols=0)
     capture.start()
-    while True:
-        if not capture.started:
+    while capture.started:
+        # elapsed_time = time.time() - start_time
+        # if elapsed_time >= duration:
+            # break
+        # pbar.set_postfix_str(f'{elapsed_time:.2f}s')
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+
+    # pbar.close()
     capture.stop()
     cv2.destroyAllWindows()
+
     print("\nSTOPPED: record_video")
 
 def main(args: argparse.Namespace):
