@@ -9,7 +9,7 @@ from strawml.data.make_dataset import decode_binary_image
 from torchvision import transforms
 import psutil
 
-class Platoon(torch.utils.data.Dataset):
+class Straw(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/annotated_images.hdf5', data_type: str = 'train', inc_heatmap: bool = True,
                  random_state: int = 42) -> None:
                 
