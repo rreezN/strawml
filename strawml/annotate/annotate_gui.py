@@ -19,7 +19,21 @@ from strawml.data.make_dataset import decode_binary_image, print_hdf5_tree
 
 
 class ImageBox(ttk.Frame):
-    def __init__(self, parent, images_hdf5='data/raw/images/images.hdf5', annotated_images='data/processed/annotated_images.hdf5', *args, **kwargs):
+    """Show the image and allow the user to draw bounding boxes on it.
+
+        Args:
+            parent (ttk.Frame): The parent frame.
+            images_hdf5 (str, optional): The path to the extracted frames (images.hdf5). Defaults to 'data/raw/images/images.hdf5'.
+            annotated_images (str, optional): The path to the saved annotated images (annotated_images.hdf5). Defaults to 'data/processed/annotated_images.hdf5'.
+        """
+    def __init__(self, parent: ttk.Frame, images_hdf5: str = 'data/raw/images/images.hdf5', annotated_images: str = 'data/processed/annotated_images.hdf5', *args, **kwargs) -> None:
+        """Show the image and allow the user to draw bounding boxes on it.
+
+        Args:
+            parent (ttk.Frame): The parent frame.
+            images_hdf5 (str, optional): The path to the extracted frames (images.hdf5). Defaults to 'data/raw/images/images.hdf5'.
+            annotated_images (str, optional): The path to the saved annotated images (annotated_images.hdf5). Defaults to 'data/processed/annotated_images.hdf5'.
+        """
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
         
@@ -47,7 +61,16 @@ class ImageBox(ttk.Frame):
 
         self.display_image(self.image)
     
-    def set_image(self, image_group=None):
+    def set_image(self, image_group: str = None) -> None:
+        """Sets the image to be displayed in the ImageBox. Loads annotations if available.
+        If image_group is None, it will load the first image group in the images HDF5 file.
+
+        Args:
+            image_group (str, optional): The image group (frame_X) to set the image to. Defaults to None.
+
+        Raises:
+            FileNotFoundError: If the image group is not found in the HDF5 file.
+        """
         if self.canvas != None: self.canvas.delete('all')
         
         images = h5py.File(self.images_hdf5, 'r')
@@ -98,7 +121,12 @@ class ImageBox(ttk.Frame):
         if not annotated is None: annotated.close()
         images.close()
     
-    def display_image(self, image):
+    def display_image(self, image: np.ndarray) -> None:
+        """Shows the image in the ImageBox canvas and binds mouse controls.
+
+        Args:
+            image (np.ndarray): The image to display.
+        """
         self.canvas.delete('all')
 
         # Define events for canvas mouse clicks
@@ -130,7 +158,12 @@ class ImageBox(ttk.Frame):
             self.current_rect = self.rect2
         
     
-    def on_button_press(self, event):
+    def on_button_press(self, event: tk.Event) -> None:
+        """Starts drawing a bounding box on the canvas when the left mouse button is pressed.
+
+        Args:
+            event (tk.Event): The event object from the mouse click.
+        """
         if not self.rect:
             self.start_x = event.x
             self.start_y = event.y
@@ -145,7 +178,12 @@ class ImageBox(ttk.Frame):
             self.start_x2 = event.x
             self.start_y2 = event.y
             
-    def on_move_press(self, event):
+    def on_move_press(self, event: tk.Event) -> None:
+        """Updates the bounding box on the canvas as the mouse is dragged.
+
+        Args:
+            event (tk.Event): The event object from the mouse drag.
+        """
         if not self.rect2:
             self.curX = self.canvas.canvasx(event.x)
             self.curY = self.canvas.canvasy(event.y)
@@ -159,7 +197,12 @@ class ImageBox(ttk.Frame):
             self.canvas.coords(self.rect2, self.start_x2, self.start_y2, self.curX2, self.curY2)
         
     
-    def on_button_release(self, event):
+    def on_button_release(self, event: tk.Event) -> None:
+        """Updates the bounding box coordinates when the left mouse button is released.
+
+        Args:
+            event (tk.Event): The event object from the mouse release.
+        """
         if self.start_x < 0:
             self.start_x = 0
         elif self.start_x > self.image_size[1]:
@@ -183,7 +226,12 @@ class ImageBox(ttk.Frame):
         self.parent.update_next_button()
         self.canvas.coords(self.rect, self.start_x, self.start_y, self.curX, self.curY)
     
-    def on_right_press(self, event):
+    def on_right_press(self, event: tk.Event) -> None:
+        """Deletes the last bounding box drawn when the right mouse button is pressed.
+
+        Args:
+            event (tk.Event): The event object from the right mouse click.
+        """
         if self.rect2 is not None:
             self.canvas.delete(self.rect2)
             self.rect2 = None
@@ -195,7 +243,9 @@ class ImageBox(ttk.Frame):
             self.start_x = None
             self.start_y = None
     
-    def reset(self):
+    def reset(self) -> None:
+        """Resets the bounding boxes and updates the 'Next' button state.
+        """
         self.rect = None
         self.rect2 = None
         self.parent.update_next_button()
@@ -203,7 +253,12 @@ class ImageBox(ttk.Frame):
         self.set_image(self.current_image_group)
         self.display_image(self.image)
     
-    def on_mouse_wheel(self, event):
+    def on_mouse_wheel(self, event: tk.Event) -> None:
+        """Changes the image when the mouse wheel is scrolled.
+        
+        Args:
+            event (tk.Event): The event object from the mouse wheel scroll.
+        """
         if event.delta > 0:
             if self.rect is not None and self.rect2 is not None and self.parent.fullness_box.full_amount.get() != -1:
                 self.parent.save_current_frame()
@@ -215,7 +270,12 @@ class ImageBox(ttk.Frame):
         
 
 class HelpWindow(ttk.Frame):
-    def __init__(self, parent):
+    """The help window for the AnnotateGUI.
+
+    Args:
+        parent (ttk.Frame): The parent frame.
+    """
+    def __init__(self, parent) -> None:
         ttk.Frame.__init__(self, parent)
         self.parent = parent
     
@@ -243,7 +303,12 @@ class HelpWindow(ttk.Frame):
     
 
 class FullnessBox(ttk.Frame):
-    def __init__(self, parent, *args, **kwargs):
+    """The fullness box for the AnnotateGUI.
+
+    Args:
+        parent (ttk.Frame): The parent frame.
+    """
+    def __init__(self, parent, *args, **kwargs) -> None:
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
         
@@ -294,7 +359,12 @@ class FullnessBox(ttk.Frame):
         empty.pack()
 
 class ObstructedBox(ttk.Frame):
-    def __init__(self, parent, *args, **kwargs):
+    """The obstructed box for the AnnotateGUI.
+
+    Args:
+        parent (ttk.Frame): The parent frame.
+    """
+    def __init__(self, parent, *args, **kwargs) -> None:
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
         
@@ -306,7 +376,13 @@ class ObstructedBox(ttk.Frame):
 
 
 class MainApplication(ttk.Frame):
-    def __init__(self, parent, images_hdf5='data/raw/images/images.hdf5', *args, **kwargs):
+    """The main application frame for the AnnotateGUI. Handles the main layout and controls, and saving annotations.
+
+    Args:
+        parent (tk.Tk): The parent frame. This is the main window.
+        images_hdf5 (str, optional): The path to the extracted frames (images.hdf5). Defaults to 'data/raw/images/images.hdf5'.
+    """
+    def __init__(self, parent, images_hdf5='data/raw/images/images.hdf5', *args, **kwargs) -> None:
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
 
@@ -350,7 +426,12 @@ class MainApplication(ttk.Frame):
         self.load_image_list()
         self.select_image_button['values'] = self.image_list
         
-    def load_image_list(self):
+    def load_image_list(self) -> None:
+        """Loads the image list from the images HDF5 file and sorts it.
+
+        Raises:
+            FileNotFoundError: If the images HDF5 file does not exist.
+        """
         if not os.path.exists(self.images_hdf5):
             raise FileNotFoundError(f"The file {self.images_hdf5} does not exist.")
         
@@ -361,14 +442,26 @@ class MainApplication(ttk.Frame):
         self.image_list = image_list
         self.update_progress_bar()
 
-    def sort_image_list(self, image_list):
+    def sort_image_list(self, image_list: list) -> list:
+        """Sorts the image list by the frame number.
+
+        Args:
+            image_list (list): The list of image groups.
+
+        Returns:
+            list: The sorted image list, by frame number.
+        """
         return sorted(image_list, key=lambda x: int(x.split('_')[1]))
     
-    def update_progress_bar(self):
+    def update_progress_bar(self) -> None:
+        """Updates the progress bar and label with the current image number and total number of images.
+        """
         self.progress_bar['value'] = self.current_image/len(self.image_list)*100
         self.progress_label['text'] = f"{self.current_image+1}/{len(self.image_list)}"
     
-    def next(self):
+    def next(self) -> None:
+        """Saves the current frame and annotations and moves to the next image.
+        """
         self.save_current_frame(printing=False)
         
         if self.current_image == len(self.image_list)-1:
@@ -377,9 +470,13 @@ class MainApplication(ttk.Frame):
             self.change_image(self.current_image+1)
     
     def reset(self):
+        """Resets the bounding boxes and updates the 'Next' button state.
+        """
         self.image_box.reset()
         
     def back(self):
+        """Saves the current frame and annotations and moves to the previous image.
+        """
         self.save_current_frame(printing=False)
         
         if self.current_image == 0:
@@ -387,7 +484,12 @@ class MainApplication(ttk.Frame):
         else:
             self.change_image(self.current_image-1)
 
-    def select_image(self, event=None):
+    def select_image(self, event: tk.Event = None) -> None:
+        """Selects an image from the dropdown menu, saves current image, and moves to that image.
+
+        Args:
+            event (tk.Event, optional): _description_. Defaults to None.
+        """
         selected_image = self.selected_image.get()
         if selected_image in self.image_list:
             self.save_current_frame(printing=False)
@@ -395,7 +497,12 @@ class MainApplication(ttk.Frame):
         else:
             print(f"Could not find image {selected_image} in the image list.")
     
-    def change_image(self, new_image_index):
+    def change_image(self, new_image_index: int) -> None:
+        """Changes the image to the new image index and updates the progress bar and 'Next' button state.
+
+        Args:
+            new_image_index (_type_): The index of the image to change to.
+        """
         # if below 0, go to the last image
         if new_image_index < 0:
             new_image_index = len(self.image_list)-1
@@ -412,7 +519,13 @@ class MainApplication(ttk.Frame):
     
     def save_current_frame(self, 
              new_hdf5_file='data/processed/annotated_images.hdf5',
-             printing=False):
+             printing=False) -> None:
+        """Saves the annotations for the current frame to the new HDF5 file.
+
+        Args:
+            new_hdf5_file (str, optional): The file to save to. Defaults to 'data/processed/annotated_images.hdf5'.
+            printing (bool, optional): Whether to print information about the saved annotations or not. Defaults to False.
+        """
         
         new_hf = h5py.File(new_hdf5_file, 'a') # Open the HDF5 file in write mode
         old_hf = h5py.File(self.images_hdf5, 'r') # Open the original HDF5 file in read mode
@@ -479,13 +592,17 @@ class MainApplication(ttk.Frame):
         old_hf.close()  # close the original hdf5 file
         new_hf.close()  # close the hdf5 file
     
-    def update_next_button(self):
+    def update_next_button(self) -> None:
+        """Enables or disables the 'Next' button based on the current state of the annotations.
+        """
         if self.fullness_box.full_amount.get() != -1 and self.image_box.rect != None and self.image_box.rect2 != None:
             self.next_button.config(state='normal')
         else:
             self.next_button.config(state='disabled')
     
-    def open_help(self):
+    def open_help(self) -> None:
+        """Opens the help window.
+        """
         help_window = tk.Toplevel(self)
         help_window.title("Help")
         help_window.resizable(False, False)
