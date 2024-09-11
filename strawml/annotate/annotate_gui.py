@@ -1,4 +1,4 @@
-# Code inspired from: https://github.com/Arka-Bhowmik/bounding_box_gui/tree/main
+# Bounding box code inspired from: https://github.com/Arka-Bhowmik/bounding_box_gui/tree/main
 
 from __init__ import *
 
@@ -23,7 +23,7 @@ class ImageBox(ttk.Frame):
             images_hdf5 (str, optional): The path to the extracted frames (images.hdf5). Defaults to 'data/raw/images/images.hdf5'.
             annotated_images (str, optional): The path to the saved annotated images (annotated_images.hdf5). Defaults to 'data/processed/annotated_images.hdf5'.
         """
-    def __init__(self, parent: ttk.Frame, images_hdf5: str = 'data/raw/images/images.hdf5', annotated_images: str = 'data/processed/annotated_images.hdf5', *args, **kwargs) -> None:
+    def __init__(self, parent: ttk.Frame, images_hdf5: str = 'data/raw/images/images.hdf5', *args, **kwargs) -> None:
         """Show the image and allow the user to draw bounding boxes on it.
 
         Args:
@@ -35,7 +35,7 @@ class ImageBox(ttk.Frame):
         self.parent = parent
         
         self.images_hdf5 = images_hdf5
-        self.annotated_hdf5 = annotated_images
+        self.annotated_hdf5 = self.parent.file_button.get()
         self.image = None
         self.image_size = None
         self.current_image_group = None
@@ -72,6 +72,7 @@ class ImageBox(ttk.Frame):
         
         images = h5py.File(self.images_hdf5, 'r')
         annotated = None
+        self.annotated_hdf5 = f'data/processed/{self.parent.file_button.get()}'
         if os.path.exists(self.annotated_hdf5):
             annotated = h5py.File(self.annotated_hdf5, 'r')
         
@@ -166,14 +167,17 @@ class ImageBox(ttk.Frame):
             self.start_y = event.y
             self.rect = self.canvas.create_rectangle(self.start_x, self.start_y, self.start_x, self.start_y, outline='green', width=2)
             self.current_rect = self.rect
-        elif not self.rect2:
-            self.start_x2 = event.x
-            self.start_y2 = event.y
-            self.rect2 = self.canvas.create_rectangle(self.start_x2, self.start_y2, self.start_x2, self.start_y2, outline='red', width=2)
-            self.current_rect = self.rect2
+        # elif not self.rect2:
+        #     self.start_x2 = event.x
+        #     self.start_y2 = event.y
+        #     self.rect2 = self.canvas.create_rectangle(self.start_x2, self.start_y2, self.start_x2, self.start_y2, outline='red', width=2)
+        #     self.current_rect = self.rect2
+        # else:
+        #     self.start_x2 = event.x
+        #     self.start_y2 = event.y
         else:
-            self.start_x2 = event.x
-            self.start_y2 = event.y
+            self.start_x = event.x
+            self.start_y = event.y
             
     def on_move_press(self, event: tk.Event) -> None:
         """Updates the bounding box on the canvas as the mouse is dragged.
@@ -256,13 +260,10 @@ class ImageBox(ttk.Frame):
         Args:
             event (tk.Event): The event object from the mouse wheel scroll.
         """
+        self.parent.save_current_frame()
         if event.delta < 0:
-            if self.rect is not None and self.rect2 is not None and self.parent.fullness_box.full_amount.get() != -1:
-                self.parent.save_current_frame()
             self.parent.change_image(self.parent.current_image-1)
         elif event.delta > 0:
-            if self.rect is not None and self.rect2 is not None and self.parent.fullness_box.full_amount.get() != -1:
-                self.parent.save_current_frame()
             self.parent.change_image(self.parent.current_image+1)
         
 
@@ -283,7 +284,7 @@ class HelpWindow(ttk.Frame):
         
         Actions:
         Left click and drag to draw a bounding box around the chute.
-        Left click and drag again to draw a bounding box around the straw in the chute.
+        (DISABLED) Left click and drag again to draw a bounding box around the straw in the chute.
         Right click to delete the last bounding box drawn.
         Scroll the mouse wheel to move to the next or previous image.
         Select an image from the dropdown menu to move to a specific image.
@@ -390,6 +391,10 @@ class MainApplication(ttk.Frame):
         self.image_scale = 0.5
         self.images_hdf5 = images_hdf5
         
+        self.save_file = tk.StringVar()
+        self.file_button = ttk.Combobox(self, text="Select File", textvariable=self.save_file)
+        self.file_button['values'] = ['chute_detection.hdf5', 'straw_level.hdf5']
+        self.file_button.set(self.file_button['values'][0])
         
         self.fullness_box = FullnessBox(self)
         self.obstructed_box = ObstructedBox(self)
@@ -398,6 +403,7 @@ class MainApplication(ttk.Frame):
         self.help_button = ttk.Button(self, text="Help", command=self.open_help)
         self.reset_button = ttk.Button(self, text="Reset bboxes", command=self.reset)
         self.back_button = ttk.Button(self, text="Back", command=self.back)
+        
         
         self.selected_image = tk.StringVar()
         self.select_image_button = ttk.Combobox(self, text="Select Image", textvariable=self.selected_image)
@@ -409,16 +415,17 @@ class MainApplication(ttk.Frame):
         self.progress_bar['value'] = 50
         
         
-        self.image_box.grid(row=0, column=0, sticky="NW", padx=5, pady=5, rowspan=5, columnspan=4)
-        self.help_button.grid(row=0, column=4, stick="W", padx=5, pady=5)
-        self.reset_button.grid(row=1, column=4, stick = "W", padx=5, pady=5)
-        self.fullness_box.grid(row=2, column=4, sticky="W", padx=5, pady=5)
-        self.obstructed_box.grid(row=3, column=4, sticky="W", padx=5, pady=5)
+        self.image_box.grid(row=0, column=0, sticky="NW", padx=5, pady=5, rowspan=5, columnspan=5)
+        self.help_button.grid(row=0, column=5, stick="W", padx=5, pady=5)
+        self.reset_button.grid(row=1, column=5, stick = "W", padx=5, pady=5)
+        self.fullness_box.grid(row=2, column=5, sticky="W", padx=5, pady=5)
+        self.obstructed_box.grid(row=3, column=5, sticky="W", padx=5, pady=5)
         self.back_button.grid(row=5, column=0, sticky='NW', padx=5, pady=(0, 5))
-        self.select_image_button.grid(row=5, column=1, sticky="NW", padx=5, pady=(0, 5))
-        self.progress_bar.grid(row=5, column=2, sticky='NW', padx=5, pady=(0, 5))
-        self.progress_label.grid(row=5, column=3, sticky="W", padx=5, pady=5)
-        self.next_button.grid(row=5, column=4, sticky="W", padx=5, pady=(0, 5))
+        self.file_button.grid(row=5, column=1, sticky='NW', padx=5, pady=(0, 5))
+        self.select_image_button.grid(row=5, column=2, sticky="NW", padx=5, pady=(0, 5))
+        self.progress_bar.grid(row=5, column=3, sticky='NW', padx=5, pady=(0, 5))
+        self.progress_label.grid(row=5, column=4, sticky="W", padx=5, pady=5)
+        self.next_button.grid(row=5, column=5, sticky="W", padx=5, pady=(0, 5))
 
         self.load_image_list()
         self.select_image_button['values'] = self.image_list
@@ -514,9 +521,7 @@ class MainApplication(ttk.Frame):
         self.update_progress_bar()
         self.update_next_button()
     
-    def save_current_frame(self, 
-             new_hdf5_file='data/processed/annotated_images.hdf5',
-             printing=False) -> None:
+    def save_current_frame(self, printing=False) -> None:
         """Saves the annotations for the current frame to the new HDF5 file.
 
         Args:
@@ -524,8 +529,13 @@ class MainApplication(ttk.Frame):
             printing (bool, optional): Whether to print information about the saved annotations or not. Defaults to False.
         """
         
-        if self.image_box.rect is None and self.image_box.rect2 is None and self.fullness_box.full_amount.get() == -1:
+        # if self.image_box.rect is None and self.image_box.rect2 is None and self.fullness_box.full_amount.get() == -1:
+        #     return
+        
+        if self.image_box.rect is None or self.fullness_box.full_amount.get() == -1:
             return
+        
+        new_hdf5_file = f'data/processed/{self.file_button.get()}'
         
         new_hf = h5py.File(new_hdf5_file, 'a') # Open the HDF5 file in write mode
         old_hf = h5py.File(self.images_hdf5, 'r') # Open the original HDF5 file in read mode
@@ -595,7 +605,12 @@ class MainApplication(ttk.Frame):
     def update_next_button(self) -> None:
         """Enables or disables the 'Next' button based on the current state of the annotations.
         """
-        if self.fullness_box.full_amount.get() != -1 and self.image_box.rect != None and self.image_box.rect2 != None:
+        # if self.fullness_box.full_amount.get() != -1 and self.image_box.rect != None and self.image_box.rect2 != None:
+        #     self.next_button.config(state='normal')
+        # else:
+        #     self.next_button.config(state='disabled')
+    
+        if self.fullness_box.full_amount.get() != -1 and self.image_box.rect != None and self.image_box.rect != None:
             self.next_button.config(state='normal')
         else:
             self.next_button.config(state='disabled')
