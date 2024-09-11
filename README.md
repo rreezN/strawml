@@ -20,4 +20,5 @@ The file contains code that takes a folder of videos to split them into sequenti
 - [ ] Contrast
 - [ ] Gamma
 - [ ] Brightness
+- [ ] Noise
 - [ ] Add artifacts that resemble obstructed view of chute
