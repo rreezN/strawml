@@ -8,6 +8,7 @@ import datetime
 import time
 from argparse import ArgumentParser, Namespace
 import psutil
+from sklearn.model_selection import train_test_split
 
 
 def decode_binary_image(image: bytes) -> np.ndarray:
@@ -165,6 +166,62 @@ def image_extractor(video_folder: str,
                                         frame_nr=frame_nr,
                                         fbf=fbf)
 
+def hdf5_to_yolo(hdf5_file: str) -> None:
+    # First ensure the file exists
+    if not os.path.exists(hdf5_file):
+        raise FileNotFoundError(f"The file {hdf5_file} does not exist.")
+    
+    save_path = 'data/interim/yolo_format'
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+
+    # image name and label file should have same name
+    # image name should be in the format: frame_{frame_nr}.jpg
+    # label file should be in the format: frame_{frame_nr}.txt
+    # The label should contain the following information with the following syntax,
+    #   class_index x1 y1 x2 y2 x3 y3 x4 y4
+    # In the hdf5 file, we have x4, y4 and x2, y2. From this we can calculate the other points
+    # The label file should be saved in the same folder as the image file
+
+    with h5py.File(hdf5_file, 'r') as hf:
+        frame_names = list(hf.keys())
+
+        # split frames in train, test and validation with 70%, 20% and 10% respectively
+        # random state = 42
+        train_indices, test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=0.20, random_state=42)
+        test_indices, val_indices, _, _ = train_test_split(test_indices, test_indices, test_size=0.50, random_state=42)
+        index_dict = {'train': train_indices, 'test': test_indices, 'val': val_indices}
+        pbar = tqdm(total = len(frame_names), desc="Converting HDF5 to YOLO format", position=0) # Create a progress bar
+        for key, val in index_dict.items():
+            pbar.set_description(f"Converting HDF5 to YOLO format: {key} set")
+            if not os.path.exists(f'{save_path}/{key}'):
+                os.makedirs(f'{save_path}/{key}')
+            for frame in val:
+                image_bytes = hf[frame]['image'][...]
+                # decode the binary image
+                image = decode_binary_image(image_bytes)
+                # Save the image to a file
+                cv2.imwrite(f'{save_path}/{key}/{frame}.jpg', image)
+
+                # Now we load the bounding boxes
+                bbox = hf[frame]['annotations']['bbox_chute'][...]
+                label = [0]
+                x4, y4 = bbox[0], bbox[1]
+                x2, y2 = bbox[2], bbox[3]
+                # normalise the coordinates
+                x4, y4 = x4 / image.shape[1], y4 / image.shape[0]
+                x2, y2 = x2 / image.shape[1], y2 / image.shape[0]
+                x1, y1 = x2, y4
+                x3, y3 = x4, y2
+                label.extend([x1, y1, x2, y2, x3, y3, x4, y4])
+
+                # Save the label to a file
+                with open( f'{save_path}/{key}/{frame}.txt', 'w') as f:
+                    f.write(' '.join(map(str, label)))
+
+                pbar.update(1)
+
+
 def validate_image_extraction(hdf5_file: str,
                               save_individual_images) -> None:
     # make sure the temp_images folder exists
@@ -253,12 +310,14 @@ def main(args: Namespace) -> None:
         validate_image_extraction(args.hdf5_file, args.save_individual_images)
     elif args.mode == 'tree':
         print_hdf5_tree(args.hdf5_file)
+    elif args.mode == 'h5_to_yolo':
+        hdf5_to_yolo(args.hdf5_file)
         
 def get_args() -> Namespace:
     # Create the parser
     parser = ArgumentParser()
     # Add arguments to the parser
-    parser.add_argument('mode', type=str, choices=['extract', 'validate', 'tree'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
+    parser.add_argument('mode', type=str, choices=['extract', 'validate', 'tree', 'h5_to_yolo'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
     parser.add_argument('--video_folder', type=str, default='data/raw/videos', help='The folder containing the videos.')
     parser.add_argument('--hdf5_file', type=str, default='data/raw/images/images.hdf5', help='The hdf5 file to save the images to.')
     parser.add_argument('--save_individual_images', type=bool, default=False, help='Whether to save the individual images to the temp_images folder.')

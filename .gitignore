@@ -1,6 +1,13 @@
 # venv
 strawenv/
 
+# models
+models/*
+
+# runs
+runs/*
+
+
 # Data
 data/*
 
