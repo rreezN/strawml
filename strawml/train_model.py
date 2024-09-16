@@ -3,7 +3,7 @@ import torch
 from tqdm import tqdm
 
 import data.dataloader as dl
-import models.cnn_classifier as cnn
+import strawml.models.straw_classifier.cnn_classifier as cnn
 
 
 def train_model(args, model, train_loader, val_loader):
@@ -48,8 +48,6 @@ def train_model(args, model, train_loader, val_loader):
                 
             print(f'Epoch: {epoch}, Validation Accuracy: {100*correct/total}')
             
-    
-    
     return
 
 
