@@ -31,9 +31,9 @@ def extract_frames_from_video(video_name: str,
                               video_id: str,
                               frame_nr: int,
                               save_individual_images: bool = False,
-                              image_id: int = None,
+                              image_id = None,
                               fbf: int = 30 # frames between frames
-                              ) -> list:
+                              ) -> int:
     print("Frame extraction started...")
     cap = cv2.VideoCapture(video_path)
     # Check if the video file opened successfully
@@ -86,7 +86,7 @@ def extract_frames_from_video(video_name: str,
 
         if frame_count == video_length // fbf:
             break
-
+    print("\n", frame_nr+frame_count)
     pbar.close() # Close the progress bar
     cap.release() # Release the video capture object
     return frame_nr + frame_count
@@ -118,6 +118,7 @@ def save_frames_to_hdf5(frame: np.ndarray,
 
         # Add the video ID as an attribute to the dataset
         group.attrs['video ID'] = video_id
+        group.attrs['augmented'] = False
 
 def image_extractor(video_folder: str, 
                     hdf5_file: str, 
