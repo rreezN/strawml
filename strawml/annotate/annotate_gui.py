@@ -14,7 +14,6 @@ import os
 from strawml.data.make_dataset import decode_binary_image
 
 
-# TODO: Add rotation of bbox with shift-scrl or scrl
 # TODO: Save annotations as x1, y1, x2, y2, x3, y3, x4, y4
 # x4,y4      x1,y1
 #
@@ -47,17 +46,20 @@ class ImageBox(ttk.Frame):
         self.chute_annotated = False
         self.straw_annotated = False
         self.rect = None
-        self.start_x = None
-        self.start_y = None
+        self.current_rect = None
+        # self.start_x = None
+        # self.start_y = None
         
         self.rect2 = None
-        self.start_x2 = None
-        self.start_y2 = None
+        # self.start_x2 = None
+        # self.start_y2 = None
         
         self.canvas = None 
         self.top_left = None
-        self.top_left_color = 'yellow'
-        
+        self.top_right = None
+        self.bottom_left = None
+        self.bottom_right = None
+                
         self.set_image()
         
         self.canvas = tk.Canvas(self, cursor="cross", width=self.image_size[1], height=self.image_size[0])
@@ -95,16 +97,18 @@ class ImageBox(ttk.Frame):
                 # load bboxes
                 if 'bbox_chute' in annotated[image_group]['annotations'].keys():
                     self.chute_annotated = True
-                    self.start_x = annotated[image_group]['annotations']['bbox_chute'][...][6]//2
-                    self.start_y = annotated[image_group]['annotations']['bbox_chute'][...][7]//2
-                    self.curX = annotated[image_group]['annotations']['bbox_chute'][...][2]//2
-                    self.curY = annotated[image_group]['annotations']['bbox_chute'][...][3]//2
-                if 'bbox_straw' in annotated[image_group]['annotations'].keys():
-                    self.straw_annotated = True
-                    self.start_x2 = annotated[image_group]['annotations']['bbox_straw'][...][6]//2
-                    self.start_y2 = annotated[image_group]['annotations']['bbox_straw'][...][7]//2
-                    self.curX2 = annotated[image_group]['annotations']['bbox_straw'][...][2]//2
-                    self.curY2 = annotated[image_group]['annotations']['bbox_straw'][...][3]//2
+                    self.top_left = annotated[image_group]['annotations']['bbox_chute'][...][6]/2, annotated[image_group]['annotations']['bbox_chute'][...][7]/2
+                    self.top_right = annotated[image_group]['annotations']['bbox_chute'][...][0]/2, annotated[image_group]['annotations']['bbox_chute'][...][1]/2
+                    self.bottom_right = annotated[image_group]['annotations']['bbox_chute'][...][2]/2, annotated[image_group]['annotations']['bbox_chute'][...][3]/2
+                    self.bottom_left = annotated[image_group]['annotations']['bbox_chute'][...][4]/2, annotated[image_group]['annotations']['bbox_chute'][...][5]/2
+                    # print("Loading bbox")
+                    # print(self.top_left, self.top_right, self.bottom_left, self.bottom_right)
+                # if 'bbox_straw' in annotated[image_group]['annotations'].keys():
+                #     self.straw_annotated = True
+                #     self.start_x2 = annotated[image_group]['annotations']['bbox_straw'][...][6]/2
+                #     self.start_y2 = annotated[image_group]['annotations']['bbox_straw'][...][7]/2
+                #     self.curX2 = annotated[image_group]['annotations']['bbox_straw'][...][2]/2
+                #     self.curY2 = annotated[image_group]['annotations']['bbox_straw'][...][3]/2
                 
                 # load fullness and obstructed
                 if 'fullness' in annotated[image_group]['annotations'].keys():
@@ -149,24 +153,25 @@ class ImageBox(ttk.Frame):
         # Initialize bounding box parameters
         if not self.chute_annotated:
             self.rect = None
-            self.start_x = None
-            self.start_y = None
+            self.top_left = None
         else:
             coords = self.get_coords()
+            # print("Drawing bbox")
+            # print(coords)
             self.rect = self.canvas.create_polygon(coords, outline='green', width=2, fill='', tag='bbox')
-            self.top_left = self.canvas.create_oval(self.start_x, self.start_y, self.start_x+5, self.start_y+5, outline=self.top_left_color, width=2, fill='', tag='bbox_top_left')
+            self.top_left_ring = self.canvas.create_oval(self.top_left[0], self.top_left[1], self.top_left[0]+5, self.top_left[1]+5, outline="yellow", width=2, fill='', tag='bbox_top_left')
             self.current_rect = self.rect
             
-        if not self.straw_annotated:
-            self.rect2 = None
-            self.start_x2 = None
-            self.start_y2 = None
-        else:
-            # TODO: update if we need to draw 2nd bbox
-            coords = self.curX2, self.start_y2, self.curX2, self.curY2, self.start_x2, self.curY2, self.start_x2, self.start_y2
-            self.rect2 = self.canvas.create_polygon(coords, outline='red', width=2, fill='', tag='bbox')
-            self.top_left = self.canvas.create_oval(self.start_x2, self.start_y2, self.start_x2+5, self.start_y2+5, outline=self.top_left_color, width=2, fill='', tag='bbox_top_left')
-            self.current_rect = self.rect2
+        # if not self.straw_annotated:
+        #     self.rect2 = None
+        #     self.start_x2 = None
+        #     self.start_y2 = None
+        # else:
+        #     # TODO: update if we need to draw 2nd bbox
+        #     coords = self.curX2, self.start_y2, self.curX2, self.curY2, self.start_x2, self.curY2, self.start_x2, self.start_y2
+        #     self.rect2 = self.canvas.create_polygon(coords, outline='red', width=2, fill='', tag='bbox')
+        #     self.top_left = self.canvas.create_oval(self.start_x2, self.start_y2, self.start_x2+5, self.start_y2+5, outline=self.top_left_color, width=2, fill='', tag='bbox_top_left')
+        #     self.current_rect = self.rect2
         
     
     def on_button_press(self, event: tk.Event) -> None:
@@ -175,12 +180,14 @@ class ImageBox(ttk.Frame):
         Args:
             event (tk.Event): The event object from the mouse click.
         """
-        if not self.rect:
-            self.start_x = event.x
-            self.start_y = event.y
-            coords = self.get_coords()
+        if self.rect is None:
+            self.top_left = (event.x, event.y)
+            self.top_right = (event.x, event.y)
+            self.bottom_right = (event.x, event.y)
+            self.bottom_left = (event.x, event.y)
+            coords = self.get_upright_bbox()
             self.rect = self.canvas.create_polygon(coords, outline='green', width=2, fill='', tag='bbox')
-            self.top_left = self.canvas.create_oval(self.start_x, self.start_y, self.start_x+5, self.start_y+5, outline=self.top_left_color, width=2, fill='', tag='bbox_top_left')
+            self.top_left_ring = self.canvas.create_oval(self.top_left, self.top_left[0]+5, self.top_left[1]+5, outline="yellow", width=2, fill='', tag='bbox_top_left')
             self.current_rect = self.rect
         # elif not self.rect2:
         #     self.start_x2 = event.x
@@ -191,8 +198,7 @@ class ImageBox(ttk.Frame):
         #     self.start_x2 = event.x
         #     self.start_y2 = event.y
         else:
-            self.start_x = event.x
-            self.start_y = event.y
+            self.top_left = (event.x, event.y)
             
     def on_move_press(self, event: tk.Event) -> None:
         """Updates the bounding box on the canvas as the mouse is dragged.
@@ -201,20 +207,19 @@ class ImageBox(ttk.Frame):
             event (tk.Event): The event object from the mouse drag.
         """
         if not self.rect2:
-            self.curX = self.canvas.canvasx(event.x)
-            self.curY = self.canvas.canvasy(event.y)
-        elif self.rect:
-            self.curX2 = self.canvas.canvasx(event.x)
-            self.curY2 = self.canvas.canvasy(event.y)
+            self.bottom_right = (self.canvas.canvasx(event.x), self.canvas.canvasy(event.y))
+        # elif self.rect:
+        #     self.curX2 = self.canvas.canvasx(event.x)
+        #     self.curY2 = self.canvas.canvasy(event.y)
         
         if self.current_rect == self.rect:
-            coords = self.get_coords()
+            coords = self.get_upright_bbox()
             self.canvas.coords(self.rect, coords)
-            self.canvas.coords(self.top_left, self.start_x, self.start_y, self.start_x+5, self.start_y+5)
-        elif self.current_rect == self.rect2:
-            coords = self.curX2, self.start_y2, self.curX2, self.curY2, self.start_x2, self.curY2, self.start_x2, self.start_y2
-            self.canvas.coords(self.rect2, coords)
-            self.canvas.coords(self.top_left, self.start_x2, self.start_y2, self.start_x2+5, self.start_y2+5)
+            self.canvas.coords(self.top_left_ring, self.top_left[0], self.top_left[1], self.top_left[0]+5, self.top_left[1]+5)
+        # elif self.current_rect == self.rect2:
+        #     coords = self.curX2, self.start_y2, self.curX2, self.curY2, self.start_x2, self.curY2, self.start_x2, self.start_y2
+        #     self.canvas.coords(self.rect2, coords)
+        #     self.canvas.coords(self.top_left, self.start_x2, self.start_y2, self.start_x2+5, self.start_y2+5)
         
     
     def on_button_release(self, event: tk.Event) -> None:
@@ -223,31 +228,32 @@ class ImageBox(ttk.Frame):
         Args:
             event (tk.Event): The event object from the mouse release.
         """
-        if self.start_x < 0:
-            self.start_x = 0
-        elif self.start_x > self.image_size[1]:
-            self.start_x = self.image_size[1]
+        if self.top_left[0] < 0:
+            self.top_left[0] = 0
+        elif self.top_left[0] > self.image_size[1]:
+            self.top_left[0] = self.image_size[1]
         
-        if self.start_y < 5:
-            self.start_y = 5
-        elif self.start_y > self.image_size[0]:
-            self.start_y = self.image_size[0]
+        if self.top_left[1] < 5:
+            self.top_left[1] = 5
+        elif self.top_left[1] > self.image_size[0]:
+            self.top_left[1] = self.image_size[0]
 
-        if self.curX < 0:
-            self.curX = 0
-        elif self.curX > self.image_size[1]:
-            self.curX = self.image_size[1]
+        if self.bottom_right == None: return
+        if self.bottom_right[0] < 0:
+            self.bottom_right[0] = 0
+        elif self.bottom_right[0] > self.image_size[1]:
+            self.bottom_right[0] = self.image_size[1]
         
-        if self.curY < 5:
-            self.curY = 5
-        elif self.curY > self.image_size[0]:
-            self.curY = self.image_size[0]
+        if self.bottom_right[1] < 5:
+            self.bottom_right[1] = 5
+        elif self.bottom_right[1] > self.image_size[0]:
+            self.bottom_right[1] = self.image_size[0]
         
         self.parent.update_next_button()
-        coords = self.get_coords() 
+        coords = self.get_upright_bbox()
         #self.rect = self.canvas.create_polygon(coords, outline='green', width=2, fill='', tag='bbox')
         self.canvas.coords(self.rect, coords)
-        self.canvas.coords(self.top_left, self.start_x, self.start_y, self.start_x+5, self.start_y+5)
+        self.canvas.coords(self.top_left_ring, self.top_left[0], self.top_left[1], self.top_left[0]+5, self.top_left[1]+5)
     
     def on_right_press(self, event: tk.Event) -> None:
         """Deletes the last bounding box drawn when the right mouse button is pressed.
@@ -255,18 +261,21 @@ class ImageBox(ttk.Frame):
         Args:
             event (tk.Event): The event object from the right mouse click.
         """
-        if self.rect2 is not None:
-            self.canvas.delete(self.rect2)
-            self.canvas.delete(self.top_left)
-            self.rect2 = None
-            self.start_x2 = None
-            self.start_y2 = None
-        elif self.rect is not None:
+        # if self.rect2 is not None:
+        #     self.canvas.delete(self.rect2)
+        #     self.canvas.delete(self.top_left)
+        #     self.rect2 = None
+        #     self.start_x2 = None
+        #     self.start_y2 = None
+        # elif self.rect is not None:
+        if self.rect is not None:
             self.canvas.delete(self.rect)
-            self.canvas.delete(self.top_left)
+            self.canvas.delete(self.top_left_ring)
             self.rect = None
-            self.start_x = None
-            self.start_y = None
+            self.top_left = None
+            self.top_right = None
+            self.bottom_right = None
+            self.bottom_left = None
     
     def reset(self) -> None:
         """Resets the bounding boxes and updates the 'Next' button state.
@@ -296,6 +305,9 @@ class ImageBox(ttk.Frame):
         Args:
             event (tk.event): The triggering event
         """
+        
+        # print(self.canvas.coords(self.rect))
+        
         if self.rect is None:
             return
         
@@ -303,11 +315,13 @@ class ImageBox(ttk.Frame):
             self.rotate_bbox(-1)
         elif event.delta > 0:
             self.rotate_bbox(1)
-
-        self.start_x = self.canvas.coords(self.rect)[0]
-        self.start_y = self.canvas.coords(self.rect)[1]
-        self.curX = self.canvas.coords(self.rect)[6]
-        self.curY = self.canvas.coords(self.rect)[7]
+            
+        coords = self.canvas.coords(self.rect)
+        # print(coords)
+        self.top_left = coords[0], coords[1]
+        self.top_right = coords[2], coords[3]
+        self.bottom_right = coords[4], coords[5]
+        self.bottom_left = coords[6], coords[7]
 
         # self.canvas.create_oval(self.start_x, self.start_y, self.start_x+5, self.start_y+5, outline='blue', width=2, fill='', tag='bbox_top_left')
         # self.canvas.create_oval(self.curX, self.curY, self.curX+5, self.curY+5, outline='red', width=2, fill='', tag='bbox_top_left')
@@ -337,7 +351,7 @@ class ImageBox(ttk.Frame):
         
         # Update the bounding box coordinates
         self.canvas.coords(self.rect, x1, y1, x2, y2, x3, y3, x4, y4)
-        self.canvas.coords(self.top_left, x4, y4, x4+5, y4+5)
+        self.canvas.coords(self.top_left_ring, x1, y1, x1+5, y1+5)
     
     def rotate_point(self, x: float, y: float, cx: float, cy: float, angle: float) -> tuple:
         """Rotates a point around a center point by a given angle.
@@ -359,8 +373,10 @@ class ImageBox(ttk.Frame):
         return new_x, new_y
     
     def get_coords(self):
-        return self.start_x, self.start_y, self.curX, self.start_y, self.curX, self.curY, self.start_x, self.curY
-        
+        return self.top_left[0], self.top_left[1], self.top_right[0], self.top_right[1], self.bottom_right[0], self.bottom_right[1], self.bottom_left[0], self.bottom_left[1]
+
+    def get_upright_bbox(self):
+        return self.top_left[0], self.top_left[1], self.bottom_right[0], self.top_left[1], self.bottom_right[0], self.bottom_right[1], self.top_left[0], self.bottom_right[1]
         
 
 class HelpWindow(ttk.Frame):
@@ -661,12 +677,15 @@ class MainApplication(ttk.Frame):
         
         # Save the bounding box coordinates (scaled to correct size)
         img_box = self.image_box
-        if img_box.start_x != None:
-            coords = [img_box.curX*2, img_box.start_y*2, img_box.curX*2, img_box.curY*2, img_box.start_x*2, img_box.curY*2, img_box.start_x*2, img_box.start_y*2]
+        if img_box.rect != None:
+            coords = [img_box.top_right[0]*2, img_box.top_right[1]*2, img_box.bottom_right[0]*2, img_box.bottom_right[1]*2, img_box.bottom_left[0]*2, img_box.bottom_left[1]*2, img_box.top_left[0]*2, img_box.top_left[1]*2]
             annotation_group.create_dataset('bbox_chute', data=coords)
-        if img_box.start_x2 != None:
-            coords = [img_box.curX2*2, img_box.start_y2*2, img_box.curX2*2, img_box.curY2*2, img_box.start_x2*2, img_box.curY2*2, img_box.start_x2*2, img_box.start_y2*2]
-            annotation_group.create_dataset('bbox_straw', data=coords)
+            # print("Saving chute bbox")
+            # coords = [coord/2 for coord in coords]
+            # print(coords)
+        # if img_box.start_x2 != None:
+        #     coords = [img_box.curX2*2, img_box.start_y2*2, img_box.curX2*2, img_box.curY2*2, img_box.start_x2*2, img_box.curY2*2, img_box.start_x2*2, img_box.start_y2*2]
+        #     annotation_group.create_dataset('bbox_straw', data=coords)
         
         # Save the fullness and obstructed values
         fullness = self.fullness_box.full_amount.get()
