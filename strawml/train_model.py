@@ -60,7 +60,7 @@ def get_args():
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate for training')
     parser.add_argument('--model_path', type=str, default='models/cnn_classifier.pth', help='Path to load the model from')
     parser.add_argument('--save_path', type=str, default='models/cnn_classifier_new.pth', help='Path to save the model to')
-    parser.add_argument('--data_path', type=str, default='data/processed/annotated_images.hdf5', help='Path to the training data')
+    parser.add_argument('--data_path', type=str, default='data/processed/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=True, help='Include heatmaps in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     
@@ -69,8 +69,8 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
     
-    train_loader = dl.Straw(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, random_state=args.seed)
-    test_loader = dl.Straw(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, random_state=args.seed)
+    train_loader = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, random_state=args.seed)
+    test_loader = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, random_state=args.seed)
     
     cnn_model = cnn.CNNClassifier()
     

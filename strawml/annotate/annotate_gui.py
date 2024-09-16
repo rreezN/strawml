@@ -59,6 +59,13 @@ class ImageBox(ttk.Frame):
         self.top_right = None
         self.bottom_left = None
         self.bottom_right = None
+        
+        self.mouse_wheel_pressed = False
+        self.mouse_wheel_drag_start = None
+        self.top_left_drag_start = None
+        self.top_right_drag_start = None
+        self.bottom_left_drag_start = None
+        self.bottom_right_drag_start = None
                 
         self.set_image()
         
@@ -145,6 +152,8 @@ class ImageBox(ttk.Frame):
         self.canvas.bind("<ButtonPress-3>", self.on_right_press)
         self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)
         self.canvas.bind("<Shift-MouseWheel>", self.on_shift_mouse_wheel)
+        self.canvas.bind("<Button-2>", self.on_mouse_wheel_press)
+        self.canvas.bind("<B2-Motion>", self.on_mouse_wheel_move_press)
         
         # Show image
         self.new_image = ImageTk.PhotoImage(Image.fromarray(image))
@@ -206,6 +215,7 @@ class ImageBox(ttk.Frame):
         Args:
             event (tk.Event): The event object from the mouse drag.
         """
+        
         if not self.rect2:
             self.bottom_right = (self.canvas.canvasx(event.x), self.canvas.canvasy(event.y))
         # elif self.rect:
@@ -216,12 +226,12 @@ class ImageBox(ttk.Frame):
             coords = self.get_upright_bbox()
             self.canvas.coords(self.rect, coords)
             self.canvas.coords(self.top_left_ring, self.top_left[0], self.top_left[1], self.top_left[0]+5, self.top_left[1]+5)
+
         # elif self.current_rect == self.rect2:
         #     coords = self.curX2, self.start_y2, self.curX2, self.curY2, self.start_x2, self.curY2, self.start_x2, self.start_y2
         #     self.canvas.coords(self.rect2, coords)
         #     self.canvas.coords(self.top_left, self.start_x2, self.start_y2, self.start_x2+5, self.start_y2+5)
-        
-    
+
     def on_button_release(self, event: tk.Event) -> None:
         """Updates the bounding box coordinates when the left mouse button is released.
 
@@ -327,6 +337,33 @@ class ImageBox(ttk.Frame):
         # self.canvas.create_oval(self.curX, self.curY, self.curX+5, self.curY+5, outline='red', width=2, fill='', tag='bbox_top_left')
         
     
+    def on_mouse_wheel_press(self, event: tk.Event) -> None:
+        """Starts moving the image when the middle mouse button is pressed.
+
+        Args:
+            event (tk.Event): The event object from the middle mouse click.
+        """
+        self.mouse_wheel_drag_start = (event.x, event.y)
+        self.top_left_drag_start = self.top_left
+        self.top_right_drag_start = self.top_right
+        self.bottom_right_drag_start = self.bottom_right
+        self.bottom_left_drag_start = self.bottom_left
+        self.mouse_wheel_pressed = True
+    
+    def on_mouse_wheel_move_press(self, event: tk.Event) -> None:
+        if self.rect is not None:
+            self.top_left = (self.top_left_drag_start[0] + (event.x - self.mouse_wheel_drag_start[0]), self.top_left_drag_start[1] + (event.y - self.mouse_wheel_drag_start[1]))   
+            self.top_right = (self.top_right_drag_start[0] + (event.x - self.mouse_wheel_drag_start[0]), self.top_right_drag_start[1] + (event.y - self.mouse_wheel_drag_start[1]))
+            self.bottom_right = (self.bottom_right_drag_start[0] + (event.x - self.mouse_wheel_drag_start[0]), self.bottom_right_drag_start[1] + (event.y - self.mouse_wheel_drag_start[1]))
+            self.bottom_left = (self.bottom_left_drag_start[0] + (event.x - self.mouse_wheel_drag_start[0]), self.bottom_left_drag_start[1] + (event.y - self.mouse_wheel_drag_start[1]))
+            
+            coords = self.get_coords()
+            self.canvas.coords(self.rect, coords)
+            self.canvas.coords(self.top_left_ring, self.top_left[0], self.top_left[1], self.top_left[0]+5, self.top_left[1]+5)
+        
+        self.on_button_release(event)
+    
+    
     def rotate_bbox(self, angle: float) -> None:
         """Rotates the bounding box by the given angle.
 
@@ -398,6 +435,8 @@ class HelpWindow(ttk.Frame):
         Left click and drag to draw a bounding box around the chute.
         (DISABLED) Left click and drag again to draw a bounding box around the straw in the chute.
         Right click to delete the last bounding box drawn.
+        Shift + Scroll the mouse wheel to rotate the bounding box.
+        Press and drag the middle mouse button to move the bounding box.
         Scroll the mouse wheel to move to the next or previous image.
         Select an image from the dropdown menu to move to a specific image.
         Click the 'Next' button to save the annotations and move to the next image.
