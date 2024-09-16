@@ -229,25 +229,25 @@ class ImageBox(ttk.Frame):
             event (tk.Event): The event object from the mouse release.
         """
         if self.top_left[0] < 0:
-            self.top_left[0] = 0
+            self.top_left = (0, self.top_left[1])
         elif self.top_left[0] > self.image_size[1]:
-            self.top_left[0] = self.image_size[1]
+            self.top_left = (self.image_size[1], self.top_left[1])
         
         if self.top_left[1] < 5:
-            self.top_left[1] = 5
+            self.top_left = (self.top_left[0], 5)
         elif self.top_left[1] > self.image_size[0]:
-            self.top_left[1] = self.image_size[0]
+            self.top_left = (self.top_left[0], self.image_size[0])
 
         if self.bottom_right == None: return
         if self.bottom_right[0] < 0:
-            self.bottom_right[0] = 0
+            self.bottom_right = (0, self.bottom_right[1])
         elif self.bottom_right[0] > self.image_size[1]:
-            self.bottom_right[0] = self.image_size[1]
+            self.bottom_right = (self.image_size[1], self.bottom_right[1])
         
         if self.bottom_right[1] < 5:
-            self.bottom_right[1] = 5
+            self.bottom_right = (self.bottom_right[0], 5)
         elif self.bottom_right[1] > self.image_size[0]:
-            self.bottom_right[1] = self.image_size[0]
+            self.bottom_right = (self.bottom_right[0], self.image_size[0])
         
         self.parent.update_next_button()
         coords = self.get_upright_bbox()
