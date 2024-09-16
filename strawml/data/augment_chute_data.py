@@ -8,6 +8,8 @@ import argparse
 import h5py
 import random
 # from skimage.transform import rotate, resize
+from scipy.ndimage.interpolation import rotate
+
 
 from make_dataset import decode_binary_image
 
@@ -23,21 +25,26 @@ def is_continuous(numbers):
     return True
 
 
-def rotate(image, image_diff, bbox, angle):
+def rotate_image(image, image_diff, bbox, angle):
     """
     https://medium.com/@coding-otter/image-and-bounding-box-rotation-using-opencv-python-2def6c39453
     """
-    image = cv2.rotate(image, angle)
-    image_diff = cv2.rotate(image_diff, angle)
+    # image = rotate(image, angle).astype(np.uint8)
+    # image_diff = rotate(image_diff, angle).astype(np.uint8)
     
     h, w = image.shape[:2] 
     cx, cy = (int(w / 2), int(h / 2))
-    M = cv2.getRotationMatrix2D((cx, cy), angle, scale=1.0)
+    M = cv2.getRotationMatrix2D((cx, cy), -angle, scale=1.0)
     cos, sin = abs(M[0, 0]), abs(M[0, 1])
     newW = int((h * sin) + (w * cos))
     newH = int((h * cos) + (w * sin))
     M[0, 2] += (newW / 2) - cx
     M[1, 2] += (newH / 2) - cy
+    
+    
+    # Rotate image and bounding box
+    image = cv2.warpAffine(image, M, (newW, newH))
+    image_diff = cv2.warpAffine(image_diff, M, (newW, newH))
     
     bbox_tuple = [
         (bbox[0], bbox[1]),
@@ -62,6 +69,7 @@ def rotate(image, image_diff, bbox, angle):
     cv2.line(image, (x3, y3), (x4, y4), (0, 255, 0), 2)
     cv2.line(image, (x4, y4), (x1, y1), (0, 255, 0), 2)
     cv2.imshow("Rotated Image", image)
+    cv2.waitKey(0)
     return image, image_diff, new_bbox
     
 def translate(image, image_diff, bbox, x, y):
@@ -89,11 +97,11 @@ def augment_chute_data(args):
         image_diff = decode_binary_image(hf[frame]['image_diff'][...])
         bbox_chute = hf[frame]['annotations']['bbox_chute'][...]
         
-        if random.random() < args.fraction:
-            for i in range(args.num):
+        image, image_diff, bbox_chute = rotate_image(image, image_diff, bbox_chute, -90)
+        # if random.random() < args.fraction:
+            # for i in range(args.num):
                 # do augment
-                
-                pass
+                # pass
 
 
 
