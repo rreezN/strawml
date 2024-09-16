@@ -25,7 +25,7 @@ class ImageBox(ttk.Frame):
         Args:
             parent (ttk.Frame): The parent frame.
             images_hdf5 (str, optional): The path to the extracted frames (images.hdf5). Defaults to 'data/raw/images/images.hdf5'.
-            annotated_images (str, optional): The path to the saved annotated images (annotated_images.hdf5). Defaults to 'data/processed/annotated_images.hdf5'.
+            annotated_images (str, optional): The path to the saved annotated images (annotated_images.hdf5). Defaults to 'data/interim/{chute/straw}_detection}.hdf5'.
         """
     def __init__(self, parent: ttk.Frame, images_hdf5: str = 'data/raw/images/images.hdf5', *args, **kwargs) -> None:
         """Show the image and allow the user to draw bounding boxes on it.
@@ -33,7 +33,7 @@ class ImageBox(ttk.Frame):
         Args:
             parent (ttk.Frame): The parent frame.
             images_hdf5 (str, optional): The path to the extracted frames (images.hdf5). Defaults to 'data/raw/images/images.hdf5'.
-            annotated_images (str, optional): The path to the saved annotated images (annotated_images.hdf5). Defaults to 'data/processed/annotated_images.hdf5'.
+            annotated_images (str, optional): The path to the saved annotated images (annotated_images.hdf5). Defaults to 'data/interim/{chute/straw}_detection.hdf5'.
         """
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
@@ -81,7 +81,7 @@ class ImageBox(ttk.Frame):
         
         images = h5py.File(self.images_hdf5, 'r')
         annotated = None
-        self.annotated_hdf5 = f'data/processed/{self.parent.file_button.get()}'
+        self.annotated_hdf5 = f'data/interim/{self.parent.file_button.get()}'
         if os.path.exists(self.annotated_hdf5):
             annotated = h5py.File(self.annotated_hdf5, 'r')
         
@@ -637,7 +637,7 @@ class MainApplication(ttk.Frame):
         """Saves the annotations for the current frame to the new HDF5 file.
 
         Args:
-            new_hdf5_file (str, optional): The file to save to. Defaults to 'data/processed/annotated_images.hdf5'.
+            new_hdf5_file (str, optional): The file to save to. Defaults to 'data/interim/annotated_images.hdf5'.
             printing (bool, optional): Whether to print information about the saved annotations or not. Defaults to False.
         """
         
@@ -647,7 +647,7 @@ class MainApplication(ttk.Frame):
         if self.image_box.rect is None or self.fullness_box.full_amount.get() == -1:
             return
         
-        new_hdf5_file = f'data/processed/{self.file_button.get()}'
+        new_hdf5_file = f'data/interim/{self.file_button.get()}'
         
         new_hf = h5py.File(new_hdf5_file, 'a') # Open the HDF5 file in write mode
         old_hf = h5py.File(self.images_hdf5, 'r') # Open the original HDF5 file in read mode
