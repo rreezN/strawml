@@ -1,7 +1,8 @@
+from __init__ import *
 import random
 import cv2
 import numpy as np
-from OD import ObjectDetect
+from strawml.models.chute_finder.OD import ObjectDetect
 
 class VideoStreamCustom:
     def __init__(self, model_name=None, object_detect=True, yolo_threshold=0.3) -> None:
