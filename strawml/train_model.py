@@ -6,9 +6,13 @@ import data.dataloader as dl
 import strawml.models.straw_classifier.cnn_classifier as cnn
 
 
-def train_model(args, model, train_loader, val_loader):
+def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dataset, val_loader: torch.utils.data.Dataset) -> None:
     """Train the CNN classifier model.
     """
+    
+    if torch.cuda.is_available():
+        print('Using GPU')
+        model = model.cuda()
     
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     loss_fn = torch.nn.functional.cross_entropy
@@ -20,14 +24,19 @@ def train_model(args, model, train_loader, val_loader):
         for (data, target) in train_iterator:
             
             frame_data = data[0]
-            fullness = target[3]
+            fullness = target[2]
+            
+            if torch.cuda.is_available():
+                frame_data = frame_data.cuda()
+                fullness = fullness.cuda()
+            
+            optimizer.zero_grad()
             
             # Forward pass
             output = model(frame_data)
-            loss = loss_fn(output, torch.Tensor(fullness))
+            loss = loss_fn(output, fullness)
             
             # Backward pass
-            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             
@@ -39,14 +48,19 @@ def train_model(args, model, train_loader, val_loader):
             total = 0
             for data, target in val_loader:
                 frame_data = data[0]
-                fullness = target[3]
+                fullness = target[2]
+                
+                if torch.cuda.is_available():
+                    frame_data = frame_data.cuda()
+                    fullness = fullness.cuda()
                 
                 output = model(frame_data)
                 _, predicted = torch.max(output, 0)
                 total += 1
-                correct += (predicted == target)
+                _, target_fullness = torch.max(fullness, 0)
+                correct += (predicted == target_fullness)
                 
-            print(f'Epoch: {epoch}, Validation Accuracy: {100*correct/total}')
+            print(f'Epoch: {epoch+1}, Validation Accuracy: {100*correct/total:.2f}%')
             
     return
 
