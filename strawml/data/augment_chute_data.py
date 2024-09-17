@@ -162,14 +162,12 @@ def rotate_image_and_bbox(image, image_diff, bbox, angle_degrees):
     - rotated_bbox (np.ndarray): The rotated and clipped bounding box coordinates.
     """
     # Step 1: Rotate the image and image_diff
-    rotated_image = transform.rotate(image, angle_degrees, resize=False)
-    rotated_image_diff = transform.rotate(image_diff, angle_degrees, resize=False)
+    rotated_image = transform.rotate(image, angle_degrees, resize=False, preserve_range=True).astype(np.uint8)
+    rotated_image_diff = transform.rotate(image_diff, angle_degrees, resize=False, preserve_range=True).astype(np.uint8)
 
     # Step 2: Rotate the bounding box corners
     img_height, img_width = rotated_image.shape[:2]
     rotated_bbox = rotate_bbox(bbox, img_width, img_height, angle_degrees)
-
-    # visualise_augmentation(image, image_diff, bbox, rotated_image, rotated_image_diff, rotated_bbox)
     return rotated_image, rotated_image_diff, rotated_bbox
     
 def translate_image_and_bbox(image, image_diff, bbox, x, y):
@@ -263,28 +261,38 @@ def rescale_image_and_bbox(image, image_diff, bbox, scale_factor):
     return rescaled_image, rescaled_image_diff, rescaled_bbox
     
 def crop_image_and_bbox(image, image_diff, bbox, x, y, w, h): 
-    # crop image with x and y as center points and w and h as width and height of the cropped image
-    cropped_image = image[y - h//2:y + h//2, x - w//2:x + w//2]
-    cropped_image_diff = image_diff[y - h//2:y + h//2, x - w//2:x + w//2]
-    # crop the bounding box
+    # Ensure the cropping coordinates are within the image bounds
+    y1, y2 = max(0, y - h // 2), min(image.shape[0], y + h // 2)
+    x1, x2 = max(0, x - w // 2), min(image.shape[1], x + w // 2)
+    
+    # Crop the image and image_diff
+    cropped_image = image[y1:y2, x1:x2]
+    cropped_image_diff = image_diff[y1:y2, x1:x2]
+    
+    # Adjust the bounding box
     cropped_bbox = bbox.copy()
-    cropped_bbox[0::2] -= x - w//2
-    cropped_bbox[1::2] -= y - h//2
-    cropped_bbox = clip_bbox_to_image(cropped_bbox, w, h)
-
-    # Now we need to resize the image and the bounding box to the original size
-    cropped_image = cv2.resize(cropped_image, (image.shape[1], image.shape[0]))
-    cropped_image_diff = cv2.resize(cropped_image_diff, (image_diff.shape[1], image_diff.shape[0]))
-    cropped_bbox[0::2] = cropped_bbox[0::2] * image.shape[1] / w
-    cropped_bbox[1::2] = cropped_bbox[1::2] * image.shape[0] / h
-
-    # visualise_augmentation(image, image_diff, bbox, cropped_image, cropped_image_diff, cropped_bbox)
+    cropped_bbox[0::2] -= x1
+    cropped_bbox[1::2] -= y1
+    cropped_bbox = clip_bbox_to_image(cropped_bbox, x2 - x1, y2 - y1)
+    
+    # Resize the cropped image and bounding box to the original size
+    cropped_image = transform.resize(cropped_image, (image.shape[0], image.shape[1]), anti_aliasing=True, preserve_range=True).astype(np.uint8)
+    cropped_image_diff = transform.resize(cropped_image_diff, (image_diff.shape[0], image_diff.shape[1]), anti_aliasing=True, preserve_range=True).astype(np.uint8)
+    cropped_bbox[0::2] = cropped_bbox[0::2] * image.shape[1] / (x2 - x1)
+    cropped_bbox[1::2] = cropped_bbox[1::2] * image.shape[0] / (y2 - y1)
+    
     return cropped_image, cropped_image_diff, cropped_bbox
-
 
 def save_frames_to_hdf5(hf_path, frame, frame_nr, augmented_image, augmented_image_diff, augmented_bbox, augmentation):
     # Save the rotated image and bbo
     with h5py.File(hf_path, 'a') as hf:
+        visualise_augmentation(augmented_image, augmented_image_diff, augmented_bbox, augmented_image, augmented_image_diff, augmented_bbox)
+        _, augmented_image = cv2.imencode('.jpg', augmented_image)
+        _, augmented_image_diff = cv2.imencode('.jpg', augmented_image_diff)
+        im = decode_binary_image(augmented_image)
+        im_diff = decode_binary_image(augmented_image_diff)
+        visualise_augmentation(im, im_diff, augmented_bbox, im, im_diff, augmented_bbox)
+
         group = hf.create_group(f"frame_{frame_nr}")
         group.create_dataset('image', data=augmented_image)
         group.create_dataset('image_diff', data=augmented_image_diff)
@@ -301,6 +309,9 @@ def augment_chute_data(args):
     # Copy file from args.data to args.output_dir
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
+    # delete the file if it already exists
+    if os.path.exists(args.output_dir + "/" + args.data.split("/")[-1]):
+        os.system(f"rm {args.output_dir}/{args.data.split('/')[-1]}")
     os.system(f"cp {args.data} {args.output_dir}/")
     # Open the file
     hf_path = args.output_dir + "/" + args.data.split("/")[-1]    
@@ -312,22 +323,23 @@ def augment_chute_data(args):
 
     for frame in frame_keys:
         prob = random.random() 
-        # print(f"Frame: {frame}, Probability: {prob}")
+        print(f"Frame: {frame}, Probability: {prob}")
         image, image_diff, bbox_chute = load_image(hf_path, frame)
         if prob <= args.fraction:
             for _ in range(args.num):
                 if 'rotation' in args.type:
                     # print(f"Rotation, with frame: {frame_nr}")
-                    angle = random.randint(-90, 90)
+                    angle = random.randint(-45, 45)
                     rotated_image, rotated_image_diff, rotated_bbox = rotate_image_and_bbox(image, image_diff, bbox_chute, angle)
+                    # visualise_augmentation(image, image_diff, bbox_chute, rotated_image, rotated_image_diff, rotated_bbox)
                     save_frames_to_hdf5(hf_path, frame, frame_nr, rotated_image, rotated_image_diff, rotated_bbox, "rotation")
                     frame_nr += 1
 
                 if 'translation' in args.type:
                     # print(f"Translation, with frame: {frame_nr}")
-                    x_trans = random.randint(-200, 200)
-                    y_trans = random.randint(-200, 200)
-                    translated_image, translated_image_diff, translated_bbox = translate_image_and_bbox(image, image_diff, bbox_chute, x_trans, y_trans)        
+                    x_trans = random.randint(-500, 500)
+                    y_trans = random.randint(-500, 500)
+                    translated_image, translated_image_diff, translated_bbox = translate_image_and_bbox(image, image_diff, bbox_chute, x_trans, y_trans)  
                     save_frames_to_hdf5(hf_path, frame, frame_nr, translated_image, translated_image_diff, translated_bbox, "translation")
                     frame_nr += 1
 
