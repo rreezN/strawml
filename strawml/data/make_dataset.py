@@ -118,7 +118,7 @@ def save_frames_to_hdf5(frame: np.ndarray,
 
         # Add the video ID as an attribute to the dataset
         group.attrs['video ID'] = video_id
-        group.attrs['augmented'] = False
+        group.attrs['augmented'] = None
 
 def image_extractor(video_folder: str, 
                     hdf5_file: str, 
