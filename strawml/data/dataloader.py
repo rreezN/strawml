@@ -12,19 +12,24 @@ import psutil
 
 class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True,
-                 random_state: int = 42) -> None:
+                 random_state: int = 42, force_update_statistics: bool = False) -> None:
                 
         self.data_path = data_path
         self.data_type = data_type
         self.inc_heatmap = inc_heatmap
         self.epsilon = 1e-6 # Small number to avoid division by zero
         # Load the data file
-        self.frames = h5py.File(self.data_path, 'r')
+        self.frames = h5py.File(self.data_path, 'a')
 
         # Unfold the data to (segment, second)
         frame_names = list(self.frames.keys())
 
         # Create indices for train, test and validation
+        # TODO: Does this cause overlap between the sets?
+        # When we do:
+        # train = Chute(data_type='train')
+        # test = Chute(data_type='test')
+        # are we certain that the indices are disjoint?
         self.train_indices, self.test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=0.15, random_state=random_state)
         
         # Set the indices based on the data type
@@ -40,9 +45,9 @@ class Chute(torch.utils.data.Dataset):
 
         # Store the mean and std of the training data for normalization
         if self.inc_heatmap:
-            self.train_mean, self.train_std, self.train_hm_mean, self.train_hm_std = self.extract_means_and_stds()
+            self.train_mean, self.train_std, self.train_min, self.train_max, self.train_hm_mean, self.train_hm_std, self.train_hm_min, self.train_hm_max = self.extract_means_and_stds(force_update_statistics)
         else:
-            self.train_mean, self.train_std = self.extract_means_and_stds()
+            self.train_mean, self.train_std, self.train_min, self.train_max = self.extract_means_and_stds(force_update_statistics)
         # Store the mean and std of the training data for normalization       
         self.print_arguments()
 
@@ -134,45 +139,95 @@ class Chute(torch.utils.data.Dataset):
         return fullness
 
 
-    def extract_means_and_stds(self):
+    def extract_means_and_stds(self, force_update_statistics: bool = False):
         """Extracts the mean and standard deviation of the training data for normalization.
 
         Returns:
         -------
         tuple: mean, std
         """
-        # Define variable to contain the current segment data
-        all_data = np.array([])
-        if self.inc_heatmap:
-            all_hm_data = np.array([])
-        pbar = tqdm(range(len(self.train_indices)), desc='Extracting mean and std', leave=True)
-        for idx in pbar:
-            frame = self.frames[self.train_indices[idx]]
-            image = decode_binary_image(frame['image'][...])
-            image = image.reshape(1, image.shape[2], image.shape[0], image.shape[1])
-            if len(all_data) == 0:
-                all_data = image
-            else:
-                all_data = np.vstack((all_data, image))
-                
+        if self.frames is None:
+            return
+        
+        if "mean" in list(self.frames.attrs.keys()) and not force_update_statistics:
             if self.inc_heatmap:
-                heatmap = decode_binary_image(frame['image_diff'][...])
-                heatmap = heatmap.reshape(1, heatmap.shape[2], heatmap.shape[0], heatmap.shape[1])
-                if len(all_hm_data) == 0:
-                    all_hm_data = heatmap
-                else:
-                    all_hm_data = np.vstack((all_hm_data, heatmap))
-            pbar.set_postfix_str(f"Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}")
+                print(f"Statistics already extracted, loading from file: {self.data_path}")
+                return self.frames.attrs['mean'], self.frames.attrs['std'], self.frames.attrs['min'], self.frames.attrs['max'], self.frames.attrs['mean_hm'], self.frames.attrs['std_hm'], self.frames.attrs['min_hm'], self.frames.attrs['max_hm']
+            return self.frames.attrs['mean'], self.frames['std'], self.frames.attrs['min'], self.frames.attrs['max']
+        
+        import strawml.data.extract_statistics as es
+        
+        running_mean = None
+        running_min = None
+        running_max = None
+        zeros_array = None
+        n = 0
+        
+        running_mean_hm = None
+        running_min_hm = None
+        running_max_hm = None
+        zeros_array_hm = None
+        n_hm = 0
+        
+        pbar = tqdm(range(len(self.train_indices)), desc='Extracting statistics', leave=True)
+        for idx in pbar:
+            new_frame = self.frames[self.train_indices[idx]]
+            
+            image = decode_binary_image(new_frame['image'][...])
+            image = image.reshape(image.shape[2], image.shape[0], image.shape[1])
+            if self.inc_heatmap:
+                image_diff = decode_binary_image(new_frame['image_diff'][...])
+                image_diff = image_diff.reshape(image_diff.shape[2], image_diff.shape[0], image_diff.shape[1])
+            
+            if running_mean is None:
+                if self.inc_heatmap:
+                    existing_aggregate_hm = (0, np.zeros(image.shape[0]), np.zeros(image.shape[0]))
+                    running_min_hm = np.min(image_diff, axis=(1, 2))
+                    running_max_hm = np.max(image_diff, axis=(1, 2))
+                    
+                existing_aggregate = (0, np.zeros(image.shape[0]), np.zeros(image.shape[0]))
+                running_min = np.min(image, axis=(1, 2))
+                running_max = np.max(image, axis=(1, 2))
+            else:
+                if self.inc_heatmap:
+                    existing_aggregate_hm = (n_hm, running_mean_hm, running_s_hm)
+                existing_aggregate = (n, running_mean, running_s)
 
-        # get mean of shape (3,) from shape (n, 3, 1440, 2560)
-        im_mean = np.mean(all_data, axis=(0, 2, 3))
-        im_std = np.std(all_data, axis=(0, 2, 3))
-        hm_mean = np.mean(all_hm_data, axis=(0, 2, 3))
-        hm_std = np.std(all_hm_data, axis=(0, 2, 3))
+            if self.inc_heatmap:
+                new_hm = np.mean(image_diff, axis=(1, 2))
+                n_hm, running_mean_hm, running_s_hm = es.update(existing_aggregate=existing_aggregate_hm, new_value=new_hm)
+                running_min_hm = np.minimum(running_min_hm, np.min(image_diff, axis=(1, 2)))
+                running_max_hm = np.maximum(running_max_hm, np.max(image_diff, axis=(1, 2)))
+                
+            new_image = np.mean(image, axis=(1, 2))
+            n, running_mean, running_s = es.update(existing_aggregate=existing_aggregate, new_value=new_image)
+            running_min = np.minimum(running_min, np.min(image, axis=(1, 2)))
+            running_max = np.maximum(running_max, np.max(image, axis=(1, 2)))
 
+        
+        # Finalize the statistics
         if self.inc_heatmap:
-            return im_mean, im_std, hm_mean, hm_std
-        return im_mean, im_std
+            running_mean_hm, _, running_std_hm = es.finalize((n_hm, running_mean_hm, running_s_hm))
+            self.frames.attrs['mean_hm'] = running_mean_hm
+            self.frames.attrs['std_hm'] = running_std_hm
+            self.frames.attrs['min_hm'] = running_min_hm
+            self.frames.attrs['max_hm'] = running_max_hm
+            
+        running_mean, _, running_std = es.finalize((n, running_mean, running_s))
+        self.frames.attrs['mean'] = running_mean 
+        self.frames.attrs['std'] = running_std
+        self.frames.attrs['min'] = running_min
+        self.frames.attrs['max'] = running_max
+        
+        print("Statistics extracted:")
+        print(f'Mean: {running_mean}, Std: {running_std}, Min: {running_min}, Max: {running_max}')
+        print(f'Mean HM: {running_mean_hm}, Std HM: {running_std_hm}, Min HM: {running_min_hm}, Max HM: {running_max_hm}')
+        
+        if self.inc_heatmap:
+            return running_mean, running_std, running_min, running_max, running_mean_hm, running_std_hm, running_min_hm, running_max_hm
+        else:
+            return running_mean, running_std, running_mean_hm, running_std_hm
+        
 
     def plot_data(self):
         """Plots the histograms of the GM data before and after transformation.
@@ -210,24 +265,27 @@ if __name__ == '__main__':
     import time
     from torch.utils.data import DataLoader
 
-    trainset = Chute(data_type='train', inc_heatmap=True)
+    trainset = Chute(data_type='train', inc_heatmap=True, force_update_statistics=True)
     # trainset.plot_data()
     # test_set = Platoon(data_type='test', pm_windowsize=2)
     # test_set.plot_data()
     # val_set = Platoon(data_type='val', pm_windowsize=2)
     # val_set.plot_data()
     
+    print("Measuring time taken to load a batch")
     train_loader = DataLoader(trainset, batch_size=1, shuffle=True, num_workers=0)
 
     start = time.time()
     i = 0
     durations = []
+    pbar = tqdm(train_loader, unit="batch", position=0, leave=False)
     for data, target in train_loader:
         end = time.time()
         # asses the shape of the data and target
         duration = end-start
         durations += [duration]
-        print(f'Index: {i}, Time: {duration}.')
+        pbar.set_description(f'Batch {i+1}/{len(train_loader)} Avg. duration: {np.mean(durations):.2f}s')
+        pbar.update(1)
         i+= 1
         start = time.time()
         
@@ -241,8 +299,11 @@ if __name__ == '__main__':
         # bbox_straw = target[1]
         obstructed = target[1]
         fullness = target[2]
-        
-    print(f'Mean duration: {np.mean(durations)}')
+    
+    print(f'\nTotal time taken: {np.sum(durations):.2f}')
+    print(f'Max duration: {np.max(durations):.2f} at index {np.argmax(durations)}')
+    print(f'Min duration: {np.min(durations):.2f} at index {np.argmin(durations)}')
+    print(f'Mean duration: {np.mean(durations):.2f}')
     # Print example statistics of the last batch
     print(f'Last data shape: {data[0].shape}')
     
