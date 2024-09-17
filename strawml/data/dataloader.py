@@ -102,6 +102,7 @@ class Chute(torch.utils.data.Dataset):
         bbox_chute = bboxes_all[0]
         # bbox_straw = bboxes_all[1]
         # labels = (bbox_chute, bbox_straw, obstructed, fullness)
+        fullness = torch.Tensor(fullness)
         labels = (bbox_chute, obstructed, fullness)
             
         return frame_data, labels
