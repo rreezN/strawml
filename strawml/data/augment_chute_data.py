@@ -1,5 +1,4 @@
 from __init__ import *
-import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
@@ -7,20 +6,63 @@ import os
 import argparse
 import h5py
 import random
-# from skimage.transform import rotate, resize
 from scipy.ndimage.interpolation import rotate
 from skimage import transform
 from make_dataset import decode_binary_image
 
 
-def load_image(hf_path, frame):
+def load_image(hf_path: str, 
+               frame_nr: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Load an image, image difference, and bounding box from an HDF5 file, based
+    on the frame number and the file path.
+
+    ...
+
+    Parameters
+    ----------
+    hf_path : str
+        The path to the HDF5 file.
+    frame_nr : str
+        The frame number to load from the HDF5 file.
+    
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray]
+        A tuple containing the image, image difference, and bounding box.
+    """
     with h5py.File(hf_path, 'r') as hf:
-        image = decode_binary_image(hf[frame]['image'][...])
-        image_diff = decode_binary_image(hf[frame]['image_diff'][...])
-        bbox_chute = hf[frame]['annotations']['bbox_chute'][...]
+        image = decode_binary_image(hf[frame_nr]['image'][...])
+        image_diff = decode_binary_image(hf[frame_nr]['image_diff'][...])
+        bbox_chute = hf[frame_nr]['annotations']['bbox_chute'][...]
     return image, image_diff, bbox_chute
 
-def visualise_augmentation(image, image_diff, bbox, augmented_image, augmented_image_diff, augmented_bbox):
+def visualise_augmentation(image: np.ndarray, 
+                           image_diff: np.ndarray, 
+                           bbox: np.ndarray, 
+                           augmented_image: np.ndarray, 
+                           augmented_image_diff: np.ndarray, 
+                           augmented_bbox: np.ndarray) -> None:
+    """
+    Visualise the original and augmented images side by side, with the bounding box drawn on each image.
+
+    ...
+
+    Parameters
+    ----------
+    image : np.ndarray
+        The original image.
+    image_diff : np.ndarray
+        The image difference.
+    bbox : np.ndarray
+        The bounding box coordinates.
+    augmented_image : np.ndarray
+        The augmented image.
+    augmented_image_diff : np.ndarray
+        The augmented image difference.
+    augmented_bbox : np.ndarray
+        The augmented bounding box coordinates.
+    """
     fig, ax = plt.subplots(2, 2, figsize=(10, 5))
     ax[0,0].imshow(image)
     ax[0,1].imshow(image_diff)
@@ -37,7 +79,22 @@ def visualise_augmentation(image, image_diff, bbox, augmented_image, augmented_i
     plt.tight_layout()
     plt.show()
 
-def is_continuous(numbers):
+def is_continuous(numbers: list) -> bool:
+    """
+    Checks if a list of numbers is continuous (i.e., the difference between consecutive numbers is 1).
+
+    ...
+
+    Parameters
+    ----------
+    numbers : list
+        A list of numbers to check for continuity.
+
+    Returns
+    -------
+    bool
+        True if the numbers are continuous, False otherwise.
+    """
     # Sort the list of numbers
     sorted_numbers = sorted(numbers)
     # Check if the difference between consecutive numbers is 1
@@ -47,7 +104,22 @@ def is_continuous(numbers):
             return False
     return True
 
-def get_nonzero_coordinates(image):
+def get_nonzero_coordinates(image: np.ndarray) -> list:
+    """
+    Get the coordinates of all non-zero pixels in an image.
+
+    ...
+
+    Parameters
+    ----------
+    image : np.ndarray
+        The image to extract the coordinates from.  
+    
+    Returns
+    -------
+    list
+        A list of (x, y) coordinates of non-zero pixels in the image.
+    """
     # Convert the image to a NumPy array (if it isn't already)
     image_array = np.array(image[:,:,0])
     label_array = np.array(image[:,:,1])
@@ -63,17 +135,33 @@ def get_nonzero_coordinates(image):
 
     return coordinates
 
-def rotate_point(x, y, cx, cy, angle_radians):
+def rotate_point(x: float, 
+                 y: float, 
+                 cx: float, 
+                 cy: float, 
+                 angle_radians: float) -> tuple:
     """
     Rotates a point (x, y) around a center point (cx, cy) by a given angle in radians.
     
-    Args:
-    - x, y: Coordinates of the point to rotate.
-    - cx, cy: Center of rotation.
-    - angle_radians: The rotation angle in radians.
+    ...
 
-    Returns:
-    - (x_new, y_new): The new coordinates of the rotated point.
+    Parameters
+    ----------
+    x : float
+        The x-coordinate of the point to rotate.
+    y : float
+        The y-coordinate of the point to rotate.
+    cx : float
+        The x-coordinate of the center of rotation.
+    cy : float
+        The y-coordinate of the center of rotation.
+    angle_radians : float
+        The rotation angle in radians.
+
+    Returns
+    -------
+    tuple
+        A tuple containing the rotated x and y coordinates.
     """
     cos_angle = np.cos(angle_radians)
     sin_angle = np.sin(angle_radians)
@@ -92,18 +180,30 @@ def rotate_point(x, y, cx, cy, angle_radians):
 
     return x_new, y_new
 
-def rotate_bbox(bbox, img_width, img_height, angle_degrees):
+def rotate_bbox(bbox: list|np.ndarray, 
+                img_width: int, 
+                img_height: int, 
+                angle_degrees: float) -> np.ndarray:
     """
     Rotates the bounding box defined by four corner points around the center of the image by a given angle.
 
-    Args:
-    - bbox (list or np.ndarray): Bounding box in [x1, y1, x2, y2, x3, y3, x4, y4] format.
-    - img_width (int): Width of the image.
-    - img_height (int): Height of the image.
-    - angle_degrees (float): Angle to rotate the bounding box in degrees.
+    ...
 
-    Returns:
-    - rotated_bbox (np.ndarray): Rotated bounding box coordinates in [x1, y1, x2, y2, x3, y3, x4, y4] format.
+    Parameters
+    ----------
+    bbox : list or np.ndarray
+        Bounding box in [x1, y1, x2, y2, x3, y3, x4, y4] format.
+    img_width : int
+        Width of the image.
+    img_height : int
+        Height of the image.
+    angle_degrees : float
+        Angle to rotate the bounding box in degrees.
+
+    Returns
+    -------
+    np.ndarray
+        Rotated bounding box coordinates in [x1, y1, x2, y2, x3, y3, x4, y4] format.
     """
     # Convert angle to radians
     angle_radians = np.deg2rad(-angle_degrees)
@@ -127,39 +227,57 @@ def rotate_bbox(bbox, img_width, img_height, angle_degrees):
 
     return rotated_bbox
 
-
-def clip_bbox_to_image(bbox, img_width, img_height):
+def clip_bbox_to_image(bbox: np.ndarray, 
+                       img_width: int,
+                       img_height: int) -> np.ndarray:
     """
     Clips the bounding box coordinates to ensure they stay within the image bounds.
     
-    Args:
-    - bbox: Bounding box coordinates as a flattened array [x1, y1, x2, y2, ...].
-    - img_width: Width of the image.
-    - img_height: Height of the image.
+    ...
+
+    Parameters
+    ----------
+    bbox : np.ndarray
+        Bounding box coordinates as a flattened array [x1, y1, x2, y2, ...].
+    img_width : int
+        Width of the image.
+    img_height : int
+        Height of the image.
     
-    Returns:
-    - Clipped bounding box coordinates as a flattened array.
+    Returns
+    -------
+    np.ndarray
+        Clipped bounding box coordinates as a flattened array.
     """
     bbox[0::2] = np.clip(bbox[0::2], 0, img_width - 1)  # Clip x-coordinates
     bbox[1::2] = np.clip(bbox[1::2], 0, img_height - 1)  # Clip y-coordinates
     return bbox
 
-
-def rotate_image_and_bbox(image, image_diff, bbox, angle_degrees):
+def rotate_image_and_bbox(image: np.ndarray, 
+                          image_diff: np.ndarray, 
+                          bbox: np.ndarray, 
+                          angle_degrees: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Rotates the image and bounding box by the specified angle and clips the bounding box 
     coordinates to remain within the image borders.
 
-    Args:
-    - image (np.ndarray): The original image.
-    - image_diff (np.ndarray): The image difference.
-    - bbox (np.ndarray): Bounding box coordinates in the format [x1, y1, x2, y2, ...].
-    - angle_degrees (float): Angle to rotate the image and bounding box in degrees.
+    ...
 
-    Returns:
-    - rotated_image (np.ndarray): The rotated image.
-    - rotated_image_diff (np.ndarray): The rotated image difference.
-    - rotated_bbox (np.ndarray): The rotated and clipped bounding box coordinates.
+    Parameters
+    ----------
+    image : np.ndarray
+        The original image.
+    image_diff : np.ndarray
+        The image difference.
+    bbox : np.ndarray
+        Bounding box coordinates in the format [x1, y1, x2, y2, ...].
+    angle_degrees : float
+        Angle to rotate the image and bounding box in degrees.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray]
+        A tuple containing the rotated image, rotated image difference, and rotated bounding box.
     """
     # Step 1: Rotate the image and image_diff
     rotated_image = transform.rotate(image, angle_degrees, resize=False, preserve_range=True).astype(np.uint8)
@@ -170,22 +288,34 @@ def rotate_image_and_bbox(image, image_diff, bbox, angle_degrees):
     rotated_bbox = rotate_bbox(bbox, img_width, img_height, angle_degrees)
     return rotated_image, rotated_image_diff, rotated_bbox
     
-def translate_image_and_bbox(image, image_diff, bbox, x, y):
+def translate_image_and_bbox(image: np.ndarray, 
+                             image_diff: np.ndarray, 
+                             bbox: np.ndarray, 
+                             x: int, 
+                             y: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Translate the image and image_diff by x and y pixels. 
-    The bounding box is also translated accordingly.
+    Translate the image and image_diff by x and y pixels. The bounding box is 
+    also translated accordingly.
 
-    Args:
-    - image (np.ndarray): The original image.
-    - image_diff (np.ndarray): The image difference.
-    - bbox (list): A list of 4 values representing the bounding box in the format [x_min, y_min, x_max, y_max].
-    - x (int): Number of pixels to translate along the x-axis (horizontal shift).
-    - y (int): Number of pixels to translate along the y-axis (vertical shift).
+    ...
 
-    Returns:
-    - translated_image (np.ndarray): The translated image.
-    - translated_image_diff (np.ndarray): The translated image_diff.
-    - translated_bbox (list): The translated bounding box, clamped to image dimensions.
+    Parameters
+    ----------
+    image : np.ndarray
+        The original image.
+    image_diff : np.ndarray
+        The image difference.
+    bbox : np.ndarray
+        Bounding box coordinates in the format [x1, y1, x2, y2, ...].
+    x : int
+        Number of pixels to translate along the x-axis (horizontal shift).
+    y : int
+        Number of pixels to translate along the y-axis (vertical shift).
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray]
+        A tuple containing the translated image, translated image difference, and translated bounding box.
     """
     # Get image dimensions
     img_height, img_width = image.shape[:2]
@@ -220,20 +350,27 @@ def translate_image_and_bbox(image, image_diff, bbox, x, y):
     # visualise_augmentation(image, image_diff, bbox, translated_image, translated_image_diff, translated_bbox)
     return translated_image, translated_image_diff, translated_bbox
 
-def rescale_image_and_bbox(image, image_diff, bbox, scale_factor):
+def rescale_image_and_bbox(image: np.ndarray, image_diff: np.ndarray, bbox: np.ndarray, scale_factor: float):
     """
     Rescale the image, image_diff, and bounding box by the given scale factor.
 
-    Args:
-    - image (np.ndarray): The original image.
-    - image_diff (np.ndarray): The image difference.
-    - bbox (list): A list of 8 values representing the bounding box as 4 corner points [x1, y1, x2, y2, x3, y3, x4, y4].
-    - scale_factor (float): The factor by which to scale the image and bounding box.
+    ...
 
-    Returns:
-    - rescaled_image (np.ndarray): The rescaled image.
-    - rescaled_image_diff (np.ndarray): The rescaled image difference.
-    - rescaled_bbox (list): The rescaled bounding box.
+    Parameters
+    ----------
+    image : np.ndarray
+        The original image.
+    image_diff : np.ndarray
+        The image difference.
+    bbox : np.ndarray
+        Bounding box coordinates in the format [x1, y1, x2, y2, ...].
+    scale_factor : float
+        The factor by which to scale the image and bounding box.
+    
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray]
+        A tuple containing the rescaled image, rescaled image difference, and rescaled bounding box.
     """
 
     # Get the original image dimensions
@@ -260,7 +397,41 @@ def rescale_image_and_bbox(image, image_diff, bbox, scale_factor):
 
     return rescaled_image, rescaled_image_diff, rescaled_bbox
     
-def crop_image_and_bbox(image, image_diff, bbox, x, y, w, h): 
+def crop_image_and_bbox(image: np.ndarray, 
+                        image_diff: np.ndarray, 
+                        bbox: np.ndarray, 
+                        x: int, 
+                        y: int, 
+                        w: int, 
+                        h: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Crop the image and image_diff around the center point (x, y) with width w and height h.
+    The bounding box is adjusted accordingly.
+
+    ...
+
+    Parameters
+    ----------
+    image : np.ndarray
+        The original image.
+    image_diff : np.ndarray
+        The image difference.
+    bbox : np.ndarray
+        Bounding box coordinates in the format [x1, y1, x2, y2, ...].
+    x : int
+        The x-coordinate of the center point.
+    y : int
+        The y-coordinate of the center point.
+    w : int
+        The width of the cropped image.
+    h : int
+        The height of the cropped image.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray]
+        A tuple containing the cropped image, cropped image difference, and cropped bounding box.
+    """
     # Ensure the cropping coordinates are within the image bounds
     y1, y2 = max(0, y - h // 2), min(image.shape[0], y + h // 2)
     x1, x2 = max(0, x - w // 2), min(image.shape[1], x + w // 2)
@@ -283,7 +454,36 @@ def crop_image_and_bbox(image, image_diff, bbox, x, y, w, h):
     
     return cropped_image, cropped_image_diff, cropped_bbox
 
-def save_frames_to_hdf5(hf_path, frame, frame_nr, augmented_image, augmented_image_diff, augmented_bbox, augmentation):
+def save_frames_to_hdf5(hf_path: str, 
+                        frame: str, 
+                        frame_nr: int, 
+                        augmented_image: np.ndarray, 
+                        augmented_image_diff: np.ndarray, 
+                        augmented_bbox: np.ndarray, 
+                        augmentation: str) -> None:
+    
+    """
+    Function to save the augmented image and bounding box to an HDF5 file.
+
+    ...
+
+    Parameters
+    ----------
+    hf_path : str
+        The path to the HDF5 file.
+    frame : str
+        The frame number to load from the HDF5 file.
+    frame_nr : int
+        The frame number to save the augmented image to.
+    augmented_image : np.ndarray
+        The augmented image.
+    augmented_image_diff : np.ndarray
+        The augmented image difference.
+    augmented_bbox : np.ndarray
+        The augmented bounding box.
+    augmentation : str
+        The type of augmentation applied to the image.
+    """
     # Save the rotated image and bbo
     with h5py.File(hf_path, 'a') as hf:
         augmented_image = cv2.imencode('.jpg', augmented_image)[1]
@@ -299,8 +499,17 @@ def save_frames_to_hdf5(hf_path, frame, frame_nr, augmented_image, augmented_ima
         group.attrs['video ID'] = hf[frame].attrs['video ID']
         group.attrs['augmented'] = augmentation
 
+def augment_chute_data(args: argparse.Namespace) -> None:
+    """
+    Main wrapper function to augment the chute data.
 
-def augment_chute_data(args):
+    ...
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        The arguments passed to the script.
+    """
     # Copy file from args.data to args.output_dir
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
@@ -349,7 +558,13 @@ def augment_chute_data(args):
                     frame_nr += 1
 
 def get_args() -> argparse.Namespace:
-    """Get the arguments for the data augmentation script.
+    """
+    Get the arguments for the data augmentation script.
+
+    Returns
+    -------
+    argparse.Namespace
+        The arguments passed to the script
     """
     parser = argparse.ArgumentParser(description='Augment the chute data.')
     parser.add_argument('--data', type=str, default='data/interim/chute_detection.hdf5', help='Directory containing the chute data')
