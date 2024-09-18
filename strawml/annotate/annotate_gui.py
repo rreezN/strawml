@@ -66,6 +66,9 @@ class ImageBox(ttk.Frame):
         self.top_right_drag_start = None
         self.bottom_left_drag_start = None
         self.bottom_right_drag_start = None
+        
+        self.previous_bbox = None
+        self.previous_obstructed = None
                 
         self.set_image()
         
@@ -118,16 +121,19 @@ class ImageBox(ttk.Frame):
                 # load fullness and obstructed
                 if 'fullness' in annotated[image_group]['annotations'].keys():
                     self.parent.fullness_box.full_amount.set(annotated[image_group]['annotations']['fullness'][...])
+                
                 if 'obstructed' in annotated[image_group]['annotations'].keys():
                     self.parent.obstructed_box.obstructed.set(str(annotated[image_group]['annotations']['obstructed'][...])) 
+
+                
         elif image_group in images.keys():
             self.current_image_group = image_group
             image_bytes = images[image_group]['image'][...]
         else:
             raise FileNotFoundError(f"Could not find image group {image_group} in either HDF5 file.")
-            
+
         image = decode_binary_image(image_bytes)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.resize(image, (0, 0), fx=self.parent.image_scale, fy=self.parent.image_scale)
         self.image = image
         self.image_size = self.image.shape[:2]
@@ -158,12 +164,22 @@ class ImageBox(ttk.Frame):
         self.new_image = ImageTk.PhotoImage(Image.fromarray(image))
         self.canvas.create_image(self.image_size[1]/2, self.image_size[0]/2, image=self.new_image)
         
+        self.load_previous_bbox()
         # Initialize bounding box parameters
         if not self.chute_annotated:
             self.rect = None
             self.top_left = None
+            self.top_right = None
+            self.bottom_right = None
+            self.bottom_left = None
+            self.top_left_ring = None
         else:
-            coords = self.get_coords()
+            if self.is_upright_bbox():
+                coords = self.get_upright_bbox()
+            else:
+                coords = self.get_coords()
+            if coords is None:
+                return
             self.rect = self.canvas.create_polygon(coords, outline='green', width=2, fill='', tag='bbox')
             self.top_left_ring = self.canvas.create_oval(self.top_left[0], self.top_left[1], self.top_left[0]+5, self.top_left[1]+5, outline="yellow", width=2, fill='', tag='bbox_top_left')
             self.current_rect = self.rect
@@ -215,6 +231,8 @@ class ImageBox(ttk.Frame):
         
         if not self.rect2:
             self.bottom_right = (self.canvas.canvasx(event.x), self.canvas.canvasy(event.y))
+            self.top_right = (self.bottom_right[0], self.top_left[1])
+            self.bottom_left = (self.top_left[0], self.bottom_right[1])
         # elif self.rect:
         #     self.curX2 = self.canvas.canvasx(event.x)
         #     self.curY2 = self.canvas.canvasy(event.y)
@@ -318,6 +336,13 @@ class ImageBox(ttk.Frame):
     def reset(self) -> None:
         """Resets the bounding boxes and updates the 'Next' button state.
         """
+        self.top_left = None
+        self.top_right = None
+        self.bottom_right = None
+        self.bottom_left = None
+        self.chute_annotated = False
+        self.straw_annotated = False
+        self.top_left_ring = None
         self.rect = None
         self.rect2 = None
         self.parent.update_next_button()
@@ -449,13 +474,37 @@ class ImageBox(ttk.Frame):
         return new_x, new_y
     
     def get_coords(self):
+        if self.top_left is None or self.top_right is None or self.bottom_right is None or self.bottom_left is None:
+            return None
         return self.top_left[0], self.top_left[1], self.top_right[0], self.top_right[1], self.bottom_right[0], self.bottom_right[1], self.bottom_left[0], self.bottom_left[1]
 
     def get_upright_bbox(self):
+        if self.top_left is None or self.bottom_right is None:
+            return None
         return self.top_left[0], self.top_left[1], self.bottom_right[0], self.top_left[1], self.bottom_right[0], self.bottom_right[1], self.top_left[0], self.bottom_right[1]
         
     def is_upright_bbox(self):
+        if self.top_left is None or self.top_right is None:
+            return False
         return self.top_left[1] == self.top_right[1]
+    
+    def load_previous_bbox(self):
+        if self.previous_bbox is None:
+            return
+        if self.previous_obstructed is None:
+            return
+        self.top_left = self.previous_bbox[0]
+        self.top_right = self.previous_bbox[1]
+        self.bottom_right = self.previous_bbox[2]
+        self.bottom_left = self.previous_bbox[3]
+        self.chute_annotated = True
+        
+        self.parent.obstructed_box.obstructed.set(self.previous_obstructed)
+    
+    def save_previous_bbox(self):
+        self.previous_bbox = [self.top_left, self.top_right, self.bottom_right, self.bottom_left]
+        self.previous_fullness = self.parent.fullness_box.full_amount.get()
+        self.previous_obstructed = self.parent.obstructed_box.obstructed.get()
     
 class HelpWindow(ttk.Frame):
     """The help window for the AnnotateGUI.
@@ -700,6 +749,7 @@ class MainApplication(ttk.Frame):
             new_image_index (_type_): The index of the image to change to.
         """
         # if below 0, go to the last image
+        self.image_box.save_previous_bbox()
         if new_image_index < 0:
             new_image_index = len(self.image_list)-1
         # if above the last image, go to the first image
