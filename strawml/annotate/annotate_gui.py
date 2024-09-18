@@ -246,6 +246,7 @@ class ImageBox(ttk.Frame):
             
     def keep_bbox_inside_image(self) -> list:
         # Keep top left inside
+        if self.top_left == None: return
         if self.top_left[0] < 0:
             self.top_left = (0, self.top_left[1])
         elif self.top_left[0] > self.image_size[1]:
@@ -344,6 +345,9 @@ class ImageBox(ttk.Frame):
         """
         
         if self.rect is None:
+            return
+
+        if self.mouse_wheel_pressed:
             return
         
         if event.delta < 0:
