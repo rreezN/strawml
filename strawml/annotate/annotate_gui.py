@@ -381,7 +381,10 @@ class ImageBox(ttk.Frame):
             self.bottom_right = (self.bottom_right_drag_start[0] + (event.x - self.mouse_wheel_drag_start[0]), self.bottom_right_drag_start[1] + (event.y - self.mouse_wheel_drag_start[1]))
             self.bottom_left = (self.bottom_left_drag_start[0] + (event.x - self.mouse_wheel_drag_start[0]), self.bottom_left_drag_start[1] + (event.y - self.mouse_wheel_drag_start[1]))
             
-            coords = self.get_coords()
+            if self.is_upright_bbox():
+                coords = self.get_upright_bbox()
+            else:
+                coords = self.get_coords()
             self.canvas.coords(self.rect, coords)
             self.canvas.coords(self.top_left_ring, self.top_left[0], self.top_left[1], self.top_left[0]+5, self.top_left[1]+5)
 
@@ -389,7 +392,11 @@ class ImageBox(ttk.Frame):
     def on_mouse_wheel_release(self, event: tk.Event) -> None:
         self.keep_bbox_inside_image()
         self.parent.update_next_button()
-        coords = self.get_coords()
+        
+        if self.is_upright_bbox():
+            coords = self.get_upright_bbox()
+        else:
+            coords = self.get_coords()
 
         self.canvas.coords(self.rect, coords)
         self.canvas.coords(self.top_left_ring, self.top_left[0], self.top_left[1], self.top_left[0]+5, self.top_left[1]+5)
@@ -447,7 +454,9 @@ class ImageBox(ttk.Frame):
     def get_upright_bbox(self):
         return self.top_left[0], self.top_left[1], self.bottom_right[0], self.top_left[1], self.bottom_right[0], self.bottom_right[1], self.top_left[0], self.bottom_right[1]
         
-
+    def is_upright_bbox(self):
+        return self.top_left[1] == self.top_right[1]
+    
 class HelpWindow(ttk.Frame):
     """The help window for the AnnotateGUI.
 
