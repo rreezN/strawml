@@ -286,13 +286,8 @@ def crop_image_and_bbox(image, image_diff, bbox, x, y, w, h):
 def save_frames_to_hdf5(hf_path, frame, frame_nr, augmented_image, augmented_image_diff, augmented_bbox, augmentation):
     # Save the rotated image and bbo
     with h5py.File(hf_path, 'a') as hf:
-        visualise_augmentation(augmented_image, augmented_image_diff, augmented_bbox, augmented_image, augmented_image_diff, augmented_bbox)
-        _, augmented_image = cv2.imencode('.jpg', augmented_image)
-        _, augmented_image_diff = cv2.imencode('.jpg', augmented_image_diff)
-        im = decode_binary_image(augmented_image)
-        im_diff = decode_binary_image(augmented_image_diff)
-        visualise_augmentation(im, im_diff, augmented_bbox, im, im_diff, augmented_bbox)
-
+        augmented_image = cv2.imencode('.jpg', augmented_image)[1]
+        augmented_image_diff = cv2.imencode('.jpg', augmented_image_diff)[1]
         group = hf.create_group(f"frame_{frame_nr}")
         group.create_dataset('image', data=augmented_image)
         group.create_dataset('image_diff', data=augmented_image_diff)
@@ -345,10 +340,10 @@ def augment_chute_data(args):
 
                 if 'cropping' in args.type:
                     # print(f"Cropping, with frame: {frame_nr}")
-                    cx = random.randint(1000, 1500)
+                    cx = random.randint(1200, 1500)
                     cy = random.randint(200, 1100)
-                    w = random.randint(200, 800)
-                    h = random.randint(200, 800)
+                    w = random.randint(400, 800)
+                    h = random.randint(400, 800)
                     cropped_image, cropped_image_diff, cropped_bbox = crop_image_and_bbox(image, image_diff, bbox_chute, cx, cy, w, h)
                     save_frames_to_hdf5(hf_path, frame, frame_nr, cropped_image, cropped_image_diff, cropped_bbox, "cropping")
                     frame_nr += 1
