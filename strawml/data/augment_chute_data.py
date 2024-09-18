@@ -454,6 +454,47 @@ def crop_image_and_bbox(image: np.ndarray,
     
     return cropped_image, cropped_image_diff, cropped_bbox
 
+def color_image(image: np.ndarray,
+                image_diff: np.ndarray,
+                bbox: np.ndarray,
+                gamma: float,
+                gaussian_noise: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Alters the color composition of the image and image_diff using the given parameters.
+    Done to account for different lighting conditions in the dataset.
+
+    ...
+
+    Parameters
+    ----------
+    image : np.ndarray
+        The original image.
+    image_diff : np.ndarray
+        The image difference.
+    bbox : np.ndarray
+        Bounding box coordinates in the format [x1, y1, x2, y2, ...].
+    gamma : float
+        The gamma factor to apply to the image.
+    gaussian_noise : float
+        The standard deviation of the Gaussian noise to add to the image.        
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray]
+        A tuple containing the color-adjusted image, color-adjusted image difference, and bounding box.
+    """
+    from skimage import exposure
+    # Apply gamma correction and add Gaussian noise to the image
+    image = exposure.adjust_gamma(image, gamma)
+    image = cv2.add(image, np.random.normal(0, gaussian_noise, image.shape).astype(np.uint8))
+
+    # Apply gamma correction and add Gaussian noise to the image difference
+    image_diff = exposure.adjust_gamma(image_diff, gamma)
+    image_diff = cv2.add(image_diff, np.random.normal(0, gaussian_noise, image_diff.shape).astype(np.uint8))
+
+    return image, image_diff, bbox
+
+
 def save_frames_to_hdf5(hf_path: str, 
                         frame: str, 
                         frame_nr: int, 
@@ -557,6 +598,15 @@ def augment_chute_data(args: argparse.Namespace) -> None:
                     save_frames_to_hdf5(hf_path, frame, frame_nr, cropped_image, cropped_image_diff, cropped_bbox, "cropping")
                     frame_nr += 1
 
+                if 'color' in args.type:
+                    # print(f"Color, with frame: {frame_nr}")
+                    gamma = random.uniform(0.2, 3)
+                    gaussian_noise = random.uniform(0, 1)
+                    colored_image, colored_image_diff, colored_bbox = color_image(image, image_diff, bbox_chute, gamma, gaussian_noise)
+                    save_frames_to_hdf5(hf_path, frame, frame_nr, colored_image, colored_image_diff, colored_bbox, "color")
+                    frame_nr += 1
+                    
+
 def get_args() -> argparse.Namespace:
     """
     Get the arguments for the data augmentation script.
@@ -571,7 +621,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--output_dir', type=str, default='data/processed/augmented', help='Directory to save the augmented data')
     parser.add_argument('--num', type=int, default=1, help='Number of augmentations to create per image')
     parser.add_argument('--fraction', type=float, default=0.75, help='Fraction of images to augment')
-    parser.add_argument('--type', type=str, nargs='+', default='rotation translation cropping', help='Type of augmentation to apply. Options: rotation, translation, cropping')
+    parser.add_argument('--type', type=str, nargs='+', default='rotation translation cropping color', help='Type of augmentation to apply. Options: rotation, translation, cropping')
     return parser.parse_args()
 
 

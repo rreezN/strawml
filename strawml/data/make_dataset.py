@@ -232,8 +232,7 @@ def image_extractor(video_folder: str,
     unique_video_ids = [video_file.split('.')[0] for video_file in video_files]
     # check if the hdf5 file already exists
     if os.path.exists(hdf5_file):
-        print(f"Warning: The file {hdf5_file} already exists and will be overwritten 
-              in {overwrite_seconds} seconds.")
+        print(f"Warning: The file {hdf5_file} already exists and will be overwritten in {overwrite_seconds} seconds.")
         for i in range(overwrite_seconds):
             print(f"Overwriting in {overwrite_seconds-i} second(s)...")
             time.sleep(1)
