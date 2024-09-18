@@ -91,7 +91,7 @@ def extract_frames_from_video(video_name: str,
     video_length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     # get the last 9 letters/digits of the video name
     # Initialise the progress bar
-    pbar = tqdm(total = video_length // fbf, desc=f"Extracting frames from '{video_name[-9:]}' ({current_video_nr}/{total_nr_videos})", position=0) # Create a progress bar
+    pbar = tqdm(desc=f"Extracting frames from '{video_name[-9:]}' ({current_video_nr}/{total_nr_videos}) (0 saved)", position=0)
     # Save the current frame as the previous frame for the next iteration
     prev_frame = None
     # A counter to keep track of the number of frames processed so far in the video -> thereby allowing for fpf (frames per frame) extraction
@@ -101,32 +101,27 @@ def extract_frames_from_video(video_name: str,
 
     # Loop through the frames in the video
     while True:
-        # Skip the first frame as it will be used as the previous frame
-        if (count == -1):
-            count += 1
-            # Read the current frame from the video
-            ret, frame = cap.read()
-            if not ret:
-                break  # Break the loop if no more frames are left
-            prev_frame = frame.copy()
-            continue
-        elif (count % fbf != 0):
-            count += 1
-            continue
         # Update the progress bar with the current frame number and the total RAM usage
         pbar.set_postfix_str(f"Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}")
-
+        
         # Read the current frame from the video
         ret, frame = cap.read()
         if not ret:
             break  # Break the loop if no more frames are left
+        # Skip the first frame as it will be used as the previous frame and skip it if the count is not a multiple of fbf
+        if count == -1 or count % fbf != 0:
+            if count == -1:
+                prev_frame = frame  # Handle the unique part of the first if block
+            pbar.update(1)
+            count += 1
+            continue
 
         # save frame to temp_images folder if save_individual_images is True
         if save_individual_images:
             cv2.imwrite(f'data/raw/temp_images/frame_{image_id}.jpg', frame)
 
-        # Calculate the difference between two consecutive frames
-        frame_diff = cv2.absdiff(frame, prev_frame)
+        # Calculate the difference between two consecutive frames (frame_diff = current_frame - previous_frame)
+        frame_diff = np.abs(cv2.subtract(frame, prev_frame))
         
         # Save the current frame as the previous frame for the next iteration
         prev_frame = frame.copy()
@@ -144,10 +139,10 @@ def extract_frames_from_video(video_name: str,
         # Increment the frame count and the total frame count
         count += 1
         frame_count += 1
+        pbar.set_description(f"Extracting frames from '{video_name[-9:]}' ({current_video_nr}/{total_nr_videos}) ({frame_count} saved)")
         pbar.update(1)
-        # Break the loop if the maximum number of frames has been reached (video_length // fbf)
-        if frame_count == video_length // fbf:
-            break
+
+
     pbar.close() # Close the progress bar
     cap.release() # Release the video capture object
     return frame_nr + frame_count
@@ -181,6 +176,7 @@ def save_frames_to_hdf5(frame: np.ndarray,
     count   :   int
         The frame nr count in the video.  
     """
+    print("\n", frame_nr, count)
     with h5py.File(hdf5_file, 'a') as hf:
         # create a group for the video
         group_name = f'frame_{frame_nr}'
