@@ -89,8 +89,9 @@ def extract_frames_from_video(video_name: str,
     
     # Get the total number of frames in the video
     video_length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    # get the last 9 letters/digits of the video name
     # Initialise the progress bar
-    pbar = tqdm(total = video_length // fbf, desc=f"Extracting frames from '{video_name}' ({current_video_nr}/{total_nr_videos})", position=0) # Create a progress bar
+    pbar = tqdm(total = video_length // fbf, desc=f"Extracting frames from '{video_name[-9:]}' ({current_video_nr}/{total_nr_videos})", position=0) # Create a progress bar
     # Save the current frame as the previous frame for the next iteration
     prev_frame = None
     # A counter to keep track of the number of frames processed so far in the video -> thereby allowing for fpf (frames per frame) extraction
@@ -101,7 +102,15 @@ def extract_frames_from_video(video_name: str,
     # Loop through the frames in the video
     while True:
         # Skip the first frame as it will be used as the previous frame
-        if (count == 0) or (count % fbf != 0):
+        if (count == -1):
+            count += 1
+            # Read the current frame from the video
+            ret, frame = cap.read()
+            if not ret:
+                break  # Break the loop if no more frames are left
+            prev_frame = frame.copy()
+            continue
+        elif (count % fbf != 0):
             count += 1
             continue
         # Update the progress bar with the current frame number and the total RAM usage
@@ -111,25 +120,23 @@ def extract_frames_from_video(video_name: str,
         ret, frame = cap.read()
         if not ret:
             break  # Break the loop if no more frames are left
-        # Convert the frame from BGR to RGB
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         # save frame to temp_images folder if save_individual_images is True
         if save_individual_images:
             cv2.imwrite(f'data/raw/temp_images/frame_{image_id}.jpg', frame)
 
-        # Save the current frame as the previous frame for the next iteration
-        prev_frame = frame    
-
         # Calculate the difference between two consecutive frames
         frame_diff = cv2.absdiff(frame, prev_frame)
         
+        # Save the current frame as the previous frame for the next iteration
+        prev_frame = frame.copy()
+
         # Save the frames to the HDF5 file
         success, frame = cv2.imencode('.jpg', frame)
         if success:
             success, frame_diff = cv2.imencode('.jpg', frame_diff)
             if success:
-                save_frames_to_hdf5(frame, frame_diff, hdf5_file, video_id, frame_nr+frame_count)
+                save_frames_to_hdf5(frame, frame_diff, hdf5_file, video_id, frame_nr+frame_count, count)
         # Increment the image ID if save_individual_images is True
         if save_individual_images:
             image_id += 1
@@ -149,7 +156,8 @@ def save_frames_to_hdf5(frame: np.ndarray,
                         frame_diff: np.ndarray,
                         hdf5_file: str,
                         video_id: str,
-                        frame_nr: int) -> None:
+                        frame_nr: int,
+                        count: int) -> None:
     """
     Given a frame and its difference with the previous frame, this function saves 
     the frames to an existing HDF5 file. The frames are saved as datasets in a 
@@ -169,7 +177,9 @@ def save_frames_to_hdf5(frame: np.ndarray,
     video_id    :   str
         The unique ID of the video.
     frame_nr    :   int
-        The frame number used to name the group in the HDF5 file.       
+        The frame number used to name the group in the HDF5 file.
+    count   :   int
+        The frame nr count in the video.  
     """
     with h5py.File(hdf5_file, 'a') as hf:
         # create a group for the video
@@ -192,7 +202,9 @@ def save_frames_to_hdf5(frame: np.ndarray,
 
         # Add the video ID as an attribute to the dataset
         group.attrs['video ID'] = video_id
-        group.attrs['augmented'] = None
+        group.attrs['og_frame_nr'] = count
+        group.attrs['augmented'] = "None"
+        # print(f"\nog_frame_nr: {count} saved to {group_name}")
 
 def image_extractor(video_folder: str, 
                     hdf5_file: str, 
@@ -329,7 +341,7 @@ def hdf5_to_yolo(hdf5_file: str,
                 os.makedirs(f'{save_path}/{key}')
             for frame in val:
                 if not with_augmentation:
-                    if hf[frame].attrs['augmented'] is not None:
+                    if hf[frame].attrs['augmented'] != "None":
                         continue
                 image_bytes = hf[frame]['image'][...]
                 # decode the binary image
