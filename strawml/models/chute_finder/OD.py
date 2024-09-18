@@ -12,7 +12,7 @@ class ObjectDetect:
         
     def load_model(self, model_name):
         """
-        Loads Yolo5 model from pytorch hub.
+        Loads a local .pt model file and returns the model.
         :return: Trained Pytorch model.
         """
         if model_name:

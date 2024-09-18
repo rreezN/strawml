@@ -9,13 +9,23 @@ import time
 from argparse import ArgumentParser, Namespace
 import psutil
 from sklearn.model_selection import train_test_split
-
+import shutil
 
 def decode_binary_image(image: bytes) -> np.ndarray:
     """
     Decodes a binary image and returns it as a NumPy array.
-    :param image: The binary image data.
-    :return: The decoded image as a NumPy array.
+
+    ...
+
+    Parameters
+    ----------
+    image : bytes
+        The binary image data.
+    
+    Returns
+    -------
+    np.ndarray
+        The decoded image as a NumPy array.
     """
     # Convert the binary data to a NumPy array
     image_array = np.frombuffer(image, np.uint8)
@@ -32,9 +42,45 @@ def extract_frames_from_video(video_name: str,
                               frame_nr: int,
                               save_individual_images: bool = False,
                               image_id = None,
-                              fbf: int = 30 # frames between frames
+                              fbf: int = 30
                               ) -> int:
+    """
+    This function takes a video file and extracts the frames from it. The frames are then saved to an HDF5 file.
+    Depending on the value of the fbf (frames between frames) parameter, only every fbf-th frame is saved to the HDF5 file.
+    The function also has the option to save the individual images to the temp_images folder for validation purposes.
+    ...
+
+    Parameters
+    ----------
+    video_name  :   str
+        The name of the video file.
+    video_path  :   str
+        The path to the video file.
+    current_video_nr    :   int
+        The current video number being processed.
+    total_nr_videos :   int
+        The total number of videos in the folder.
+    hdf5_file   :   str
+        The path to the HDF5 file where the frames are saved.
+    video_id    :   str
+        The unique ID of the video.
+    frame_nr    :   int
+        The current frame number.
+    save_individual_images   :   bool
+        Whether to save the individual images to the temp_images folder.
+    image_id    :   int
+        The current image number.
+    fbf :   int
+        The number of frames between frames to extract.
+    
+    Returns
+    -------
+    int
+        The number of frames extracted from the video
+    """
+
     print("Frame extraction started...")
+    # Open the video file
     cap = cv2.VideoCapture(video_path)
     # Check if the video file opened successfully
     if not cap.isOpened():
@@ -43,32 +89,39 @@ def extract_frames_from_video(video_name: str,
     
     # Get the total number of frames in the video
     video_length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    # Initialise the progress bar
     pbar = tqdm(total = video_length // fbf, desc=f"Extracting frames from '{video_name}' ({current_video_nr}/{total_nr_videos})", position=0) # Create a progress bar
-    # save the current frame as the previous frame for the next iteration
+    # Save the current frame as the previous frame for the next iteration
     prev_frame = None
     # A counter to keep track of the number of frames processed so far in the video -> thereby allowing for fpf (frames per frame) extraction
     count = -1
     # A counter to keep track of the number of frames saved to the HDF5 file so far -> allowing for continous numbering of the frames
     frame_count = 0
+
+    # Loop through the frames in the video
     while True:
         # Skip the first frame as it will be used as the previous frame
         if (count == 0) or (count % fbf != 0):
             count += 1
             continue
+        # Update the progress bar with the current frame number and the total RAM usage
         pbar.set_postfix_str(f"Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}")
+
+        # Read the current frame from the video
         ret, frame = cap.read()
         if not ret:
             break  # Break the loop if no more frames are left
+        # Convert the frame from BGR to RGB
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        # save frame to temp_images folder
+        # save frame to temp_images folder if save_individual_images is True
         if save_individual_images:
             cv2.imwrite(f'data/raw/temp_images/frame_{image_id}.jpg', frame)
 
         # Save the current frame as the previous frame for the next iteration
         prev_frame = frame    
 
-        # Calculate the difference between consecutive frames
+        # Calculate the difference between two consecutive frames
         frame_diff = cv2.absdiff(frame, prev_frame)
         
         # Save the frames to the HDF5 file
@@ -77,16 +130,17 @@ def extract_frames_from_video(video_name: str,
             success, frame_diff = cv2.imencode('.jpg', frame_diff)
             if success:
                 save_frames_to_hdf5(frame, frame_diff, hdf5_file, video_id, frame_nr+frame_count)
+        # Increment the image ID if save_individual_images is True
         if save_individual_images:
             image_id += 1
-        
+
+        # Increment the frame count and the total frame count
         count += 1
         frame_count += 1
         pbar.update(1)
-
+        # Break the loop if the maximum number of frames has been reached (video_length // fbf)
         if frame_count == video_length // fbf:
             break
-    print("\n", frame_nr+frame_count)
     pbar.close() # Close the progress bar
     cap.release() # Release the video capture object
     return frame_nr + frame_count
@@ -95,8 +149,28 @@ def save_frames_to_hdf5(frame: np.ndarray,
                         frame_diff: np.ndarray,
                         hdf5_file: str,
                         video_id: str,
-                        frame_nr: int):
-    # print(frame_nr)
+                        frame_nr: int) -> None:
+    """
+    Given a frame and its difference with the previous frame, this function saves 
+    the frames to an existing HDF5 file. The frames are saved as datasets in a 
+    group named after the frame number, and the video ID is saved as an attribute 
+    allowing for easy retrieval upon debugging or analysis.
+
+    ...
+
+    Parameters
+    ----------
+    frame   :   np.ndarray
+        The frame to save.
+    frame_diff  :   np.ndarray
+        The difference between the current frame and the previous frame.
+    hdf5_file   :   str
+        The path to the HDF5 file where the frames are saved.
+    video_id    :   str
+        The unique ID of the video.
+    frame_nr    :   int
+        The frame number used to name the group in the HDF5 file.       
+    """
     with h5py.File(hdf5_file, 'a') as hf:
         # create a group for the video
         group_name = f'frame_{frame_nr}'
@@ -123,16 +197,39 @@ def save_frames_to_hdf5(frame: np.ndarray,
 def image_extractor(video_folder: str, 
                     hdf5_file: str, 
                     dataset_name: str = "straw-chute", 
-                    description: str = "Dataset create for a master's project at Meliora Bio.",
+                    description: str = "Dataset made for a master's project at Meliora Bio.",
                     overwrite_seconds: int = 3,
                     save_individual_images: bool = False,
                     fbf: int = 24
                     ) -> None:
+    """
+    Works as a wrapper function for the extract_frames_from_video function. This function
+    loops through the video files in the video folder and extracts the frames from each video.
+    The frames are then saved to an HDF5 file.
 
+    ...
+
+    Parameters
+    ----------
+    video_folder    :   str
+        The path to the folder containing the videos.
+    hdf5_file   :   str
+        The path to the HDF5 file where the frames are saved.
+    dataset_name    :   str
+        The name of the dataset.
+    description :   str
+        The description of the dataset.
+    overwrite_seconds   :   int
+        The number of seconds to wait before overwriting any existing HDF5 file.
+    save_individual_images   :   bool
+        Whether to save the individual images to the temp_images folder.
+    fbf :   int
+        The number of frames between frames to extract.
+    """
+    # Get the video files in the video folder
     video_files = os.listdir(video_folder) # Get the paths inside of the video folder
-
-    unique_video_ids = [video_file.split('.')[0] for video_file in video_files] # Get the video ID from the name of the file
-
+    # Get the unique video IDs from the video files
+    unique_video_ids = [video_file.split('.')[0] for video_file in video_files]
     # check if the hdf5 file already exists
     if os.path.exists(hdf5_file):
         print(f"Warning: The file {hdf5_file} already exists and will be overwritten in {overwrite_seconds} seconds.")
@@ -141,13 +238,15 @@ def image_extractor(video_folder: str,
             time.sleep(1)
         # remove the file
         os.remove(hdf5_file)
-
+    
+    # create the hdf5 file
     with h5py.File(hdf5_file, 'a') as hf:
-        # add global features
+        # add global attributes
         hf.attrs['dataset_name'] = dataset_name
         hf.attrs['description'] = description
         hf.attrs['date_created'] = np.bytes_(str(datetime.datetime.now()))
 
+    # Initialise the image ID according to the save_individual_images parameter
     if save_individual_images:
         image_id = 0
     else:
@@ -157,47 +256,81 @@ def image_extractor(video_folder: str,
     frame_nr = 0
     for file_nr, video_name in enumerate(video_files):
         frame_nr = extract_frames_from_video(video_name=video_name, 
-                                        video_path=os.path.join(video_folder, video_name), 
-                                        current_video_nr=file_nr+1,
-                                        total_nr_videos=len(video_files),
-                                        save_individual_images=save_individual_images,
-                                        image_id=image_id,
-                                        hdf5_file=hdf5_file,
-                                        video_id=unique_video_ids[file_nr], 
-                                        frame_nr=frame_nr,
-                                        fbf=fbf)
+                                             video_path=os.path.join(video_folder, video_name), 
+                                             current_video_nr=file_nr+1,
+                                             total_nr_videos=len(video_files),
+                                             save_individual_images=save_individual_images,
+                                             image_id=image_id,
+                                             hdf5_file=hdf5_file,
+                                             video_id=unique_video_ids[file_nr], 
+                                             frame_nr=frame_nr,
+                                             fbf=fbf)
 
-def hdf5_to_yolo(hdf5_file: str) -> None:
+def hdf5_to_yolo(hdf5_file: str, 
+                 with_augmentation: bool = True, 
+                 sizes: list[float] = [0.8,0.1,0.1]) -> None:
+    """
+    Accomodates the conversion of the frames in the HDF5 file to the YOLO format. The function
+    loops through the frames in the HDF5 file and saves the images and labels in the YOLO format.
+    The images are saved to the 'data/processed/yolo_format' folder, and the labels are saved in
+    the same folder with the same name as the image file but with a .txt extension. 
+
+    The most important things are:
+        # image name and label file should have same name
+        # image name should be in the format: frame_{frame_nr}.jpg
+        # label file should be in the format: frame_{frame_nr}.txt
+        # The label should contain the following information with the following syntax,
+            class_index x1 y1 x2 y2 x3 y3 x4 y4
+
+    ...
+
+    Parameters
+    ----------
+    hdf5_file  :   str
+        The path to the HDF5 file containing the frames.
+    with_augmentation   :   bool
+        Whether to include augmented images in the YOLO format.
+    
+    Raises
+    ------
+    FileNotFoundError
+        If the HDF5 file does not exist.
+    """
     # First ensure the file exists
     if not os.path.exists(hdf5_file):
         raise FileNotFoundError(f"The file {hdf5_file} does not exist.")
     
-    save_path = 'data/interim/yolo_format'
+    save_path = 'data/processed/yolo_format'
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-
-    # image name and label file should have same name
-    # image name should be in the format: frame_{frame_nr}.jpg
-    # label file should be in the format: frame_{frame_nr}.txt
-    # The label should contain the following information with the following syntax,
-    #   class_index x1 y1 x2 y2 x3 y3 x4 y4
-    # In the hdf5 file, we have x4, y4 and x2, y2. From this we can calculate the other points
-    # The label file should be saved in the same folder as the image file
+    else:
+        # remove the folder and create a new one
+        shutil.rmtree(save_path)
+        os.makedirs(save_path)
 
     with h5py.File(hdf5_file, 'r') as hf:
+        # get the frame names
         frame_names = list(hf.keys())
 
         # split frames in train, test and validation with 70%, 20% and 10% respectively
         # random state = 42
-        train_indices, test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=0.20, random_state=42)
-        test_indices, val_indices, _, _ = train_test_split(test_indices, test_indices, test_size=0.50, random_state=42)
+        train_size, test_size, val_size = sizes
+        train_indices, test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=test_size+val_size, random_state=42)
+        test_indices, val_indices, _, _ = train_test_split(test_indices, test_indices, test_size=test_size/(test_size+val_size), random_state=42)
+        # create a dictionary to store the indices
         index_dict = {'train': train_indices, 'test': test_indices, 'val': val_indices}
-        pbar = tqdm(total = len(frame_names), desc="Converting HDF5 to YOLO format", position=0) # Create a progress bar
+        # create a progress bar
+        pbar = tqdm(total = len(frame_names), desc="Converting HDF5 to YOLO format", position=0)
+        
+        # loop through the datasets and save the images and labels
         for key, val in index_dict.items():
             pbar.set_description(f"Converting HDF5 to YOLO format: {key} set")
             if not os.path.exists(f'{save_path}/{key}'):
                 os.makedirs(f'{save_path}/{key}')
             for frame in val:
+                if not with_augmentation:
+                    if hf[frame].attrs['augmented'] is not None:
+                        continue
                 image_bytes = hf[frame]['image'][...]
                 # decode the binary image
                 image = decode_binary_image(image_bytes)
@@ -205,30 +338,30 @@ def hdf5_to_yolo(hdf5_file: str) -> None:
                 cv2.imwrite(f'{save_path}/{key}/{frame}.jpg', image)
 
                 # Now we load the bounding boxes
-                bbox = hf[frame]['annotations']['bbox_chute'][...]
-                label = [0]
-                x4, y4 = bbox[0], bbox[1]
-                x2, y2 = bbox[2], bbox[3]
-                # normalise the coordinates
-                x4, y4 = x4 / image.shape[1], y4 / image.shape[0]
-                x2, y2 = x2 / image.shape[1], y2 / image.shape[0]
-                x1, y1 = x2, y4
-                x3, y3 = x4, y2
-                label.extend([x1, y1, x2, y2, x3, y3, x4, y4])
-
+                bbox = hf[frame]['annotations']['bbox_chute'][...].astype(int)
+                label = np.insert(bbox, 0, 0)
                 # Save the label to a file
                 with open( f'{save_path}/{key}/{frame}.txt', 'w') as f:
                     f.write(' '.join(map(str, label)))
-
                 pbar.update(1)
-
 
 def validate_image_extraction(hdf5_file: str,
                               save_individual_images) -> None:
-    # make sure the temp_images folder exists
-    if not os.path.exists('data/raw/temp_images') and save_individual_images:
-        FileNotFoundError("The temp_images folder does not exist. Please run the image_extractor function with the save_individual_images argument set to True.")
+    """
+    This function validates the image extraction process by comparing the original 
+    image with the decoded image to check for any differences. The function also
+    checks if the frames are continuous and prints a warning if any frames are missing.
 
+    ...
+
+    Parameters
+    ----------
+    hdf5_file   :   str
+        The path to the HDF5 file containing the frames.
+    save_individual_images   :   bool
+        Whether to save the individual images to the temp_images folder.
+    """
+    # First ensure that all frames are continuous
     with h5py.File(hdf5_file, 'r') as hf:
         all_frames = hf.keys()
         
@@ -243,10 +376,12 @@ def validate_image_extraction(hdf5_file: str,
             if frame - all_frames[i-1] != 1:
                 print(f"Warning: Frame {frame-1} is missing. Frame {frame} is not continuous with the previous frame {all_frames[i-1]}")
             
-        
+        # If the save_individual_images is False, return 
         if not save_individual_images:
             return
-        
+        # make sure the temp_images folder exists
+        if not os.path.exists('data/raw/temp_images') and save_individual_images:
+            raise FileNotFoundError("The temp_images folder does not exist. Please run the image_extractor function with the save_individual_images argument set to True.")
         # randomly select a frame
         frame = np.random.choice(list(hf.keys()))
         image_bytes = hf[frame]['image'][...]
@@ -266,11 +401,19 @@ def print_hdf5_tree(hdf5_file: str,
                     indent: int = 0) -> None:
     """
     Recursively prints the structure of an HDF5 file.
-    
-    :param hdf5_file: Path to the HDF5 file or a group/dataset to print.
-    :param group_name: The name of the group (default is root '/').
-    :param indent: The current level of indentation (used for recursive calls).
+
+    ...
+
+    Parameters
+    ----------
+    hdf5_file   :   str
+        The path to the HDF5 file.
+    group_name  :   str
+        The name of the group (default is root '/').
+    indent  :   int
+        The current level of indentation (used for recursive calls).
     """
+    # Open the HDF5 file
     with h5py.File(hdf5_file, 'r') as f:
         def print_group(group, indent):
             # Print attributes of the current group/dataset
@@ -299,6 +442,16 @@ def print_hdf5_tree(hdf5_file: str,
         print_group(f[group_name], indent)
 
 def main(args: Namespace) -> None:
+    """
+    The main function that runs the script based on the arguments provided.
+
+    ...
+
+    Parameters
+    ----------
+    args    :   Namespace
+        The arguments parsed by the ArgumentParser.
+    """
     if args.mode == 'extract':
         image_extractor(video_folder=args.video_folder, 
                         hdf5_file=args.hdf5_file, 
@@ -312,7 +465,7 @@ def main(args: Namespace) -> None:
     elif args.mode == 'tree':
         print_hdf5_tree(args.hdf5_file)
     elif args.mode == 'h5_to_yolo':
-        hdf5_to_yolo(args.hdf5_file)
+        hdf5_to_yolo(args.hdf5_file, args.with_augmentation)
         
 def get_args() -> Namespace:
     # Create the parser
@@ -326,6 +479,7 @@ def get_args() -> Namespace:
     parser.add_argument('--description', type=str, default='Dataset created for a master\'s project at Meliora Bio.', help='The description of the dataset.')
     parser.add_argument('--dataset_name', type=str, default='straw-chute', help='The name of the dataset.')
     parser.add_argument('--fbf', type=int, default=30, help='Number of frames between frames to extract.')
+    parser.add_argument('--with_augmentation', type=bool, default=True, help='Whether to include augmented images in the YOLO format.')
     return parser.parse_args()
 
 if __name__ == '__main__':
