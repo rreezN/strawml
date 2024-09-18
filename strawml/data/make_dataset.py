@@ -103,7 +103,7 @@ def extract_frames_from_video(video_name: str,
     while True:
         # Update the progress bar with the current frame number and the total RAM usage
         pbar.set_postfix_str(f"Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}")
-        
+
         # Read the current frame from the video
         ret, frame = cap.read()
         if not ret:
@@ -120,8 +120,8 @@ def extract_frames_from_video(video_name: str,
         if save_individual_images:
             cv2.imwrite(f'data/raw/temp_images/frame_{image_id}.jpg', frame)
 
-        # Calculate the difference between two consecutive frames (frame_diff = current_frame - previous_frame)
-        frame_diff = np.abs(cv2.subtract(frame, prev_frame))
+        # Calculate the difference between two consecutive frames 
+        frame_diff = cv2.absdiff(frame, prev_frame)
         
         # Save the current frame as the previous frame for the next iteration
         prev_frame = frame.copy()
@@ -176,7 +176,6 @@ def save_frames_to_hdf5(frame: np.ndarray,
     count   :   int
         The frame nr count in the video.  
     """
-    print("\n", frame_nr, count)
     with h5py.File(hdf5_file, 'a') as hf:
         # create a group for the video
         group_name = f'frame_{frame_nr}'
