@@ -120,10 +120,12 @@ class ImageBox(ttk.Frame):
                 
                 # load fullness and obstructed
                 if 'fullness' in annotated[image_group]['annotations'].keys():
-                    self.parent.fullness_box.full_amount.set(annotated[image_group]['annotations']['fullness'][...])
+                    fullness = annotated[image_group]['annotations']['fullness'][...]
+                    self.parent.fullness_box.full_amount.set(fullness)
                 
                 if 'obstructed' in annotated[image_group]['annotations'].keys():
-                    self.parent.obstructed_box.obstructed.set(str(annotated[image_group]['annotations']['obstructed'][...])) 
+                    obstructed = annotated[image_group]['annotations']['obstructed'][...]
+                    self.parent.obstructed_box.obstructed.set(str(obstructed)) 
 
                 
         elif image_group in images.keys():
@@ -502,6 +504,8 @@ class ImageBox(ttk.Frame):
         self.parent.obstructed_box.obstructed.set(self.previous_obstructed)
     
     def save_previous_bbox(self):
+        if self.rect is None:
+            return
         self.previous_bbox = [self.top_left, self.top_right, self.bottom_right, self.bottom_left]
         self.previous_fullness = self.parent.fullness_box.full_amount.get()
         self.previous_obstructed = self.parent.obstructed_box.obstructed.get()
@@ -553,7 +557,7 @@ class FullnessBox(ttk.Frame):
         
         self.full_amount = tk.DoubleVar(value=-1)
         
-        empty = ttk.Radiobutton(self, text='0%', value=0, variable=self.full_amount, command=self.parent.update_next_button)
+        empty = ttk.Radiobutton(self, text='0%', value=0.0, variable=self.full_amount, command=self.parent.update_next_button)
         five = ttk.Radiobutton(self, text='5%', value=0.05, variable=self.full_amount, command=self.parent.update_next_button)
         ten = ttk.Radiobutton(self, text='10%', value=0.10, variable=self.full_amount, command=self.parent.update_next_button)
         fifteen = ttk.Radiobutton(self, text='15%', value=0.15, variable=self.full_amount, command=self.parent.update_next_button)
@@ -817,9 +821,10 @@ class MainApplication(ttk.Frame):
         # Save the fullness and obstructed values
         fullness = self.fullness_box.full_amount.get()
         obstructed = self.obstructed_box.obstructed.get()
-        if fullness > 0: # If the fullness is not set, don't save it
+        if fullness != -1: # If the fullness is not set, don't save it
             annotation_group.create_dataset('fullness', data=fullness)
         annotation_group.create_dataset('obstructed', data=obstructed)
+        
         
         if printing:
             print(f'Saved annotations for frame {frame}')
