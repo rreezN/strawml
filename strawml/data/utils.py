@@ -88,9 +88,8 @@ def check_validity(data_path: str, file: str):
     print(f'{file} is a valid dataset, i.e. no missing values.')
     
 if __name__ == '__main__':
-    data_path = 'D:/HCAI/msc/strawml/data/processed/augmented/'
+    data_path = 'D:/HCAI/msc/strawml/data/interim/'
     file1 = 'chute_detection1_172.hdf5'
     file2 = 'chute_detection172_.hdf5'
     output_file = 'chute_detection.hdf5'
-    # combine_hdf5(data_path, file1, file2, output_file)
-    check_validity(data_path, output_file)
+    combine_hdf5(data_path, file1, file2, output_file)

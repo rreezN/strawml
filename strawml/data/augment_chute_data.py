@@ -6,6 +6,7 @@ import os
 import argparse
 import h5py
 import random
+import shutil
 from scipy.ndimage.interpolation import rotate
 from skimage import transform
 from make_dataset import decode_binary_image
@@ -557,8 +558,8 @@ def augment_chute_data(args: argparse.Namespace) -> None:
         os.makedirs(args.output_dir)
     # delete the file if it already exists
     if os.path.exists(args.output_dir + "/" + args.data.split("/")[-1]):
-        os.system(f"rm {args.output_dir}/{args.data.split('/')[-1]}")
-    os.system(f"cp {args.data} {args.output_dir}/")
+        os.remove(f"{args.output_dir}/{args.data.split('/')[-1]}")
+    shutil.copy(args.data, args.output_dir)
     # Open the file
     hf_path = args.output_dir + "/" + args.data.split("/")[-1]    
     hf = h5py.File(hf_path, 'r')   
