@@ -320,8 +320,9 @@ def hdf5_to_yolo(hdf5_file: str,
         # remove the folder and create a new one
         shutil.rmtree(save_path)
         os.makedirs(save_path)
-
+    
     with h5py.File(hdf5_file, 'r') as hf:
+
         # get the frame names
         frame_names = list(hf.keys())
 

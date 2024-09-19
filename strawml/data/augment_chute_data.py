@@ -9,7 +9,8 @@ import random
 from scipy.ndimage.interpolation import rotate
 from skimage import transform
 from make_dataset import decode_binary_image
-
+from tqdm import tqdm
+import json
 
 def load_image(hf_path: str, 
                frame_nr: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -95,7 +96,7 @@ def is_continuous(numbers: list) -> bool:
     bool
         True if the numbers are continuous, False otherwise.
     """
-    # Sort the list of numbers
+    # Sort the list of numbers 
     sorted_numbers = sorted(numbers)
     # Check if the difference between consecutive numbers is 1
     for i in range(len(sorted_numbers) - 1):
@@ -565,12 +566,14 @@ def augment_chute_data(args: argparse.Namespace) -> None:
     frame_nr = max([int(frame.split('_')[1]) for frame in hf.keys()]) + 1
     frame_keys = list(hf.keys())
     hf.close()
-
+    pbar = tqdm(total=len(frame_keys), desc="Augmenting frames", position=0)
+    frame_to_augment_dict = {}
     for frame in frame_keys:
         prob = random.random() 
-        print(f"Frame: {frame}, Probability: {prob}")
         image, image_diff, bbox_chute = load_image(hf_path, frame)
+        augment_frame_nrs = []
         if prob <= args.fraction:
+            pbar.set_description_str(f"Frame: {frame}, Probability: {round(prob, 2)}")
             for _ in range(args.num):
                 if 'rotation' in args.type:
                     # print(f"Rotation, with frame: {frame_nr}")
@@ -578,6 +581,7 @@ def augment_chute_data(args: argparse.Namespace) -> None:
                     rotated_image, rotated_image_diff, rotated_bbox = rotate_image_and_bbox(image, image_diff, bbox_chute, angle)
                     # visualise_augmentation(image, image_diff, bbox_chute, rotated_image, rotated_image_diff, rotated_bbox)
                     save_frames_to_hdf5(hf_path, frame, frame_nr, rotated_image, rotated_image_diff, rotated_bbox, "rotation")
+                    augment_frame_nrs += [frame_nr]
                     frame_nr += 1
 
                 if 'translation' in args.type:
@@ -586,6 +590,7 @@ def augment_chute_data(args: argparse.Namespace) -> None:
                     y_trans = random.randint(-500, 500)
                     translated_image, translated_image_diff, translated_bbox = translate_image_and_bbox(image, image_diff, bbox_chute, x_trans, y_trans)  
                     save_frames_to_hdf5(hf_path, frame, frame_nr, translated_image, translated_image_diff, translated_bbox, "translation")
+                    augment_frame_nrs += [frame_nr]
                     frame_nr += 1
 
                 if 'cropping' in args.type:
@@ -596,6 +601,7 @@ def augment_chute_data(args: argparse.Namespace) -> None:
                     h = random.randint(400, 800)
                     cropped_image, cropped_image_diff, cropped_bbox = crop_image_and_bbox(image, image_diff, bbox_chute, cx, cy, w, h)
                     save_frames_to_hdf5(hf_path, frame, frame_nr, cropped_image, cropped_image_diff, cropped_bbox, "cropping")
+                    augment_frame_nrs += [frame_nr]
                     frame_nr += 1
 
                 if 'color' in args.type:
@@ -604,7 +610,13 @@ def augment_chute_data(args: argparse.Namespace) -> None:
                     gaussian_noise = random.uniform(0, 1)
                     colored_image, colored_image_diff, colored_bbox = color_image(image, image_diff, bbox_chute, gamma, gaussian_noise)
                     save_frames_to_hdf5(hf_path, frame, frame_nr, colored_image, colored_image_diff, colored_bbox, "color")
+                    augment_frame_nrs += [frame_nr]
                     frame_nr += 1
+            frame_to_augment_dict[frame] = augment_frame_nrs
+        pbar.update(1)
+    # save the frame to augment dictionary to jsn file
+    with open(args.output_dir + "/frame_to_augment.json", "w") as f:
+        json.dump(frame_to_augment_dict, f)
                     
 
 def get_args() -> argparse.Namespace:
