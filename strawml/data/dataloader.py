@@ -266,7 +266,8 @@ if __name__ == '__main__':
     import time
     from torch.utils.data import DataLoader
 
-    trainset = Chute(data_type='train', inc_heatmap=True, force_update_statistics=True)
+    train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=True)
+    
     # trainset.plot_data()
     # test_set = Platoon(data_type='test', pm_windowsize=2)
     # test_set.plot_data()
@@ -274,7 +275,7 @@ if __name__ == '__main__':
     # val_set.plot_data()
     
     print("Measuring time taken to load a batch")
-    train_loader = DataLoader(trainset, batch_size=1, shuffle=True, num_workers=0)
+    train_loader = DataLoader(train_set, batch_size=1, shuffle=True, num_workers=0)
 
     start = time.time()
     i = 0
@@ -350,7 +351,7 @@ if __name__ == '__main__':
     #     ax[0].add_patch(rect)
     
     # Set suptitle to the fullness and obstructed labels
-    plt.suptitle(f'Fullness: {trainset.convert_class_to_fullness(fullness)}, Obstructed: {obstructed.item()}')
+    plt.suptitle(f'Fullness: {train_set.convert_class_to_fullness(fullness)}, Obstructed: {obstructed.item()}')
     
     plt.show()
     
