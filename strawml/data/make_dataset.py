@@ -91,30 +91,36 @@ def extract_frames_from_video(video_name: str,
     video_length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     # get the last 9 letters/digits of the video name
     # Initialise the progress bar
-    pbar = tqdm(desc=f"Extracting frames from '{video_name[-9:]}' ({current_video_nr}/{total_nr_videos}) (0 saved)", position=0)
+    pbar = tqdm(total=video_length, desc=f"Extracting frames from '[...]{video_name[-9:]}' ({current_video_nr}/{total_nr_videos}) (0 saved)", position=0)
     # Save the current frame as the previous frame for the next iteration
     prev_frame = None
     # A counter to keep track of the number of frames processed so far in the video -> thereby allowing for fpf (frames per frame) extraction
     count = -1
     # A counter to keep track of the number of frames saved to the HDF5 file so far -> allowing for continous numbering of the frames
-    frame_count = 0
+    saved_frame_count = 0
 
     # Loop through the frames in the video
     while True:
         # Update the progress bar with the current frame number and the total RAM usage
         pbar.set_postfix_str(f"Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}")
 
-        # Read the current frame from the video
-        ret, frame = cap.read()
-        if not ret:
-            break  # Break the loop if no more frames are left
         # Skip the first frame as it will be used as the previous frame and skip it if the count is not a multiple of fbf
-        if count == -1 or count % fbf != 0:
-            if count == -1:
-                prev_frame = frame  # Handle the unique part of the first if block
+        if count == -1: #or count % fbf != 0:
+            # Read the current frame from the video
+            ret, frame = cap.read()
+            if not ret:
+                break  # Break the loop if no more frames are left
+            prev_frame = frame  # Handle the unique part of the first if block
             pbar.update(1)
             count += 1
             continue
+        else:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, saved_frame_count*fbf+1) # we say +1 because we want to skip the first frame as it is the previous frame (for the first iteration)
+            # Read the current frame from the video
+            ret, frame = cap.read()
+            if not ret:
+                break  # Break the loop if no more frames are left
+
 
         # save frame to temp_images folder if save_individual_images is True
         if save_individual_images:
@@ -131,21 +137,21 @@ def extract_frames_from_video(video_name: str,
         if success:
             success, frame_diff = cv2.imencode('.jpg', frame_diff)
             if success:
-                save_frames_to_hdf5(frame, frame_diff, hdf5_file, video_id, frame_nr+frame_count, count)
+                save_frames_to_hdf5(frame, frame_diff, hdf5_file, video_id, frame_nr+saved_frame_count, count)
         # Increment the image ID if save_individual_images is True
         if save_individual_images:
             image_id += 1
 
         # Increment the frame count and the total frame count
         count += 1
-        frame_count += 1
-        pbar.set_description(f"Extracting frames from '{video_name[-9:]}' ({current_video_nr}/{total_nr_videos}) ({frame_count} saved)")
-        pbar.update(1)
+        saved_frame_count += 1
+        pbar.set_description(f"Extracting frames from '{video_name[-9:]}' ({current_video_nr}/{total_nr_videos}) ({saved_frame_count} saved)")
+        pbar.update(fbf)
 
 
     pbar.close() # Close the progress bar
     cap.release() # Release the video capture object
-    return frame_nr + frame_count
+    return frame_nr + saved_frame_count
 
 def save_frames_to_hdf5(frame: np.ndarray,
                         frame_diff: np.ndarray,
