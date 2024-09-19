@@ -10,6 +10,8 @@ from argparse import ArgumentParser, Namespace
 import psutil
 from sklearn.model_selection import train_test_split
 import shutil
+import json
+
 
 def decode_binary_image(image: bytes) -> np.ndarray:
     """
@@ -321,18 +323,20 @@ def hdf5_to_yolo(hdf5_file: str,
         shutil.rmtree(save_path)
         os.makedirs(save_path)
     
-    with h5py.File(hdf5_file, 'r') as hf:
+    # Load json file
+    with open('data/processed/augmented/frame_to_augment.json', 'r') as f:
+        frame_to_augment_frame = json.load(f)
+    frame_names = list(frame_to_augment_frame.keys())
+    
+    # split frames in train, test and validation with 70%, 20% and 10% respectively
+    # random state = 42
+    train_size, test_size, val_size = sizes
+    train_indices, test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=test_size+val_size, random_state=42)
+    test_indices, val_indices, _, _ = train_test_split(test_indices, test_indices, test_size=test_size/(test_size+val_size), random_state=42)
+    # create a dictionary to store the indices
+    index_dict = {'train': train_indices, 'test': test_indices, 'val': val_indices}
 
-        # get the frame names
-        frame_names = list(hf.keys())
-
-        # split frames in train, test and validation with 70%, 20% and 10% respectively
-        # random state = 42
-        train_size, test_size, val_size = sizes
-        train_indices, test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=test_size+val_size, random_state=42)
-        test_indices, val_indices, _, _ = train_test_split(test_indices, test_indices, test_size=test_size/(test_size+val_size), random_state=42)
-        # create a dictionary to store the indices
-        index_dict = {'train': train_indices, 'test': test_indices, 'val': val_indices}
+    with h5py.File(hdf5_file, 'r') as hf:        
         # create a progress bar
         pbar = tqdm(total = len(frame_names), desc="Converting HDF5 to YOLO format", position=0)
         
@@ -345,18 +349,20 @@ def hdf5_to_yolo(hdf5_file: str,
                 if not with_augmentation:
                     if hf[frame].attrs['augmented'] != "None":
                         continue
-                image_bytes = hf[frame]['image'][...]
-                # decode the binary image
-                image = decode_binary_image(image_bytes)
-                # Save the image to a file
-                cv2.imwrite(f'{save_path}/{key}/{frame}.jpg', image)
+                fs_ = [frame] + [f"frame_{i}" for i in frame_to_augment_frame['frame_60']]
+                for fs in fs_:
+                    image_bytes = hf[fs]['image'][...]
+                    # decode the binary image
+                    image = decode_binary_image(image_bytes)
+                    # Save the image to a file
+                    cv2.imwrite(f'{save_path}/{key}/{fs}.jpg', image)
 
-                # Now we load the bounding boxes
-                bbox = hf[frame]['annotations']['bbox_chute'][...].astype(int)
-                label = np.insert(bbox, 0, 0)
-                # Save the label to a file
-                with open( f'{save_path}/{key}/{frame}.txt', 'w') as f:
-                    f.write(' '.join(map(str, label)))
+                    # Now we load the bounding boxes
+                    bbox = hf[fs]['annotations']['bbox_chute'][...].astype(int)
+                    label = np.insert(bbox, 0, 0)
+                    # Save the label to a file
+                    with open( f'{save_path}/{key}/{fs}.txt', 'w') as f:
+                        f.write(' '.join(map(str, label)))
                 pbar.update(1)
 
 def validate_image_extraction(hdf5_file: str,
