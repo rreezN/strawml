@@ -613,7 +613,7 @@ def augment_chute_data(args: argparse.Namespace) -> None:
                     save_frames_to_hdf5(hf_path, frame, frame_nr, colored_image, colored_image_diff, colored_bbox, "color")
                     augment_frame_nrs += [frame_nr]
                     frame_nr += 1
-            frame_to_augment_dict[frame] = augment_frame_nrs
+        frame_to_augment_dict[frame] = augment_frame_nrs
         pbar.update(1)
     # save the frame to augment dictionary to jsn file
     with open(args.output_dir + "/frame_to_augment.json", "w") as f:
