@@ -52,12 +52,14 @@ class VideoStreamCustom:
         """
         return self.OD.classes[int(x)]
     
-    def __call__(self, src: int = 0):
-        video = cv2.VideoCapture(src)
+    def __call__(self, video):
         while True:
             ret, image = video.read()
             # flip the image
-            image = cv2.flip(image, 1)
+            # image = cv2.flip(image, 1)
+            # resize the image to half the size
+            image = cv2.resize(image, (int(image.shape[1]/2), int(image.shape[0]/2)))
+            
             if ret and self.object_detect:
                 results = self.OD.score_frame(image) # This takes a lot of time if ran on CPU
                 # Plot boxes from YOLO on DeepFace output

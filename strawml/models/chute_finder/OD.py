@@ -18,7 +18,7 @@ class ObjectDetect:
         if model_name:
             model = YOLO(model_name)
         else:
-            model = YOLO("models/yolov8n-obb_1.pt")
+            model = YOLO("models/yolov8n-obb-chute.pt")
             
         model.to(self.device)
 

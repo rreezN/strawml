@@ -358,7 +358,11 @@ def hdf5_to_yolo(hdf5_file: str,
                     cv2.imwrite(f'{save_path}/{key}/{fs}.jpg', image)
 
                     # Now we load the bounding boxes
-                    bbox = hf[fs]['annotations']['bbox_chute'][...].astype(int)
+                    bbox = hf[fs]['annotations']['bbox_chute'][...]
+                    # normalize the bounding box coordinates to values between 0 and 1 
+                    for i in range(len(bbox)):
+                        bbox[i] /= image.shape[1] if i % 2 == 0 else image.shape[0]
+                    # add the class index to the label
                     label = np.insert(bbox, 0, 0)
                     # Save the label to a file
                     with open( f'{save_path}/{key}/{fs}.txt', 'w') as f:
