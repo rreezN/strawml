@@ -1,9 +1,11 @@
 import torch
 
+import chute_cropper as cc
+
 class CNNClassifier(torch.nn.Module):
     """ Basic CNN classifier class.
     """
-    def __init__(self, image_size=[1440, 2440]) -> None:
+    def __init__(self) -> None:
         super(CNNClassifier, self).__init__()
 
         self.conv1 = torch.nn.Conv2d(3, 32, 3, dtype=torch.float)
@@ -13,7 +15,7 @@ class CNNClassifier(torch.nn.Module):
         self.fc1 = torch.nn.Linear(186624, 128, dtype=torch.float)
         self.fc2 = torch.nn.Linear(128, 20, dtype=torch.float)
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, bbox = None) -> torch.Tensor:
         """Forward pass of the model.
         
         Args:
@@ -23,6 +25,12 @@ class CNNClassifier(torch.nn.Module):
             Output tensor with shape [N,20]
         
         """
+        
+        if bbox is not None:
+            x, bbox = cc.rotate_and_crop_to_bbox(x, bbox)
+            
+            
+            
         
         x = self.pool(self.r(self.conv1(x)))
         x = self.pool(self.r(self.conv2(x)))
