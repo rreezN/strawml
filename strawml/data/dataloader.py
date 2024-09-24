@@ -5,15 +5,19 @@ import h5py
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from strawml.data.make_dataset import decode_binary_image
 from torchvision.transforms import v2 as transforms
 from torchvision import tv_tensors
 import psutil
 
+from strawml.data.make_dataset import decode_binary_image
+from strawml.models.straw_classifier import chute_cropper as cc
+
 class Chute(torch.utils.data.Dataset):
-    def __init__(self, data_path: str = 'data/processed/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True,
-                 random_state: int = 42, force_update_statistics: bool = False) -> None:
-                
+    def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True,
+                 random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(224, 64)) -> None:
+        
+        self.image_size = image_size
+        self.data_purpose = data_purpose
         self.data_path = data_path
         self.data_type = data_type
         self.inc_heatmap = inc_heatmap
@@ -25,11 +29,6 @@ class Chute(torch.utils.data.Dataset):
         frame_names = list(self.frames.keys())
 
         # Create indices for train, test and validation
-        # TODO: Does this cause overlap between the sets?
-        # When we do:
-        # train = Chute(data_type='train')
-        # test = Chute(data_type='test')
-        # are we certain that the indices are disjoint?
         self.train_indices, self.test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=0.15, random_state=random_state)
         
         # Set the indices based on the data type
@@ -41,7 +40,7 @@ class Chute(torch.utils.data.Dataset):
             raise ValueError('data_type must be either "train" or "test"')
         
         # Define the transformation to apply to the data
-        self.transform = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True), transforms.Resize((224, 224))]) 
+        self.transform = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]) # transforms.Resize((224, 224)) 
 
         # Store the mean and std of the training data for normalization
         if self.inc_heatmap:
@@ -69,11 +68,7 @@ class Chute(torch.utils.data.Dataset):
         frame_data = decode_binary_image(frame['image'][...])
         if self.inc_heatmap:
             heatmap = decode_binary_image(frame['image_diff'][...])
-        
-        # Standardize image wrt. training data
-        img_normalize = transforms.Normalize(mean=self.train_mean, std=self.train_std)
-        frame_data = img_normalize(frame_data)
-        
+   
         # Extract the labels
         anno = frame['annotations']
         # Ensure that the annotations are present
@@ -88,7 +83,18 @@ class Chute(torch.utils.data.Dataset):
             # If the annotations are not present, print the error and the keys of the frame
             print(f'\nKeyError: {e} in frame {self.indices[idx]}')
             print(frame['annotations'].keys(), "\n")
-
+        
+        # Rotate and crop the image to the bounding box if we are training on the straw dataset
+        if self.data_purpose == "straw":
+            frame_data, bbox_chute = cc.rotate_and_crop_to_bbox(frame_data, bbox_chute)
+            if self.inc_heatmap:
+                heatmap, _ = cc.rotate_and_crop_to_bbox(heatmap, bbox_chute)
+        
+        # Standardize image wrt. training data
+        img_normalize = transforms.Normalize(mean=self.train_mean, std=self.train_std)
+        frame_data = img_normalize(frame_data)
+        
+        
         if self.inc_heatmap:
             # Standardize heatmap wrt. training data
             heatmap_normalize = transforms.Normalize(mean=self.train_hm_mean, std=self.train_hm_std)
@@ -97,8 +103,23 @@ class Chute(torch.utils.data.Dataset):
         
         # bboxes_all = np.array([bbox_chute, bbox_straw])
         bboxes_all = np.array([bbox_chute])
-        bboxes_all = tv_tensors.BoundingBoxes(bboxes_all, format="XYXY", canvas_size = frame_data[0].shape[-2:])
-        frame_data, bboxes_all = self.transform(frame_data, bboxes_all)
+        # bboxes_all = tv_tensors.BoundingBoxes(bboxes_all, format="XYXY", canvas_size = frame_data[0].shape[-2:])
+        
+        if self.inc_heatmap:
+            img = self.transform(frame_data[1])
+            heatmap = self.transform(frame_data[1])
+            frame_data = (img, heatmap)
+        else:
+            frame_data = self.transform(frame_data)
+        
+        if self.data_purpose == "straw":
+            # Resize the image to specified size
+            self.resize = transforms.Resize(self.image_size)
+            if self.inc_heatmap:
+                frame_data = (self.resize(frame_data[0]), self.resize(frame_data[1]))
+            else:
+                frame_data = self.resize(frame_data)
+            
         bbox_chute = bboxes_all[0]
         # bbox_straw = bboxes_all[1]
         # labels = (bbox_chute, bbox_straw, obstructed, fullness)
@@ -117,8 +138,8 @@ class Chute(torch.utils.data.Dataset):
         list(int): The class label. 
         """
         
-        idx = int((fullness * 10)/0.5)
-        label = [0] * 20
+        idx = int(fullness/0.05)
+        label = [0] * 21
         label[idx] = 1
         
         return label
@@ -151,8 +172,8 @@ class Chute(torch.utils.data.Dataset):
             return
         
         if "mean" in list(self.frames.attrs.keys()) and not force_update_statistics:
+            print(f"Statistics already extracted, loading from file: {self.data_path}")
             if self.inc_heatmap:
-                print(f"Statistics already extracted, loading from file: {self.data_path}")
                 return self.frames.attrs['mean'], self.frames.attrs['std'], self.frames.attrs['min'], self.frames.attrs['max'], self.frames.attrs['mean_hm'], self.frames.attrs['std_hm'], self.frames.attrs['min_hm'], self.frames.attrs['max_hm']
             return self.frames.attrs['mean'], self.frames['std'], self.frames.attrs['min'], self.frames.attrs['max']
         
@@ -254,7 +275,7 @@ class Chute(torch.utils.data.Dataset):
             return frame_data.shape
     
     def print_arguments(self):
-        print(f'Arguments: \n \
+        print(f'Parameters: \n \
                     Data Path:          {self.data_path}\n \
                     Include Heatmaps:   {self.inc_heatmap} \n \
                     Data size:           \n \
@@ -266,6 +287,7 @@ if __name__ == '__main__':
     import time
     from torch.utils.data import DataLoader
 
+    print("---- CHUTE DETECTION DATASET ----")
     train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=True)
     
     # trainset.plot_data()
@@ -354,6 +376,10 @@ if __name__ == '__main__':
     plt.suptitle(f'Fullness: {train_set.convert_class_to_fullness(fullness)}, Obstructed: {obstructed.item()}')
     
     plt.show()
+    
+    print("---- STRAW DETECTION DATASET ----")
+    train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=True, data_purpose="straw")
+    
     
     
     

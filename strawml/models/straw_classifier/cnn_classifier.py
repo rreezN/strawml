@@ -1,6 +1,8 @@
+from __init__ import *
+
 import torch
 
-import chute_cropper as cc
+import strawml.models.straw_classifier.chute_cropper as cc
 
 class CNNClassifier(torch.nn.Module):
     """ Basic CNN classifier class.
@@ -8,18 +10,19 @@ class CNNClassifier(torch.nn.Module):
     def __init__(self) -> None:
         super(CNNClassifier, self).__init__()
 
+        
         self.conv1 = torch.nn.Conv2d(3, 32, 3, dtype=torch.float)
         self.pool = torch.nn.MaxPool2d(2, 2)
         self.r = torch.nn.ReLU()
         self.conv2 = torch.nn.Conv2d(32, 64, 3, dtype=torch.float)
-        self.fc1 = torch.nn.Linear(186624, 128, dtype=torch.float)
-        self.fc2 = torch.nn.Linear(128, 20, dtype=torch.float)
+        self.fc1 = torch.nn.Linear(48384, 128, dtype=torch.float)
+        self.fc2 = torch.nn.Linear(128, 21, dtype=torch.float)
         
     def forward(self, x: torch.Tensor, bbox = None) -> torch.Tensor:
         """Forward pass of the model.
         
         Args:
-            x: input tensor expected to be of shape [N,1,1440,2440]
+            x: input tensor expected to be of shape [N,1,self.image_size[0],self.image_size[1]]
             
         Returns:
             Output tensor with shape [N,20]
