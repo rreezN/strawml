@@ -221,7 +221,6 @@ def image_extractor(video_folder: str,
     Works as a wrapper function for the extract_frames_from_video function. This function
     loops through the video files in the video folder and extracts the frames from each video.
     The frames are then saved to an HDF5 file.
-
     ...
 
     Parameters
@@ -241,8 +240,12 @@ def image_extractor(video_folder: str,
     fbf :   int
         The number of frames between frames to extract.
     """
-    # Get the video files in the video folder
-    video_files = os.listdir(video_folder) # Get the paths inside of the video folder
+    # check if the video folder is a file or a folder
+    if not os.path.isdir(video_folder):
+        video_files = [video_folder]
+    else:
+        # Get the video files in the video folder
+        video_files = os.listdir(video_folder) # Get the paths inside of the video folder
     # Get the unique video IDs from the video files
     unique_video_ids = [video_file.split('.')[0] for video_file in video_files]
     # check if the hdf5 file already exists
@@ -349,7 +352,7 @@ def hdf5_to_yolo(hdf5_file: str,
                 if not with_augmentation:
                     if hf[frame].attrs['augmented'] != "None":
                         continue
-                fs_ = [frame] + [f"frame_{i}" for i in frame_to_augment_frame['frame_60']]
+                fs_ = [frame] + [f"frame_{i}" for i in frame_to_augment_frame[frame]]
                 for fs in fs_:
                     image_bytes = hf[fs]['image'][...]
                     # decode the binary image
