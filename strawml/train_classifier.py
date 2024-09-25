@@ -58,14 +58,14 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
                     fullness = fullness.cuda()
                 
                 output = model(frame_data)
-                _, predicted = torch.max(output, 0)
-                total += 1
-                _, target_fullness = torch.max(fullness, 0)
-                correct += (predicted == target_fullness)
+                _, predicted = torch.max(output, 1)
+                total += args.batch_size
+                _, target_fullness = torch.max(fullness, 1)
+                correct += sum(predicted == target_fullness)
             accuracy = 100 * correct /total
             correct = correct.detach().cpu()
-            # TODO: Fix this calculation to work with batches
-            # print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%')
+            
+            print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%')
             
     return
 
@@ -98,4 +98,4 @@ if __name__ == '__main__':
     
     train_model(args, cnn_model, train_loader, test_loader)
 
-
+    
