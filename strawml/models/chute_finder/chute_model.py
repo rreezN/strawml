@@ -9,10 +9,10 @@ model = YOLO("models/yolov8n-obb-chute.pt")
 
 if __name__ == '__main__':
     # train the model on our own dataset
-    # results = model.train(data="data/interim/chute_data.yaml", epochs=2, imgsz=640)
+    results = model.train(data="data/processed/chute_data.yaml", optimizer="Adam")
 
     # save model
-    # model.save("models/yolov8n-obb_1_cuda.pt")
+    model.save("models/yolov8n-obb-chute-ext-adam.pt")
 
     # Perform object detection on an image
     # load the image from disk and convert it to RGB (OpenCV ordering)
@@ -25,9 +25,9 @@ if __name__ == '__main__':
 
     # frame = cv2.imread('data/processed/yolo_format/test/frame_3.jpg')
 
-    frame = cv2.imread('data/Capture.jpg')
+    # frame = cv2.imread('data/Capture.jpg')
 
-    results = model.predict(source=frame, save=True, save_txt=True)  # save predictions as labels
+    # results = model.predict(source=frame, save=True, save_txt=True)  # save predictions as labels
 # # Display the results
 # # View results
-    results[0].show()
+    # results[0].show()

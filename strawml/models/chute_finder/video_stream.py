@@ -3,14 +3,15 @@ import random
 import cv2
 import numpy as np
 from strawml.models.chute_finder.OD import ObjectDetect
+import time
 
 class VideoStreamCustom:
-    def __init__(self, model_name=None, object_detect=True, yolo_threshold=0.3) -> None:
+    def __init__(self, model_name=None, object_detect=True, yolo_threshold=0.3, device='cuda', verbose=False) -> None:
         self.object_detect = object_detect
         self.yolo_threshold = yolo_threshold
         self.model_name = model_name
         if object_detect:
-            self.OD = ObjectDetect(model_name, yolo_threshold=yolo_threshold)
+            self.OD = ObjectDetect(model_name, yolo_threshold=yolo_threshold, device=device, verbose=False)
             self.color = [''.join([random.choice('0123456789ABCDEF') for j in range(6)])
                  for i in range(len(self.OD.classes))]
 
@@ -21,7 +22,7 @@ class VideoStreamCustom:
         :param frame: Frame which has been scored.
         :return: Frame with bounding boxes and labels ploted on it.
         """
-        labels, cord, labels_conf = results
+        labels, cord, labels_conf, angle_rad = results
         n = len(labels)
 
         for i in range(n):  
@@ -36,6 +37,15 @@ class VideoStreamCustom:
                 cv2.line(frame, (x4, y4), (x1, y1), (0, 255, 0), 2)
                 # plot label on the object
                 cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                # plot a line with angle_rad as the angle of the object
+                angle_sin = np.sin(angle_rad[i].detach().cpu().numpy())
+                angle_cos = np.cos(angle_rad[i].detach().cpu().numpy())
+                # plot the line from the center of the object
+                x_center = (x1 + x2 + x3 + x4) // 4
+                y_center = (y1 + y2 + y3 + y4) // 4
+                cv2.line(frame, (x_center, y_center), (x_center + int(500 * angle_cos), y_center + int(500 * angle_sin)), (0, 0, 255), 2)
+                cv2.line(frame, (x_center, y_center), (x_center - int(500 * angle_cos), y_center - int(500 * angle_sin)), (0, 0, 255), 2)
+
             else:
                 x1, y1, x2, y2 = cord[i].flatten()
                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
@@ -51,22 +61,43 @@ class VideoStreamCustom:
         :return: corresponding string label
         """
         return self.OD.classes[int(x)]
-    
+
     def __call__(self, video):
+        with open('data/hkvision_credentials.txt', 'r') as f:
+            credentials = f.read().splitlines()
+            username = credentials[0]
+            password = credentials[1]
+            ip = credentials[2]
+            rtsp_port = credentials[3]
+
+        video = cv2.VideoCapture(f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101")
+
         while True:
-            ret, image = video.read()
-            # flip the image
-            # image = cv2.flip(image, 1)
-            # resize the image to half the size
-            image = cv2.resize(image, (int(image.shape[1]/2), int(image.shape[0]/2)))
-            
-            if ret and self.object_detect:
-                results = self.OD.score_frame(image) # This takes a lot of time if ran on CPU
+            try:
+                start_time = time.time()  # Record the start time
+
+                success, image = video.read()
+                if not success:
+                    print("Warning: Failed to read frame from stream, skipping...")
+                    time.sleep(0.1)  # Short delay before retrying
+                    video.open(f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101")
+                    continue
+
+                image = cv2.resize(image, (int(image.shape[1]/2), int(image.shape[0]/2)))
+                results = self.OD.score_frame(image)  # This takes a lot of time if ran on CPU
                 # Plot boxes from YOLO on DeepFace output
                 image = self.plot_boxes(results, image)
                 cv2.imshow('Video', image)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+
+                end_time = time.time()  # Record the end time
+                frame_time = end_time - start_time
+                # print(f"Time between frames: {frame_time:.4f} seconds")
+
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+            except Exception as e:
+                print(f"An error occurred: {e}")
                 break
+
         video.release()
         cv2.destroyAllWindows()
-    
