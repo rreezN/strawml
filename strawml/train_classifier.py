@@ -24,11 +24,8 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
         train_iterator.set_description(f'Training Epoch {epoch+1}/{args.epochs}')
         model.train()
         for (data, target) in train_iterator:
-            # TODO
-            # We need to handle this properly in the dataloader to be able to batch
-            # Instead of tuples, we need to return tensors, e.g frame_data channels = image_rgb + image_heatmap
-            frame_data = data[0]
-            fullness = target[2][0]
+            frame_data = data
+            fullness = target
             
             if torch.cuda.is_available():
                 frame_data = frame_data.cuda()
@@ -53,10 +50,8 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
             val_iterator = tqdm(val_loader, unit="batch", position=0, leave=False)
             val_iterator.set_description(f'Validating Epoch {epoch+1}/{args.epochs}')
             for data, target in val_iterator:
-                # TODO:
-                # Also fix this once dataloader has been fixed
-                frame_data = data[0]
-                fullness = target[2][0]
+                frame_data = data
+                fullness = target
                 
                 if torch.cuda.is_available():
                     frame_data = frame_data.cuda()
@@ -67,8 +62,10 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
                 total += 1
                 _, target_fullness = torch.max(fullness, 0)
                 correct += (predicted == target_fullness)
+            accuracy = 100 * correct /total
             correct = correct.detach().cpu()
-            print(f'Epoch: {epoch+1}, Validation Accuracy: {100*correct/total:.2f}%')
+            # TODO: Fix this calculation to work with batches
+            # print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%')
             
     return
 
@@ -77,13 +74,13 @@ def get_args():
     """Get the arguments for the training script.
     """
     parser = argparse.ArgumentParser(description='Train the CNN classifier model.')
-    parser.add_argument('--batch_size', type=int, default=1, help='Batch size for training')
+    parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
     parser.add_argument('--epochs', type=int, default=10, help='Number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate for training')
     parser.add_argument('--model_path', type=str, default='models/cnn_classifier.pth', help='Path to load the model from')
     parser.add_argument('--save_path', type=str, default='models/cnn_classifier_new.pth', help='Path to save the model to')
     parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
-    parser.add_argument('--inc_heatmap', type=bool, default=True, help='Include heatmaps in the training data')
+    parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     
     return parser.parse_args()

@@ -7,14 +7,14 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from torchvision.transforms import v2 as transforms
 from torchvision import tv_tensors
-import psutil
+import cv2
 
 from strawml.data.make_dataset import decode_binary_image
 from strawml.models.straw_classifier import chute_cropper as cc
 
 class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True,
-                 random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(224, 64)) -> None:
+                 random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(672, 192)) -> None:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
@@ -66,9 +66,15 @@ class Chute(torch.utils.data.Dataset):
         # Define variable to contain the current segment data
         frame = self.frames[self.indices[idx]]
         frame_data = decode_binary_image(frame['image'][...])
+        frame_data = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
         if self.inc_heatmap:
             heatmap = decode_binary_image(frame['image_diff'][...])
-   
+            heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+        
+        # print(" ----------- LOADING NEW ITEM ------------ ")
+        # print("1. Original images")
+        # self.plot_data(frame_data=(frame_data, heatmap), labels=None)
+        
         # Extract the labels
         anno = frame['annotations']
         # Ensure that the annotations are present
@@ -89,28 +95,42 @@ class Chute(torch.utils.data.Dataset):
             frame_data, bbox_chute = cc.rotate_and_crop_to_bbox(frame_data, bbox_chute)
             if self.inc_heatmap:
                 heatmap, _ = cc.rotate_and_crop_to_bbox(heatmap, bbox_chute)
+
+            # print("1.5 Rotation and cropping to bbox")
+            # self.plot_data(frame_data=(frame_data, heatmap), labels = [bbox_chute])
+        
+        if self.inc_heatmap: frame_data = (frame_data, heatmap)
+        # Transform to tensor images
+        if self.inc_heatmap:
+            img = self.transform(frame_data[0])
+            heatmap = self.transform(frame_data[1])
+            frame_data = (img, heatmap)
+        else:
+            frame_data = self.transform(frame_data)
+        
+        # print("2. Transform")
+        # self.plot_data(frame_data=frame_data, labels = [bbox_chute])
         
         # Standardize image wrt. training data
         img_normalize = transforms.Normalize(mean=self.train_mean, std=self.train_std)
-        frame_data = img_normalize(frame_data)
-        
         
         if self.inc_heatmap:
             # Standardize heatmap wrt. training data
+            img = img_normalize(frame_data[0])
             heatmap_normalize = transforms.Normalize(mean=self.train_hm_mean, std=self.train_hm_std)
-            heatmap = heatmap_normalize(heatmap)
-            frame_data = (frame_data, heatmap)
+            heatmap = heatmap_normalize(frame_data[1])
+            frame_data = (img, heatmap)
+        else:
+            frame_data = img_normalize(frame_data)
+        
+        # print("3. Normalized")
+        # self.plot_data(frame_data=frame_data, labels = [bbox_chute])
+        
         
         # bboxes_all = np.array([bbox_chute, bbox_straw])
         bboxes_all = np.array([bbox_chute])
         # bboxes_all = tv_tensors.BoundingBoxes(bboxes_all, format="XYXY", canvas_size = frame_data[0].shape[-2:])
         
-        if self.inc_heatmap:
-            img = self.transform(frame_data[1])
-            heatmap = self.transform(frame_data[1])
-            frame_data = (img, heatmap)
-        else:
-            frame_data = self.transform(frame_data)
         
         if self.data_purpose == "straw":
             # Resize the image to specified size
@@ -120,12 +140,21 @@ class Chute(torch.utils.data.Dataset):
             else:
                 frame_data = self.resize(frame_data)
             
+            # print("4. Resize")
+            # self.plot_data(frame_data=frame_data, labels=[bbox_chute])
+            
         bbox_chute = bboxes_all[0]
         # bbox_straw = bboxes_all[1]
         # labels = (bbox_chute, bbox_straw, obstructed, fullness)
         fullness = torch.Tensor(fullness)
         labels = (bbox_chute, obstructed, fullness)
-            
+        
+        if self.inc_heatmap:
+            frame_data = torch.stack(frame_data[0], frame_data[1], 1)
+        
+        if self.data_purpose == "straw":
+            labels = fullness
+        
         return frame_data, labels
             
     def convert_fullness_to_class(self, fullness: float) -> list[int]:
@@ -175,7 +204,7 @@ class Chute(torch.utils.data.Dataset):
             print(f"Statistics already extracted, loading from file: {self.data_path}")
             if self.inc_heatmap:
                 return self.frames.attrs['mean'], self.frames.attrs['std'], self.frames.attrs['min'], self.frames.attrs['max'], self.frames.attrs['mean_hm'], self.frames.attrs['std_hm'], self.frames.attrs['min_hm'], self.frames.attrs['max_hm']
-            return self.frames.attrs['mean'], self.frames['std'], self.frames.attrs['min'], self.frames.attrs['max']
+            return self.frames.attrs['mean'], self.frames.attrs['std'], self.frames.attrs['min'], self.frames.attrs['max']
         
         import strawml.data.extract_statistics as es
         
@@ -251,10 +280,70 @@ class Chute(torch.utils.data.Dataset):
             return running_mean, running_std, running_mean_hm, running_std_hm
         
 
-    def plot_data(self):
-        """Plots the histograms of the GM data before and after transformation.
-        """
-        ...
+    def plot_data(self, frame_idx: int = 0, frame_data=None, labels=None):
+        """Plots the data and labels for the first frame in the dataset."""
+        
+        if frame_data is None:
+            frame_data, labels = self.__getitem__(frame_idx)
+        
+        if self.inc_heatmap:
+            image = frame_data[0]
+            heatmap = frame_data[1]
+            
+            if type(image) in [torch.Tensor, tv_tensors._image.Image]:
+                if len(image.shape) == 4: 
+                    image = image.squeeze()
+                    heatmap = heatmap.squeeze()
+                if torch.min(image) < 0:
+                    img_unnormalize = transforms.Normalize(mean = [-m/s for m, s in zip(self.train_mean, self.train_std)],
+                                                        std = [1/s for s in self.train_std])
+                    hm_unnormalize = transforms.Normalize(mean = [-m/s for m, s in zip(self.train_hm_mean, self.train_hm_std)],
+                                                        std = [1/s for s in self.train_hm_std])
+                    image = img_unnormalize(image)
+                    heatmap = hm_unnormalize(heatmap)
+                image = image.permute(1, 2, 0)
+                heatmap = heatmap.permute(1, 2, 0)
+                image = image.detach().numpy()
+                heatmap = heatmap.detach().numpy()
+
+                
+            
+            # 1x2 grid for image and heatmap with bounding boxes
+            fig, ax = plt.subplots(1, 2)
+            ax[0].imshow(image)
+            ax[0].set_title('Image')
+            ax[1].imshow(heatmap)
+            ax[1].set_title('Heatmap')
+            ax[0].axis('off')
+            ax[1].axis('off')
+            if self.data_purpose == "straw":
+                plt.suptitle("Straw Dataset")
+            else:
+                plt.suptitle("Chute Dataset")
+        else:
+            image = frame_data
+            
+            # Display the image
+            plt.imshow(image.squeeze().permute(1, 2, 0))
+            if self.data_purpose == "straw":
+                plt.title("Straw Dataset")
+            else:
+                plt.title("Chute Dataset")
+            plt.axis('off')
+            
+        
+        if labels is not None:
+            # Display the bounding boxes
+            bbox = labels[0]
+            
+            import matplotlib.patches as patches
+            # delete gradient information
+            # bbox = bbox.detach().numpy()
+            rect = patches.Polygon([[bbox[0], bbox[1]], [bbox[2], bbox[3]], [bbox[4], bbox[5]], [bbox[6], bbox[7]]], edgecolor='g', facecolor='none')
+            ax[0].add_patch(rect)
+        
+        plt.show()
+        
     
     def get_data_shape(self):
         """Returns the shape of the data and target tensors.
@@ -288,7 +377,7 @@ if __name__ == '__main__':
     from torch.utils.data import DataLoader
 
     print("---- CHUTE DETECTION DATASET ----")
-    train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=True)
+    train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=False)
     
     # trainset.plot_data()
     # test_set = Platoon(data_type='test', pm_windowsize=2)
@@ -323,6 +412,9 @@ if __name__ == '__main__':
         # bbox_straw = target[1]
         obstructed = target[1]
         fullness = target[2]
+        
+        if i > 2:
+            break
     
     print(f'\nTotal time taken: {np.sum(durations):.2f}')
     print(f'Max duration: {np.max(durations):.2f} at index {np.argmax(durations)}')
@@ -330,6 +422,8 @@ if __name__ == '__main__':
     print(f'Mean duration: {np.mean(durations):.2f}')
     # Print example statistics of the last batch
     print(f'Last data shape: {data[0].shape}')
+    
+    train_set.plot_data()
     
     # convert back from normalized values
     # means = [-trainset.train_mean[0], -trainset.train_mean[1], -trainset.train_mean[2]]
@@ -346,26 +440,27 @@ if __name__ == '__main__':
     #                                        transforms.Normalize(mean=means, std=[1, 1, 1]),
     #                                        transforms.ToPILImage()
     #                                        ])
-    frame = frame.squeeze().permute(1, 2, 0)
-    heatmap = heatmap.squeeze().permute(1, 2, 0)
+    # frame = frame.squeeze().permute(1, 2, 0)
+    # heatmap = heatmap.squeeze().permute(1, 2, 0)
     # frame = img_normalize(frame)
     # heatmap = heatmap_normalize(heatmap)
     
     # Display the image, heatmap and bounding boxes in a 1x2 grid
-    fig, ax = plt.subplots(1, 2)
-    ax[0].imshow(frame)
-    ax[0].set_title('Image')
-    ax[1].imshow(heatmap)
-    ax[1].set_title('Heatmap')
-    ax[0].axis('off')
-    ax[1].axis('off')
+    # fig, ax = plt.subplots(1, 2)
+    # ax[0].imshow(frame)
+    # ax[0].set_title('Image')
+    # ax[1].imshow(heatmap)
+    # ax[1].set_title('Heatmap')
+    # ax[0].axis('off')
+    # ax[1].axis('off')
     
     # Display the bounding boxes
-    for bbox in bbox_chute:
-        # delete gradient information
-        bbox = bbox.detach().numpy()
-        rect = plt.Rectangle((bbox[0], bbox[1]), bbox[2], bbox[3], edgecolor='g', facecolor='none')
-        ax[0].add_patch(rect)
+    # TODO: Update to display OBBs
+    # for bbox in bbox_chute:
+    #     # delete gradient information
+    #     bbox = bbox.detach().numpy()
+    #     rect = plt.Rectangle((bbox[0], bbox[1]), bbox[2], bbox[3], edgecolor='g', facecolor='none')
+    #     ax[0].add_patch(rect)
     
     # for bbox in bbox_straw:
     #     bbox = bbox.detach().numpy()
@@ -373,12 +468,16 @@ if __name__ == '__main__':
     #     ax[0].add_patch(rect)
     
     # Set suptitle to the fullness and obstructed labels
-    plt.suptitle(f'Fullness: {train_set.convert_class_to_fullness(fullness)}, Obstructed: {obstructed.item()}')
+    # plt.suptitle(f'Fullness: {train_set.convert_class_to_fullness(fullness)}, Obstructed: {obstructed.item()}')
     
-    plt.show()
+    # plt.show()
     
     print("---- STRAW DETECTION DATASET ----")
-    train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=True, data_purpose="straw")
+    train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=False, data_purpose="straw")
+    
+    train_set.plot_data()
+    
+    
     
     
     
