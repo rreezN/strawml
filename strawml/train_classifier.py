@@ -2,6 +2,8 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import time
+import timeit
 
 import data.dataloader as dl
 import strawml.models.straw_classifier.cnn_classifier as cnn
@@ -44,11 +46,17 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
             train_iterator.set_postfix(loss=loss.item())
                 
         model.eval()
+        
+        
         with torch.no_grad():
             correct = 0
             total = 0
             val_iterator = tqdm(val_loader, unit="batch", position=0, leave=False)
             val_iterator.set_description(f'Validating Epoch {epoch+1}/{args.epochs}')
+            
+            # Time the inference time
+            start_time = timeit.default_timer()
+            
             for data, target in val_iterator:
                 frame_data = data
                 fullness = target
@@ -62,12 +70,16 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
                 total += args.batch_size
                 _, target_fullness = torch.max(fullness, 1)
                 correct += sum(predicted == target_fullness)
+            
+            end_time = timeit.default_timer()
+            elapsed_time = end_time - start_time
+            average_time = elapsed_time / len(val_loader)
+            
             accuracy = 100 * correct /total
             correct = correct.detach().cpu()
             
-            print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%')
-            
-    return
+            print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {elapsed_time:.2f} seconds. (Batch Size: {args.batch_size})')
+
 
 
 def get_args():
