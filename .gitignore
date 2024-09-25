@@ -1,6 +1,8 @@
 # venv
 strawenv/
 
+yolov8n.pt
+
 # models
 models/*
 

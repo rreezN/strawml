@@ -14,11 +14,14 @@ The file contains code that takes a folder of videos to split them into sequenti
 
 
 # To-Do Data-Augmentation
-- [ ] Rotate
-- [ ] Zoom and crop
-- [ ] translate cute
-- [ ] Contrast
-- [ ] Gamma
-- [ ] Brightness
-- [ ] Noise
+- [x] Rotate
+- [x] Zoom and crop
+- [x] translate chute
+- [x] Gamma
+- [x] Noise
 - [ ] Add artifacts that resemble obstructed view of chute
+
+# To-Do train
+- [ ] Gather more data and label it - with different angles
+- [ ] Train a chute-detection model on diverse data
+- [ ] Train a digit-detection model to find the numbers on the chute -> used to map the prediction onto the chute

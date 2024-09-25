@@ -468,6 +468,114 @@ def print_hdf5_tree(hdf5_file: str,
         # Start printing from the root group or a specific group
         print_group(f[group_name], indent)
 
+def place_digits_on_chute_images(hdf5_file: str) -> None:
+    """
+    HWD+ Data: https://link.springer.com/article/10.1007/s42979-022-01494-2#Sec5
+               https://drive.google.com/drive/folders/1f2o1kjXLvcxRgtmMMuDkA2PQ5Zato4Or
+
+    """
+    def internal_image_operations(image: np.ndarray) -> np.ndarray:
+        """
+        Perform random operations on the image to simulate the chute environment. It crops the 
+        image to 500 x 500 pixels and randomly rotates the image between -180 and 180 degrees, while ensuring
+        that the cropped image is inside the original image.
+        """
+        # sample a random angle between -45 and 45 degrees
+        angle = np.random.randint(-180, 181)
+        # rotate the image
+        M = cv2.getRotationMatrix2D((image.shape[1]//2, image.shape[0]//2), angle, 1)
+        image = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
+        # randomly crop the image to 254 x 254 pixels
+        x = np.random.randint(0, image.shape[1] - 500)
+        y = np.random.randint(0, image.shape[0] - 500)
+        image = image[y:y+500, x:x+500]
+        return image 
+
+    digit_images = np.load("D:/HCAI/msc/strawml/data/interim/digits/Images(28x28).npy")
+    digit_info = np.load("D:/HCAI/msc/strawml/data/interim/digits/WriterInfo.npy")
+
+    # We sort the digit images by the digit labels
+    digit_images = digit_images[np.argsort(digit_info[:,0])]
+    digit_info = digit_info[np.argsort(digit_info[:,0])]
+    digit_labels = digit_info[:,0]
+    frame_nr = 0
+    X_train, X_val, y_train, y_val = train_test_split(digit_images, digit_labels, test_size=0.2, random_state=42, stratify=digit_labels)
+    X_val, X_test, y_val, y_test = train_test_split(X_val, y_val, test_size=0.5, random_state=42, stratify=y_val)
+
+    data_dict = {'train': X_train, 'val': X_val, 'test': X_test}
+    label_dict = {'train': y_train, 'val': y_val, 'test': y_test}
+
+    # let us create a suitable background image for the digits by loading a chute image and taking image[:1440, :1250]
+    img = cv2.imread("D:/HCAI/msc/strawml/data/processed/chute_image_for_backgroud_creation.jpg")[:1440, :1250]
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    import matplotlib.pyplot as plt
+    for data_type in data_dict.keys():
+        # create data_type folder if it does not exist
+        if not os.path.exists(f'data/processed/digits_on_chute_images/{data_type}'):
+            os.makedirs(f'data/processed/digits_on_chute_images/{data_type}')
+        for digit, label in tqdm(zip(data_dict[data_type], label_dict[data_type]), total=len(data_dict[data_type]), desc=f"Placing digits on chute images ({data_type})"):
+
+            image = img.copy().astype(np.uint8)
+            # perform random operation on the image
+            image = internal_image_operations(image)
+            # To ensure that when rotating the background stays the same color
+            digit_image = digit.astype(np.uint8)
+            digit_image = 255 - digit_image
+            # sample a random location on the chute image
+            x = np.random.randint(0, image.shape[1] - (digit_image.shape[1]+25))
+            y = np.random.randint(0, image.shape[0] - (digit_image.shape[0]+25))
+            # Rotate the digit_image
+            # sample a random angle between -45 and 45 degrees
+            angle = np.random.randint(-20, 21)
+            (h, w) = digit_image.shape[:2]
+            center = (w // 2, h // 2)
+            M = cv2.getRotationMatrix2D(center, angle, 1.0)
+            rotated_digit_image = cv2.warpAffine(digit_image, M, (w, h), borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255))
+
+            # Create a mask for the rotated digit_image
+            _, mask = cv2.threshold(rotated_digit_image, 254, 255, cv2.THRESH_BINARY_INV)
+
+            # Convert mask to uint8 if necessary
+            mask = mask.astype(np.uint8)
+
+            # expand the rotated_digit_image to 3 channels
+            rotated_digit_image = cv2.cvtColor(rotated_digit_image, cv2.COLOR_GRAY2RGB)
+            # Convert rotated_digit_image to uint8 if necessary
+            rotated_digit_image = rotated_digit_image.astype(np.uint8)
+
+            # Sample a random location on the image
+            x = np.random.randint(0, image.shape[1] - (rotated_digit_image.shape[1] + 25))
+            y = np.random.randint(0, image.shape[0] - (rotated_digit_image.shape[0] + 25))
+
+            # Extract the region of interest (ROI) from the image
+            roi = image[y:y+rotated_digit_image.shape[0], x:x+rotated_digit_image.shape[1]]
+
+            # Blend the rotated digit_image with the ROI using the mask
+            roi_bg = cv2.bitwise_and(roi, roi, mask=cv2.bitwise_not(mask))
+            roi_fg = cv2.bitwise_and(rotated_digit_image, rotated_digit_image, mask=mask)
+            blended = cv2.add(roi_bg, roi_fg)
+            blended = 255 - blended
+            # Place the blended result back into the image
+            image[y:y+rotated_digit_image.shape[0], x:x+rotated_digit_image.shape[1]] = blended
+            # save the image to a file
+            cv2.imwrite(f'data/processed/digits_on_chute_images/{data_type}/frame_{frame_nr}.jpg', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+
+            # get the bounding box coordinates of the digit image on the chute image, x1, y1, x2, y2, x3, y3, x4, y4        
+            bbox = np.array([x/image.shape[1], y/image.shape[0], 
+                            (x+rotated_digit_image.shape[1])/image.shape[1], y/image.shape[0], 
+                            (x+rotated_digit_image.shape[1])/image.shape[1], (y+rotated_digit_image.shape[0])/image.shape[0], 
+                            x/image.shape[1], (y+rotated_digit_image.shape[0])/image.shape[0]])
+            
+            # add the class index to the 
+            label = [label] + bbox.tolist()
+            # Save the label to a file
+            with open( f'data/processed/digits_on_chute_images/{data_type}/frame_{frame_nr}.txt', 'w') as f:
+                f.write(' '.join(map(str, label)))
+            frame_nr += 1
+
+
+
 def main(args: Namespace) -> None:
     """
     The main function that runs the script based on the arguments provided.
@@ -493,12 +601,14 @@ def main(args: Namespace) -> None:
         print_hdf5_tree(args.hdf5_file)
     elif args.mode == 'h5_to_yolo':
         hdf5_to_yolo(args.hdf5_file, args.with_augmentation)
-        
+    elif args.mode == 'place_digits':
+        place_digits_on_chute_images(args.hdf5_file)
+
 def get_args() -> Namespace:
     # Create the parser
     parser = ArgumentParser()
     # Add arguments to the parser
-    parser.add_argument('mode', type=str, choices=['extract', 'validate', 'tree', 'h5_to_yolo'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
+    parser.add_argument('mode', type=str, choices=['extract', 'validate', 'tree', 'h5_to_yolo', 'place_digits'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
     parser.add_argument('--video_folder', type=str, default='data/raw/videos', help='The folder containing the videos.')
     parser.add_argument('--hdf5_file', type=str, default='data/raw/images/images.hdf5', help='The hdf5 file to save the images to.')
     parser.add_argument('--save_individual_images', type=bool, default=False, help='Whether to save the individual images to the temp_images folder.')

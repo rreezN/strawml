@@ -19,3 +19,14 @@ The run guide for new data.
 6. Train the model:
     
 """
+
+
+"""
+Create a dataset that consists of the chute data and HWD+ data, with the digits resized to small size and placed on top of the chute images.
+
+-   The numbers should be black digits on a white background.
+-   The numbers should be resized to 28x28 pixels.
+-   We can add the numbers after we have augmented the chute data.
+-   The numbers should be placed at a random location on the chute image.
+-   The numbers should be placed at a random angle between -45 and 45 degrees.
+"""
