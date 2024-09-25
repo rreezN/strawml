@@ -15,7 +15,7 @@ class CNNClassifier(torch.nn.Module):
         self.pool = torch.nn.MaxPool2d(2, 2)
         self.r = torch.nn.ReLU()
         self.conv2 = torch.nn.Conv2d(32, 64, 3, dtype=torch.float)
-        self.fc1 = torch.nn.Linear(488704, 512, dtype=torch.float)
+        self.fc1 = torch.nn.Linear(774400, 512, dtype=torch.float)
         self.fc2 = torch.nn.Linear(512, 21, dtype=torch.float)
         
     def forward(self, x: torch.Tensor, bbox = None) -> torch.Tensor:
@@ -31,8 +31,6 @@ class CNNClassifier(torch.nn.Module):
         
         if bbox is not None:
             x, bbox = cc.rotate_and_crop_to_bbox(x, bbox)
-            
-            
             
         
         x = self.pool(self.r(self.conv1(x)))
