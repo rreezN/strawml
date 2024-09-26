@@ -618,24 +618,27 @@ def place_digits_on_chute_images() -> None:
     """
     def internal_image_operations(image: np.ndarray) -> np.ndarray:
         """
-        Perform random operations on the image to simulate the chute environment. It crops the 
-        image to 500 x 500 pixels and randomly rotates the image between -180 and 180 degrees, while ensuring
-        that the cropped image is inside the original image.
+        Perform random operations on the image of size (1440, 1250) to simulate the chute environment,
+        without including the chute. The chute has numbers on it itself, and without labels on the chute numbers,
+        they might cause confusion in the model during training. This functions crops the image to 500 x 500 pixels 
+        and randomly rotates the image between -180 and 180 degrees, while ensuring that the cropped image is inside 
+        the original image, and the resulting image has no black borders from rotation.
         """
-        # sample a random angle between -45 and 45 degrees
+        # sample a random angle between -180 and 180 degrees
         angle = np.random.randint(-180, 181)
         # rotate the image
         M = cv2.getRotationMatrix2D((image.shape[1]//2, image.shape[0]//2), angle, 1)
         image = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
-        # randomly crop the image to 254 x 254 pixels
-        x = np.random.randint(0, image.shape[1] - 800)
-        y = np.random.randint(0, image.shape[0] - 800)
+        # randomly crop the image to 500 x 500 pixels
+        x = np.random.randint(0, image.shape[1] - 500)
+        y = np.random.randint(0, image.shape[0] - 500)
         image = image[y:y+500, x:x+500]
         return image 
 
     def ModifiedWay(rotateImage, angle): 
         """
         Rotate image without cutting off sides and make borders transparent.
+        Inspiration from: https://www.geeksforgeeks.org/rotate-image-without-cutting-off-sides-using-python-opencv/
         """
         # Taking image height and width 
         imgHeight, imgWidth = rotateImage.shape[0], rotateImage.shape[1] 
@@ -690,7 +693,13 @@ def place_digits_on_chute_images() -> None:
         # overlay the images
         for c in range(0, 3):
             bg[y:y+fg_h, x:x+fg_w, c] = (fg_alpha * fg[:, :, c] + bg_alpha * bg[y:y+fg_h, x:x+fg_w, c])
-        return bg
+
+        # Get the rotated bounding box coordinates of the digit image on the chute image, x1, y1, x2, y2, x3, y3, x4, y4
+        bbox = np.array([x/bg_w, y/bg_h,
+                        (x+fg_w)/bg_w, y/bg_h,
+                        (x+fg_w)/bg_w, (y+fg_h)/bg_h,
+                        x/bg_w, (y+fg_h)/bg_h])
+        return bg, bbox
 
 
     # digit_images = np.load("D:/HCAI/msc/strawml/data/interim/digits/Images(500x500).npy")
@@ -740,16 +749,18 @@ def place_digits_on_chute_images() -> None:
             # expand the digit image to 3 channels
             rotated_digit_image = cv2.cvtColor(rotated_digit_image, cv2.COLOR_RGB2RGBA)
             # add the digit image to the chute image
-            image = overlay_image(image, rotated_digit_image)
+            image, bbox = overlay_image(image, rotated_digit_image)
+            # draw the bounding box on the image
+            x1, y1, x2, y2, x3, y3, x4, y4 = bbox
+            x1, y1, x2, y2, x3, y3, x4, y4 = int(x1*image.shape[1]), int(y1*image.shape[0]), int(x2*image.shape[1]), int(y2*image.shape[0]), int(x3*image.shape[1]), int(y3*image.shape[0]), int(x4*image.shape[1]), int(y4*image.shape[0])
+            cv2.line(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+            cv2.line(image, (x2, y2), (x3, y3), (255, 0, 0), 2)
+            cv2.line(image, (x3, y3), (x4, y4), (255, 0, 0), 2)
+            cv2.line(image, (x4, y4), (x1, y1), (255, 0, 0), 2)
             # save the image to a file
             cv2.imwrite(f'data/processed/digits_on_chute_images/{data_type}/frame_{frame_nr}.jpg', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
 
             # get the bounding box coordinates of the digit image on the chute image, x1, y1, x2, y2, x3, y3, x4, y4        
-            bbox = np.array([x/image.shape[1], y/image.shape[0], 
-                            (x+rotated_digit_image.shape[1])/image.shape[1], y/image.shape[0], 
-                            (x+rotated_digit_image.shape[1])/image.shape[1], (y+rotated_digit_image.shape[0])/image.shape[0], 
-                            x/image.shape[1], (y+rotated_digit_image.shape[0])/image.shape[0]])
-            
             # add the class index to the 
             label = [label] + bbox.tolist()
             # Save the label to a file
