@@ -10,7 +10,7 @@ import strawml.models.straw_classifier.cnn_classifier as cnn
 import strawml.models.straw_classifier.chute_cropper as cc
 
 
-def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dataset, val_loader: torch.utils.data.Dataset) -> None:
+def train_model(args, model: torch.nn.Module, train_loader: torch.utils.DataLoader, val_loader: torch.utils.DataLoader) -> None:
     """Train the CNN classifier model.
     """
     
@@ -21,10 +21,12 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     loss_fn = torch.nn.functional.cross_entropy
     
+    
     for epoch in range(args.epochs):
         train_iterator = tqdm(train_loader, unit="batch", position=0, leave=False)
         train_iterator.set_description(f'Training Epoch {epoch+1}/{args.epochs}')
         model.train()
+        epoch_accuracies = []
         for (data, target) in train_iterator:
             frame_data = data
             fullness = target
@@ -42,9 +44,17 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
             # Backward pass
             loss.backward()
             optimizer.step()
-            
-            train_iterator.set_postfix(loss=loss.item())
-                
+
+            # Save accuracy
+            _, predicted = torch.max(output, 1)
+            _, target_fullness = torch.max(fullness, 1)
+            correct = sum(predicted == target_fullness)
+            accuracy = 100 * correct / args.batch_size
+            epoch_accuracies.append(accuracy.item())
+        
+            train_iterator.set_postfix(loss=loss.item(), accuracy=sum(epoch_accuracies)/len(epoch_accuracies))
+        
+        print(f'Epoch: {epoch+1}, Training Accuracy: {sum(epoch_accuracies)/len(epoch_accuracies):.2f}%')
         model.eval()
         
         

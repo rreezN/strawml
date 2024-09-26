@@ -428,7 +428,7 @@ if __name__ == '__main__':
         # obstructed = target[1]
         # fullness = target[2]
         
-        if i > 100:
+        if i > 0:
             break
     
     print(f'\nTotal time taken: {np.sum(durations):.2f}')
@@ -438,7 +438,7 @@ if __name__ == '__main__':
     # Print example statistics of the last batch
     print(f'Last data shape: {data[0].shape}')
     
-    train_set.plot_data()
+    train_set.plot_data(frame_idx=9)
     
     print("---- STRAW DETECTION DATASET ----")
     train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=False, data_purpose="straw")
