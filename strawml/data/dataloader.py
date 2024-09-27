@@ -34,8 +34,11 @@ class Chute(torch.utils.data.Dataset):
             print("Removing all cropped images from the dataset (data_purpose='straw')")
             for frame_name in list(self.frames.keys()):
                 attributes = self.frames[frame_name].attrs
-                if 'augmented' in attributes and 'cropping' in self.frames[frame_name].attrs['augmented']:
-                    frame_names.remove(frame_name)
+                if 'augmented' in attributes:
+                    banned_augmentations = ['cropping', 'translation', 'rotation']
+                    augmentations = self.frames[frame_name].attrs['augmented']
+                    if any(x in augmentations for x in banned_augmentations):
+                        frame_names.remove(frame_name)
 
         
         # Create indices for train, test and validation
@@ -144,7 +147,7 @@ class Chute(torch.utils.data.Dataset):
         # bboxes_all = tv_tensors.BoundingBoxes(bboxes_all, format="XYXY", canvas_size = frame_data[0].shape[-2:])
         
         
-        if self.data_purpose == "straw":
+        if self.data_purpose == "straw" and self.image_size is not None:
             # Resize the image to specified size
             self.resize = transforms.Resize(self.image_size)
             if self.inc_heatmap:
@@ -165,7 +168,7 @@ class Chute(torch.utils.data.Dataset):
             frame_data = torch.vstack([frame_data[0], frame_data[1]])
         
         if self.data_purpose == "straw":
-            labels = fullness
+            return frame_data, fullness
         
         return frame_data, labels
             
@@ -329,7 +332,7 @@ class Chute(torch.utils.data.Dataset):
             ax[0].axis('off')
             ax[1].axis('off')
             if self.data_purpose == "straw":
-                plt.suptitle("Straw Dataset")
+                plt.suptitle("Straw Dataset, Fullness: " + str(np.round(100*self.convert_class_to_fullness(labels).item())) +"%")
             else:
                 plt.suptitle("Chute Dataset")
         else:
@@ -338,7 +341,7 @@ class Chute(torch.utils.data.Dataset):
             # Display the image
             plt.imshow(image.squeeze().permute(1, 2, 0))
             if self.data_purpose == "straw":
-                plt.title("Straw Dataset")
+                plt.title("Straw Dataset, Fullness: " + str(np.round(100*self.convert_class_to_fullness(labels).item())) +"%")
             else:
                 plt.title("Chute Dataset")
             plt.axis('off')
@@ -379,12 +382,12 @@ class Chute(torch.utils.data.Dataset):
             return frame_data.shape
     
     def print_arguments(self):
+        dataset_size = len(self.train_indices) if self.data_type == 'train' else len(self.test_indices)
         print(f'Parameters: \n \
                     Data Path:          {self.data_path}\n \
                     Include Heatmaps:   {self.inc_heatmap} \n \
-                    Data size:           \n \
-                        - Train:        {len(self.train_indices)} \n \
-                        - Test:         {len(self.test_indices)} \n \
+                    Data Type:          {self.data_type}\n \
+                    Data size:          {dataset_size}\n \
                     ')
 
 if __name__ == '__main__':
@@ -428,6 +431,7 @@ if __name__ == '__main__':
         # obstructed = target[1]
         # fullness = target[2]
         
+        # Skip timing dataloader
         if i > 0:
             break
     
@@ -438,12 +442,12 @@ if __name__ == '__main__':
     # Print example statistics of the last batch
     print(f'Last data shape: {data[0].shape}')
     
-    train_set.plot_data(frame_idx=9)
+    # train_set.plot_data(frame_idx=9)
     
     print("---- STRAW DETECTION DATASET ----")
-    train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=False, data_purpose="straw")
+    train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=False, data_purpose="straw", image_size=(1370//2, 204//2))
     
-    train_set.plot_data()
+    train_set.plot_data(frame_idx=0)
     
     
     
