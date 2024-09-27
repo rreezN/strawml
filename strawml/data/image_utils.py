@@ -161,3 +161,158 @@ def rotate_image_and_bbox(image: np.ndarray,
     rotated_bbox = rotate_bbox(bbox, img_width, img_height, angle_degrees)
     
     return rotated_image, rotated_image_diff, rotated_bbox
+
+
+def internal_image_operations(image: np.ndarray) -> np.ndarray:
+    """
+    Perform random operations on the image of size (1440, 1250) to simulate the chute environment,
+    without including the chute. The chute has numbers on it itself, and without labels on the chute numbers,
+    they might cause confusion in the model during training. This functions crops the image to 500 x 500 pixels 
+    and randomly rotates the image between -180 and 180 degrees, while ensuring that the cropped image is inside 
+    the original image, and the resulting image has no black borders from rotation.
+    """
+    # sample a random angle between -180 and 180 degrees
+    angle = np.random.randint(-180, 181)
+    # rotate the image
+    M = cv2.getRotationMatrix2D((image.shape[1]//2, image.shape[0]//2), angle, 1)
+    image = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
+    # randomly crop the image to 500 x 500 pixels
+    x = np.random.randint(0, image.shape[1] - 500)
+    y = np.random.randint(0, image.shape[0] - 500)
+    image = image[y:y+500, x:x+500]
+    return image 
+
+def SpecialRotate(rotateImage, angle): 
+    """
+    Rotate image without cutting off sides and make borders transparent.
+    Inspiration from: https://www.geeksforgeeks.org/rotate-image-without-cutting-off-sides-using-python-opencv/
+    """
+    # Taking image height and width 
+    imgHeight, imgWidth = rotateImage.shape[0], rotateImage.shape[1] 
+    
+    # Computing the centre x,y coordinates 
+    centreY, centreX = imgHeight // 2, imgWidth // 2
+    
+    # Computing 2D rotation Matrix to rotate an image 
+    rotationMatrix = cv2.getRotationMatrix2D((centreX, centreY), angle, 1.0) 
+    default_rot = rotationMatrix.copy()
+    # Calculate the new bounding dimensions of the image
+    abs_cos = abs(rotationMatrix[0, 0])
+    abs_sin = abs(rotationMatrix[0, 1])
+    bound_w = int(imgHeight * abs_sin + imgWidth * abs_cos)
+    bound_h = int(imgHeight * abs_cos + imgWidth * abs_sin)
+    
+    # Adjust the rotation matrix to take into account the translation
+    rotationMatrix[0, 2] += bound_w / 2 - centreX
+    rotationMatrix[1, 2] += bound_h / 2 - centreY
+    
+    # Create an empty image with an alpha channel
+    transparent_image = np.zeros((bound_h, bound_w, 4), dtype=np.uint8)
+    
+    # Convert the grayscale image to RGBA
+    rotateImage_rgba = cv2.cvtColor(rotateImage, cv2.COLOR_GRAY2RGBA)
+    
+    # Copy the original image to the center of the transparent image
+    transparent_image[(bound_h - imgHeight) // 2:(bound_h + imgHeight) // 2,
+                    (bound_w - imgWidth) // 2:(bound_w + imgWidth) // 2, :3] = rotateImage_rgba[:, :, :3]
+    
+    # Set the alpha channel to 255 (opaque) for the original image area
+    transparent_image[(bound_h - imgHeight) // 2:(bound_h + imgHeight) // 2,
+                    (bound_w - imgWidth) // 2:(bound_w + imgWidth) // 2, 3] = 255
+    
+    # Now, we will perform actual image rotation 
+    rotatingimage = cv2.warpAffine(transparent_image, rotationMatrix, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0)) 
+    
+    return rotatingimage, default_rot
+
+def overlay_image(bg, fg, default_rot, fg_size):
+    # get the dimensions of the background image
+    bg_h, bg_w, _ = bg.shape
+    # get the dimensions of the foreground image
+    fg_h, fg_w, _ = fg.shape
+    # get the location to place the foreground image
+    x = np.random.randint(0, bg_w - fg_w)
+    y = np.random.randint(0, bg_h - fg_h)
+    # get the alpha mask of the foreground image        
+    fg_alpha = fg[:, :, 3] / 255.0
+    # get the alpha mask of the background image
+    bg_alpha = 1.0 - fg_alpha
+    # overlay the images
+    for c in range(0, 3):
+        bg[y:y+fg_h, x:x+fg_w, c] = (fg_alpha * fg[:, :, c] + bg_alpha * bg[y:y+fg_h, x:x+fg_w, c])
+
+    # Get the rotated bounding box coordinates of the digit image on the chute image, x1, y1, x2, y2, x3, y3, x4, y4
+    # The default rotation matrix is used to rotate the bounding box coordinates from the center of the fg image.
+    # Here we also import the original image sizes of the digits.
+    fg_h_, fg_w_ = fg_size
+    center_x, center_y = x + fg_w / 2, y + fg_h / 2
+    bbox = np.array([x - center_x + abs(fg_w - fg_w_), y - center_y + abs(fg_h - fg_h_),
+                    (x + fg_w) - center_x, y - center_y + abs(fg_h - fg_h_),
+                    (x + fg_w) - center_x, (y + fg_h) - center_y,
+                    x - center_x + abs(fg_w - fg_w_), (y + fg_h) - center_y])
+    bbox = np.dot(np.array([[bbox[0], bbox[1]], [bbox[2], bbox[3]], [bbox[4], bbox[5]], [bbox[6], bbox[7]]]), default_rot[:, :2].T) + np.array([center_x, center_y])
+    fg_h, fg_w = fg_size
+    bbox[:, 0] /= bg_w  # normalize the x-coordinates
+    bbox[:, 1] /= bg_h  # normalize the y-coordinates
+    bbox = bbox.flatten()
+    return bg, bbox
+
+def create_random_permutations_with_repeats(data, labels, total_permutations, min_size=3, max_size=5):
+    """
+    Creates random permutations of images, ensuring all images are used at least once before allowing repetitions.
+    
+    Parameters:
+        data (np.ndarray): The dataset of images of shape (N, 28, 28), where N is the number of images.
+        labels (np.ndarray): The corresponding labels of the dataset.
+        total_permutations (int): Total number of permutations required.
+        min_size (int): Minimum size of permutation. Default is 3.
+        max_size (int): Maximum size of permutation. Default is 5.
+        
+    Returns:
+        List of tuples: Each tuple contains a random permutation of images and corresponding labels.
+    """
+    num_images = data.shape[0]
+    indices = np.arange(num_images)
+    np.random.shuffle(indices)  # Shuffle indices to randomize initial ordering
+    
+    permutations = []
+    
+    # Stage 1: Use all images at least once
+    used_images = 0
+    while used_images < num_images:
+        # Randomly choose a size between min_size and max_size for the current permutation
+        perm_size = np.random.randint(min_size, max_size + 1)
+        
+        # Ensure we don't exceed the number of images
+        if used_images + perm_size > num_images:
+            perm_size = num_images - used_images
+        
+        # Get the indices for this permutation
+        perm_indices = indices[used_images:used_images + perm_size]
+        
+        # Collect the images and labels for this permutation
+        perm_data = data[perm_indices]
+        perm_labels = labels[perm_indices]
+        
+        # Append the permutation to the list
+        permutations.append((perm_data, perm_labels))
+        
+        # Move the index forward by the size of the current permutation
+        used_images += perm_size
+    
+    # Stage 2: Allow overlapping permutations to meet the required total_permutations
+    while len(permutations) < total_permutations:
+        # Randomly choose a size between min_size and max_size
+        perm_size = np.random.randint(min_size, max_size + 1)
+        
+        # Randomly sample indices from the full dataset, allowing repetitions
+        perm_indices = np.random.choice(indices, size=perm_size, replace=False)
+        
+        # Collect the images and labels for this permutation
+        perm_data = data[perm_indices]
+        perm_labels = labels[perm_indices]
+        
+        # Append the new permutation
+        permutations.append((perm_data, perm_labels))
+    
+    return permutations

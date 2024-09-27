@@ -468,239 +468,13 @@ def print_hdf5_tree(hdf5_file: str,
         # Start printing from the root group or a specific group
         print_group(f[group_name], indent)
 
-# def place_digits_on_chute_images() -> None:
-#     """
-#     HWD+ Data: https://link.springer.com/article/10.1007/s42979-022-01494-2#Sec5
-#                https://drive.google.com/drive/folders/1f2o1kjXLvcxRgtmMMuDkA2PQ5Zato4Or
-
-#     """
-#     def internal_image_operations(image: np.ndarray) -> np.ndarray:
-#         """
-#         Perform random operations on the image to simulate the chute environment. It crops the 
-#         image to 500 x 500 pixels and randomly rotates the image between -180 and 180 degrees, while ensuring
-#         that the cropped image is inside the original image.
-#         """
-#         # sample a random angle between -45 and 45 degrees
-#         angle = np.random.randint(-180, 181)
-#         # rotate the image
-#         M = cv2.getRotationMatrix2D((image.shape[1]//2, image.shape[0]//2), angle, 1)
-#         image = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
-#         # randomly crop the image to 254 x 254 pixels
-#         x = np.random.randint(0, image.shape[1] - 500)
-#         y = np.random.randint(0, image.shape[0] - 500)
-#         image = image[y:y+500, x:x+500]
-#         return image 
-
-#     def ModifiedWay(rotateImage, angle): 
-#         """
-#         https://www.geeksforgeeks.org/rotate-image-without-cutting-off-sides-using-python-opencv/
-#         """
-#         # Taking image height and width 
-#         imgHeight, imgWidth = rotateImage.shape[0], rotateImage.shape[1] 
-    
-#         # Computing the centre x,y coordinates 
-#         # of an image 
-#         centreY, centreX = imgHeight//2, imgWidth//2
-    
-#         # Computing 2D rotation Matrix to rotate an image 
-#         rotationMatrix = cv2.getRotationMatrix2D((centreY, centreX), angle, 1.0) 
-    
-#         # Now will take out sin and cos values from rotationMatrix 
-#         # Also used numpy absolute function to make positive value 
-#         cosofRotationMatrix = np.abs(rotationMatrix[0][0]) 
-#         sinofRotationMatrix = np.abs(rotationMatrix[0][1]) 
-    
-#         # Now will compute new height & width of 
-#         # an image so that we can use it in 
-#         # warpAffine function to prevent cropping of image sides 
-#         newImageHeight = int((imgHeight * sinofRotationMatrix) +
-#                             (imgWidth * cosofRotationMatrix)) 
-#         newImageWidth = int((imgHeight * cosofRotationMatrix) +
-#                             (imgWidth * sinofRotationMatrix)) 
-    
-#         # After computing the new height & width of an image 
-#         # we also need to update the values of rotation matrix 
-#         rotationMatrix[0][2] += (newImageWidth/2) - centreX 
-#         rotationMatrix[1][2] += (newImageHeight/2) - centreY 
-    
-#         # Now, we will perform actual image rotation 
-#         rotatingimage = cv2.warpAffine( 
-#             rotateImage, rotationMatrix, (newImageWidth, newImageHeight)) 
-    
-#         return rotatingimage 
-
-#     def overlay_image(bg, fg):
-#         # get the dimensions of the background image
-#         bg_h, bg_w, _ = bg.shape
-#         # get the dimensions of the foreground image
-#         fg_h, fg_w, _ = fg.shape
-#         # get the location to place the foreground image
-#         x = np.random.randint(0, bg_w - fg_w)
-#         y = np.random.randint(0, bg_h - fg_h)
-#         # get the alpha mask of the foreground image        
-#         fg_alpha = fg[:, :, 3] / 255.0
-#         # get the alpha mask of the background image
-#         bg_alpha = 1.0 - fg_alpha
-#         # overlay the images
-#         for c in range(0, 3):
-#             bg[y:y+fg_h, x:x+fg_w, c] = (fg_alpha * fg[:, :, c] + bg_alpha * bg[y:y+fg_h, x:x+fg_w, c])
-#         return bg
-
-
-#     digit_images = np.load("D:/HCAI/msc/strawml/data/interim/digits/Images(500x500).npy")
-#     # digit_images = np.load("D:/HCAI/msc/strawml/data/interim/digits/Images(28x28).npy")
-#     digit_info = np.load("D:/HCAI/msc/strawml/data/interim/digits/WriterInfo.npy")
-
-#     # We sort the digit images by the digit labels
-#     digit_images = digit_images[np.argsort(digit_info[:,0])]
-#     digit_info = digit_info[np.argsort(digit_info[:,0])]
-#     digit_labels = digit_info[:,0]
-#     frame_nr = 0
-#     X_train, X_val, y_train, y_val = train_test_split(digit_images, digit_labels, test_size=0.2, random_state=42, stratify=digit_labels)
-#     X_val, X_test, y_val, y_test = train_test_split(X_val, y_val, test_size=0.5, random_state=42, stratify=y_val)
-
-#     data_dict = {'train': X_train, 'val': X_val, 'test': X_test}
-#     label_dict = {'train': y_train, 'val': y_val, 'test': y_test}
-
-#     # let us create a suitable background image for the digits by loading a chute image and taking image[:1440, :1250]
-#     img = cv2.imread("D:/HCAI/msc/strawml/data/processed/chute_image_for_backgroud_creation.jpg")[:1440, :1250]
-#     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-#     import matplotlib.pyplot as plt
-#     for data_type in data_dict.keys():
-#         # create data_type folder if it does not exist
-#         if not os.path.exists(f'data/processed/digits_on_chute_images/{data_type}'):
-#             os.makedirs(f'data/processed/digits_on_chute_images/{data_type}')
-#         else:
-#             shutil.rmtree(f'data/processed/digits_on_chute_images/{data_type}')
-#             os.makedirs(f'data/processed/digits_on_chute_images/{data_type}')
-#         for digit, label in tqdm(zip(data_dict[data_type], label_dict[data_type]), total=len(data_dict[data_type]), desc=f"Placing digits on chute images ({data_type})"):
-
-#             image = img.copy()
-#             # perform random operation on the image
-#             image = internal_image_operations(image)
-#             image = cv2.cvtColor(image, cv2.COLOR_RGB2RGBA)
-#             # To ensure that when rotating the background stays the same color
-#             digit_image = digit.astype(np.uint8)
-#             # resize the digit image to 250 x 250 pixels
-#             digit_image = cv2.resize(digit_image, (250, 250))
-#             # sample a random location on the chute image
-#             x = np.random.randint(0, image.shape[1] - (digit_image.shape[1]+25))
-#             y = np.random.randint(0, image.shape[0] - (digit_image.shape[0]+25))
-#             # sample a random angle between -45 and 45 degrees
-#             angle = np.random.randint(-20, 21)
-#             # rotate the digit image
-#             rotated_digit_image = ModifiedWay(digit_image, angle)
-#             # expand the digit image to 3 channels
-#             rotated_digit_image = cv2.cvtColor(rotated_digit_image, cv2.COLOR_GRAY2RGBA)
-#             # add the digit image to the chute image
-#             image = overlay_image(image, rotated_digit_image)
-#             # save the image to a file
-#             cv2.imwrite(f'data/processed/digits_on_chute_images/{data_type}/frame_{frame_nr}.jpg', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-
-#             # get the bounding box coordinates of the digit image on the chute image, x1, y1, x2, y2, x3, y3, x4, y4        
-#             bbox = np.array([x/image.shape[1], y/image.shape[0], 
-#                             (x+rotated_digit_image.shape[1])/image.shape[1], y/image.shape[0], 
-#                             (x+rotated_digit_image.shape[1])/image.shape[1], (y+rotated_digit_image.shape[0])/image.shape[0], 
-#                             x/image.shape[1], (y+rotated_digit_image.shape[0])/image.shape[0]])
-            
-#             # add the class index to the 
-#             label = [label] + bbox.tolist()
-#             # Save the label to a file
-#             with open( f'data/processed/digits_on_chute_images/{data_type}/frame_{frame_nr}.txt', 'w') as f:
-#                 f.write(' '.join(map(str, label)))
-#             frame_nr += 1
 def place_digits_on_chute_images() -> None:
     """
     HWD+ Data: https://link.springer.com/article/10.1007/s42979-022-01494-2#Sec5
                https://drive.google.com/drive/folders/1f2o1kjXLvcxRgtmMMuDkA2PQ5Zato4Or
 
     """
-    def internal_image_operations(image: np.ndarray) -> np.ndarray:
-        """
-        Perform random operations on the image of size (1440, 1250) to simulate the chute environment,
-        without including the chute. The chute has numbers on it itself, and without labels on the chute numbers,
-        they might cause confusion in the model during training. This functions crops the image to 500 x 500 pixels 
-        and randomly rotates the image between -180 and 180 degrees, while ensuring that the cropped image is inside 
-        the original image, and the resulting image has no black borders from rotation.
-        """
-        # sample a random angle between -180 and 180 degrees
-        angle = np.random.randint(-180, 181)
-        # rotate the image
-        M = cv2.getRotationMatrix2D((image.shape[1]//2, image.shape[0]//2), angle, 1)
-        image = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
-        # randomly crop the image to 500 x 500 pixels
-        x = np.random.randint(0, image.shape[1] - 500)
-        y = np.random.randint(0, image.shape[0] - 500)
-        image = image[y:y+500, x:x+500]
-        return image 
-
-    def ModifiedWay(rotateImage, angle): 
-        """
-        Rotate image without cutting off sides and make borders transparent.
-        Inspiration from: https://www.geeksforgeeks.org/rotate-image-without-cutting-off-sides-using-python-opencv/
-        """
-        # Taking image height and width 
-        imgHeight, imgWidth = rotateImage.shape[0], rotateImage.shape[1] 
-        
-        # Computing the centre x,y coordinates 
-        centreY, centreX = imgHeight // 2, imgWidth // 2
-        
-        # Computing 2D rotation Matrix to rotate an image 
-        rotationMatrix = cv2.getRotationMatrix2D((centreX, centreY), angle, 1.0) 
-        
-        # Calculate the new bounding dimensions of the image
-        abs_cos = abs(rotationMatrix[0, 0])
-        abs_sin = abs(rotationMatrix[0, 1])
-        bound_w = int(imgHeight * abs_sin + imgWidth * abs_cos)
-        bound_h = int(imgHeight * abs_cos + imgWidth * abs_sin)
-        
-        # Adjust the rotation matrix to take into account the translation
-        rotationMatrix[0, 2] += bound_w / 2 - centreX
-        rotationMatrix[1, 2] += bound_h / 2 - centreY
-        
-        # Create an empty image with an alpha channel
-        transparent_image = np.zeros((bound_h, bound_w, 4), dtype=np.uint8)
-        
-        # Convert the grayscale image to RGBA
-        rotateImage_rgba = cv2.cvtColor(rotateImage, cv2.COLOR_GRAY2RGBA)
-        
-        # Copy the original image to the center of the transparent image
-        transparent_image[(bound_h - imgHeight) // 2:(bound_h + imgHeight) // 2,
-                        (bound_w - imgWidth) // 2:(bound_w + imgWidth) // 2, :3] = rotateImage_rgba[:, :, :3]
-        
-        # Set the alpha channel to 255 (opaque) for the original image area
-        transparent_image[(bound_h - imgHeight) // 2:(bound_h + imgHeight) // 2,
-                        (bound_w - imgWidth) // 2:(bound_w + imgWidth) // 2, 3] = 255
-        
-        # Now, we will perform actual image rotation 
-        rotatingimage = cv2.warpAffine(transparent_image, rotationMatrix, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0)) 
-        
-        return rotatingimage
-
-    def overlay_image(bg, fg):
-        # get the dimensions of the background image
-        bg_h, bg_w, _ = bg.shape
-        # get the dimensions of the foreground image
-        fg_h, fg_w, _ = fg.shape
-        # get the location to place the foreground image
-        x = np.random.randint(0, bg_w - fg_w)
-        y = np.random.randint(0, bg_h - fg_h)
-        # get the alpha mask of the foreground image        
-        fg_alpha = fg[:, :, 3] / 255.0
-        # get the alpha mask of the background image
-        bg_alpha = 1.0 - fg_alpha
-        # overlay the images
-        for c in range(0, 3):
-            bg[y:y+fg_h, x:x+fg_w, c] = (fg_alpha * fg[:, :, c] + bg_alpha * bg[y:y+fg_h, x:x+fg_w, c])
-
-        # Get the rotated bounding box coordinates of the digit image on the chute image, x1, y1, x2, y2, x3, y3, x4, y4
-        bbox = np.array([x/bg_w, y/bg_h,
-                        (x+fg_w)/bg_w, y/bg_h,
-                        (x+fg_w)/bg_w, (y+fg_h)/bg_h,
-                        x/bg_w, (y+fg_h)/bg_h])
-        return bg, bbox
-
+    from strawml.data.image_utils import overlay_image, SpecialRotate, create_random_permutations_with_repeats, internal_image_operations
 
     # digit_images = np.load("D:/HCAI/msc/strawml/data/interim/digits/Images(500x500).npy")
     digit_images = np.load("D:/HCAI/msc/strawml/data/interim/digits/Images(28x28).npy")
@@ -716,7 +490,7 @@ def place_digits_on_chute_images() -> None:
 
     data_dict = {'train': X_train, 'val': X_val, 'test': X_test}
     label_dict = {'train': y_train, 'val': y_val, 'test': y_test}
-
+    total_permutations = {'train': 8000, 'val': 1000, 'test': 1000}
     # let us create a suitable background image for the digits by loading a chute image and taking image[:1440, :1250]
     img = cv2.imread("D:/HCAI/msc/strawml/data/processed/chute_image_for_backgroud_creation.jpg")[:1440, :1250]
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -729,43 +503,57 @@ def place_digits_on_chute_images() -> None:
         else:
             shutil.rmtree(f'data/processed/digits_on_chute_images/{data_type}')
             os.makedirs(f'data/processed/digits_on_chute_images/{data_type}')
-        for digit, label in tqdm(zip(data_dict[data_type], label_dict[data_type]), total=len(data_dict[data_type]), desc=f"Placing digits on chute images ({data_type})"):
 
+        d = data_dict[data_type]
+        l = label_dict[data_type]
+
+        permutations = create_random_permutations_with_repeats(data=d, labels=l, total_permutations=total_permutations[data_type], min_size=3, max_size=5)
+
+        for digits, labels in tqdm(permutations, total=len(data_dict[data_type]), desc=f"Placing digits on chute images ({data_type})"):
+            label_ = []
             image = img.copy()
             # perform random operation on the image
             image = internal_image_operations(image)
             image = cv2.cvtColor(image, cv2.COLOR_RGB2RGBA)
-            # To ensure that when rotating the background stays the same color
-            digit_image = digit.astype(np.uint8)
-            # resize the digit image to 250 x 250 pixels
-            # digit_image = cv2.resize(digit_image, (250, 250))
-            # sample a random location on the chute image
-            x = np.random.randint(0, image.shape[1] - (digit_image.shape[1]+100))
-            y = np.random.randint(0, image.shape[0] - (digit_image.shape[0]+100))
-            # sample a random angle between -45 and 45 degrees
-            angle = np.random.randint(-20, 21)
-            # rotate the digit image
-            rotated_digit_image = ModifiedWay(digit_image, angle)
-            # expand the digit image to 3 channels
-            rotated_digit_image = cv2.cvtColor(rotated_digit_image, cv2.COLOR_RGB2RGBA)
-            # add the digit image to the chute image
-            image, bbox = overlay_image(image, rotated_digit_image)
-            # draw the bounding box on the image
-            x1, y1, x2, y2, x3, y3, x4, y4 = bbox
-            x1, y1, x2, y2, x3, y3, x4, y4 = int(x1*image.shape[1]), int(y1*image.shape[0]), int(x2*image.shape[1]), int(y2*image.shape[0]), int(x3*image.shape[1]), int(y3*image.shape[0]), int(x4*image.shape[1]), int(y4*image.shape[0])
-            cv2.line(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            cv2.line(image, (x2, y2), (x3, y3), (255, 0, 0), 2)
-            cv2.line(image, (x3, y3), (x4, y4), (255, 0, 0), 2)
-            cv2.line(image, (x4, y4), (x1, y1), (255, 0, 0), 2)
+            for digit, label in zip(digits, labels):
+
+                # To ensure that when rotating the background stays the same color
+                digit_image = digit.astype(np.uint8)
+                # We change the white background to a random off-white color to make the digits stand out
+                # the complete white color might be too specific of a color and thus when it comes to finding the digits in the chute image, it might be difficult
+                digit_image[digit_image == 255] = np.random.randint(200, 256)
+
+
+                # draw a hyphen on the digit image to replicate the number images it is supposed to find in the chute image
+                cv2.line(digit_image, (22, 14), (27, 14), (0, 0, 0), 2)
+                digit_image_width, digit_image_height = digit_image.shape
+                # sample a random angle between -20 and 20 degrees
+                angle = np.random.randint(-20, 21)
+                # rotate the digit image
+                rotated_digit_image, default_rot = SpecialRotate(digit_image, angle)
+                # expand the digit image to 3 channels
+                rotated_digit_image = cv2.cvtColor(rotated_digit_image, cv2.COLOR_RGB2RGBA)
+                # add the digit image to the chute image
+                image, bbox = overlay_image(image, rotated_digit_image, default_rot, (digit_image_width, digit_image_height))
+                # draw the bounding box on the image
+                # x1, y1, x2, y2, x3, y3, x4, y4 = bbox
+                # x1, y1, x2, y2, x3, y3, x4, y4 = int(x1*image.shape[1]), int(y1*image.shape[0]), int(x2*image.shape[1]), int(y2*image.shape[0]), int(x3*image.shape[1]), int(y3*image.shape[0]), int(x4*image.shape[1]), int(y4*image.shape[0])
+                # cv2.line(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                # cv2.line(image, (x2, y2), (x3, y3), (255, 0, 0), 2)
+                # cv2.line(image, (x3, y3), (x4, y4), (255, 0, 0), 2)
+                # cv2.line(image, (x4, y4), (x1, y1), (255, 0, 0), 2)
+                label_ += [[0] + bbox.tolist()]
             # save the image to a file
-            cv2.imwrite(f'data/processed/digits_on_chute_images/{data_type}/frame_{frame_nr}.jpg', cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+            # write image to rgb format
+            cv2.imwrite(f'data/processed/digits_on_chute_images/{data_type}/frame_{frame_nr}.jpg', cv2.cvtColor(image, cv2.COLOR_RGBA2BGR))
 
             # get the bounding box coordinates of the digit image on the chute image, x1, y1, x2, y2, x3, y3, x4, y4        
             # add the class index to the 
-            label = [label] + bbox.tolist()
             # Save the label to a file
             with open( f'data/processed/digits_on_chute_images/{data_type}/frame_{frame_nr}.txt', 'w') as f:
-                f.write(' '.join(map(str, label)))
+                for inner_label in label_:
+                    # Write each inner list to the file
+                    f.write(' '.join(map(str, inner_label)) + '\n')
             frame_nr += 1
 
 def main(args: Namespace) -> None:

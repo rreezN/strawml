@@ -2,18 +2,22 @@ from __init__ import *
 import random
 import cv2
 import numpy as np
-from strawml.models.chute_finder.OD import ObjectDetect
+from strawml.models.chute_finder.yolo import ObjectDetect
+from strawml.models.digit_finder.sahiyolo import SahiYolo
 import time
+import threading
 
 class VideoStreamCustom:
-    def __init__(self, model_name=None, object_detect=True, yolo_threshold=0.3, device='cuda', verbose=False) -> None:
+    def __init__(self, model_name=None, object_detect=True, yolo_threshold=0.3, device='cuda', verbose=False, sahi=False) -> None:
         self.object_detect = object_detect
         self.yolo_threshold = yolo_threshold
         self.model_name = model_name
         if object_detect:
-            self.OD = ObjectDetect(model_name, yolo_threshold=yolo_threshold, device=device, verbose=False)
-            self.color = [''.join([random.choice('0123456789ABCDEF') for j in range(6)])
-                 for i in range(len(self.OD.classes))]
+            if sahi:
+                self.OD = SahiYolo(model_name, device=device, verbose=False)
+            else:
+                self.OD = ObjectDetect(model_name, yolo_threshold=yolo_threshold, device=device, verbose=False)
+
 
     def plot_boxes(self, results, frame):
         """
@@ -22,7 +26,10 @@ class VideoStreamCustom:
         :param frame: Frame which has been scored.
         :return: Frame with bounding boxes and labels ploted on it.
         """
-        labels, cord, labels_conf, angle_rad = results
+        if 'obb' in self.model_name:
+            labels, cord, labels_conf, angle_rad = results
+        else:
+            labels, cord, labels_conf = results
         n = len(labels)
 
         for i in range(n):  
@@ -69,8 +76,6 @@ class VideoStreamCustom:
             password = credentials[1]
             ip = credentials[2]
             rtsp_port = credentials[3]
-
-        video = cv2.VideoCapture(f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101")
 
         while True:
             try:
