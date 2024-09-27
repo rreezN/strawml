@@ -7,7 +7,7 @@ opencv-python
 psutil
 ultralytics
 scikit-learn
-
+sahi 
 --index-url https://download.pytorch.org/whl/cu118
 torch 
 torchvision
