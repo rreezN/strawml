@@ -8,7 +8,7 @@ DATA WISE
 4. Data with one class only (digits), added hyphens and each image has multiple digits
 5. All of the above but now with the white backgrounds changed to off-white colors (not always the same color)
     - The complete white color might be too specific of a color and thus when it comes to finding the digits in the chute image, it might be difficult
-
+6. TODO resize the overlay images between 14x14 and 28x28
 
 SAHI WISE
 1. Using the YOLO model with a larger number of slices (not too large) is better to detect
