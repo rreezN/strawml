@@ -120,8 +120,8 @@ class SahiYolo:
         image = Image.fromarray(frame)
         height, width = image.size
 
-        slice_height = int(height/10)
-        slice_width = int(width/10)
+        slice_height = int(height/4)
+        slice_width = int(width/4)
 
         slice_image_result = self.slice_image(
             image=image,
