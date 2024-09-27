@@ -1,3 +1,5 @@
+from __init__ import *
+
 import argparse
 import torch
 from torch.utils.data import DataLoader
@@ -121,7 +123,6 @@ if __name__ == '__main__':
     
     # model = cnn.CNNClassifier(image_size=image_size)
     model = convnextv2_atto()
-    
     
     train_model(args, model, train_loader, test_loader)
 

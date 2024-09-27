@@ -31,7 +31,7 @@ class Chute(torch.utils.data.Dataset):
         # If data purpose is straw, we remove all cropped images from the dataset
         if self.data_purpose == "straw":
             # Remove all images that have been cropped
-            print("Removing all cropped images from the dataset (data_purpose='straw')")
+            print("Removing all cropped, rotated or translated images from the dataset (data_purpose='straw')")
             for frame_name in list(self.frames.keys()):
                 attributes = self.frames[frame_name].attrs
                 if 'augmented' in attributes:
@@ -286,8 +286,10 @@ class Chute(torch.utils.data.Dataset):
         self.frames.attrs['max'] = running_max
         
         print("Statistics extracted:")
-        print(f'Mean: {running_mean}, Std: {running_std}, Min: {running_min}, Max: {running_max}')
-        print(f'Mean HM: {running_mean_hm}, Std HM: {running_std_hm}, Min HM: {running_min_hm}, Max HM: {running_max_hm}')
+        if self.inc_heatmap:
+            print(f'Mean HM: {running_mean_hm}, Std HM: {running_std_hm}, Min HM: {running_min_hm}, Max HM: {running_max_hm}')
+        else:
+            print(f'Mean: {running_mean}, Std: {running_std}, Min: {running_min}, Max: {running_max}')
         
         if self.inc_heatmap:
             return running_mean, running_std, running_min, running_max, running_mean_hm, running_std_hm, running_min_hm, running_max_hm
