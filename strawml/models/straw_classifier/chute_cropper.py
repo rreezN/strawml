@@ -19,7 +19,8 @@ def rotate_to_bbox(image, bbox) -> tuple:
     # Calculate the angle of the bounding box
     angle = np.arctan2(y1 - y4, x1 - x4)
     angle_degrees = np.rad2deg(angle)
-    
+
+
     # Rotate the image and bounding box
     rotated_image, _, rotated_bbox = rotate_image_and_bbox(image, image, bbox, angle_degrees=angle_degrees)
     

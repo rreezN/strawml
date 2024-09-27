@@ -7,10 +7,11 @@ import timeit
 
 import data.dataloader as dl
 import strawml.models.straw_classifier.cnn_classifier as cnn
+from strawml.models.straw_classifier.convnextv2 import *
 import strawml.models.straw_classifier.chute_cropper as cc
 
 
-def train_model(args, model: torch.nn.Module, train_loader: torch.utils.DataLoader, val_loader: torch.utils.DataLoader) -> None:
+def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.DataLoader, val_loader: torch.utils.data.DataLoader) -> None:
     """Train the CNN classifier model.
     """
     
@@ -27,8 +28,8 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.DataLoad
         train_iterator.set_description(f'Training Epoch {epoch+1}/{args.epochs}')
         model.train()
         epoch_accuracies = []
-        for (data, target) in train_iterator:
-            frame_data = data
+        # TODO: Temporary bbox this way (?)
+        for (frame_data, target) in train_iterator:
             fullness = target
             
             if torch.cuda.is_available():
@@ -67,8 +68,7 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.DataLoad
             # Time the inference time
             start_time = timeit.default_timer()
             
-            for data, target in val_iterator:
-                frame_data = data
+            for (frame_data, target) in val_iterator:
                 fullness = target
                 
                 if torch.cuda.is_available():
@@ -110,14 +110,19 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
     
-    train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, random_state=args.seed, force_update_statistics=False, data_purpose='straw')
-    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, random_state=args.seed, force_update_statistics=False, data_purpose='straw')
+    image_size = (1370, 204)
+    image_size = (224, 224)
+    
+    train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
+    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
     
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False)
     
-    cnn_model = cnn.CNNClassifier()
+    # model = cnn.CNNClassifier(image_size=image_size)
+    model = convnextv2_atto()
     
-    train_model(args, cnn_model, train_loader, test_loader)
+    
+    train_model(args, model, train_loader, test_loader)
 
     
