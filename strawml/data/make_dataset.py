@@ -475,10 +475,12 @@ def place_digits_on_chute_images() -> None:
 
     """
     from strawml.data.image_utils import overlay_image, SpecialRotate, create_random_permutations_with_repeats, internal_image_operations
+    from strawml.data.augment_chute_data import color_image
+    from skimage import exposure
 
     # digit_images = np.load("D:/HCAI/msc/strawml/data/interim/digits/Images(500x500).npy")
-    digit_images = np.load("D:/HCAI/msc/strawml/data/interim/digits/Images(28x28).npy")
-    digit_info = np.load("D:/HCAI/msc/strawml/data/interim/digits/WriterInfo.npy")
+    digit_images = np.load("data/interim/digits/Images(28x28).npy")
+    digit_info = np.load("data/interim/digits/WriterInfo.npy")
 
     # We sort the digit images by the digit labels
     digit_images = digit_images[np.argsort(digit_info[:,0])]
@@ -492,7 +494,7 @@ def place_digits_on_chute_images() -> None:
     label_dict = {'train': y_train, 'val': y_val, 'test': y_test}
     total_permutations = {'train': 8000, 'val': 1000, 'test': 1000}
     # let us create a suitable background image for the digits by loading a chute image and taking image[:1440, :1250]
-    img = cv2.imread("D:/HCAI/msc/strawml/data/processed/chute_image_for_backgroud_creation.jpg")[:1440, :1250]
+    img = cv2.imread("data/processed/chute_image_for_backgroud_creation.jpg")[:1440, :1250]
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     import matplotlib.pyplot as plt
@@ -514,6 +516,12 @@ def place_digits_on_chute_images() -> None:
             image = img.copy()
             # perform random operation on the image
             image = internal_image_operations(image)
+            # perform random gamma operation on the and add noise
+            if np.random.uniform() > 0.5:
+                gamma = np.random.uniform(0.5, 2.5)
+                image = exposure.adjust_gamma(image, gamma)
+                gaussian_noise = np.random.uniform(0, 1)
+                image = cv2.add(image, np.random.normal(0, gaussian_noise, image.shape).astype(np.uint8))
             image = cv2.cvtColor(image, cv2.COLOR_RGB2RGBA)
             for digit, label in zip(digits, labels):
 
@@ -522,10 +530,10 @@ def place_digits_on_chute_images() -> None:
                 # We change the white background to a random off-white color to make the digits stand out
                 # the complete white color might be too specific of a color and thus when it comes to finding the digits in the chute image, it might be difficult
                 digit_image[digit_image == 255] = np.random.randint(200, 256)
-
-
                 # draw a hyphen on the digit image to replicate the number images it is supposed to find in the chute image
                 cv2.line(digit_image, (22, 14), (27, 14), (0, 0, 0), 2)
+                # randomly resize the image to be between 14x14 and 28x28
+                digit_image = cv2.resize(digit_image, (np.random.randint(14, 29), np.random.randint(14, 29)))
                 digit_image_width, digit_image_height = digit_image.shape
                 # sample a random angle between -20 and 20 degrees
                 angle = np.random.randint(-20, 21)

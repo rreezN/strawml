@@ -456,7 +456,7 @@ def augment_chute_data(args: argparse.Namespace) -> None:
                 if 'color' in args.type:
                     # print(f"Color, with frame: {frame_nr}")
                     #TODO: Some images get extremely bright/overexposed, even when gamma is set 1, need to find a fix for this
-                    gamma = random.uniform(0.05, 3)
+                    gamma = random.uniform(0.5, 2.5)
                     gaussian_noise = random.uniform(0, 1)
                     colored_image, colored_image_diff, colored_bbox = color_image(image, image_diff, bbox_chute, gamma, gaussian_noise)
                     save_frames_to_hdf5(hf_path, frame, frame_nr, colored_image, colored_image_diff, colored_bbox, "color")
