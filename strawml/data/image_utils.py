@@ -48,7 +48,7 @@ def rotate_point(x: float,
 
     return x_new, y_new
 
-def rotate_bbox(bbox: list|np.ndarray, 
+def rotate_bbox(bbox: np.ndarray, 
                 img_width: int, 
                 img_height: int, 
                 angle_degrees: float) -> np.ndarray:
