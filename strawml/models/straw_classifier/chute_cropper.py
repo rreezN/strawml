@@ -2,11 +2,8 @@ from __init__ import *
 
 from PIL import Image
 import numpy as np
-import torch
-from skimage import transform
 import matplotlib.pyplot as plt
 import cv2
-import time
 import timeit
 from tqdm import tqdm
 
