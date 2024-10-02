@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import h5py
 import cv2
+from skimage.metrics import structural_similarity as ssim
 from tqdm import tqdm
 
 from strawml.data.make_dataset import decode_binary_image
@@ -325,7 +326,67 @@ def plot_variance_image_per_class(class_dict: dict, frames: h5py, mean_image: np
     plt.tight_layout()
     plt.savefig('reports/figures/straw_analysis/data/variance_images.png', dpi=300)
     plt.show()    
-  
+
+def calculate_mse(image1: np.ndarray, image2: np.ndarray) -> float:
+    """Calculate the mean squared error between two images.
+    """
+    return np.mean((image1 - image2)**2)
+
+def calculate_ssim(image1: np.ndarray, image2: np.ndarray) -> float:
+    """Calculate the structural similarity index between two images.
+    """
+    return ssim(image1, image2)
+
+def plot_mse_matrix(class_dict: dict, frames: h5py.File) -> None:
+    """Create a matrix of mean squared errors between all classes.
+    """
+    
+    print('Calculating MSE matrix...')
+    classes_original = list([int(x*100) for x in class_dict['original'].keys()])
+    classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
+    classes = list(set(classes_original) | set(classes_augmented))
+    
+    mse_matrix = np.zeros((len(classes), len(classes)))
+    for i in range(len(classes)):
+        for j in range(len(classes)):
+            print(f'Calculating MSE between class {classes[i]} and class {classes[j]}')
+            mean_image1 = np.zeros((1370, 204, 3))
+            mean_image2 = np.zeros((1370, 204, 3))
+            count1 = 0
+            count2 = 0
+            for frame_name in tqdm(class_dict['augmented'].get(float(classes[i]/100), []) + class_dict['original'].get(float(classes[i]/100), [])):
+                image = decode_binary_image(frames[frame_name]['image'][...])
+                image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
+                image = cv2.resize(image, (204, 1370))
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                image = image / 255
+                mean_image1 += image
+                count1 += 1
+            for frame_name in tqdm(class_dict['augmented'].get(float(classes[j]/100), []) + class_dict['original'].get(float(classes[j]/100), [])):
+                image = decode_binary_image(frames[frame_name]['image'][...])
+                image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
+                image = cv2.resize(image, (204, 1370))
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                image = image / 255
+                mean_image2 += image
+                count2 += 1
+            mean_image1 = mean_image1 / count1
+            mean_image2 = mean_image2 / count2
+            mse_matrix[i, j] = calculate_mse(mean_image1, mean_image2)
+    
+    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+    cax = ax.matshow(mse_matrix, cmap='viridis')
+    fig.colorbar(cax)
+    ax.set_title('Mean Squared Error Matrix')
+    ax.set_xlabel('Class')
+    ax.set_ylabel('Class')
+    ax.set_xticks(np.arange(len(classes)))
+    ax.set_yticks(np.arange(len(classes)))
+    ax.set_xticklabels(classes)
+    ax.set_yticklabels(classes)
+    plt.savefig('reports/figures/straw_analysis/data/mse_matrix.png', dpi=300)
+    plt.show()
+
 
 
 if __name__ == '__main__':
@@ -334,8 +395,9 @@ if __name__ == '__main__':
     # plot_class_distribution(class_dictionary, frames)
     # plot_pixel_intensities(class_dictionary, frames)
     # plot_pixel_means_and_variance(class_dictionary, frames)
-    mean_images = plot_mean_image_per_class(class_dictionary, frames)
-    plot_variance_image_per_class(class_dictionary, frames, mean_images)
+    # mean_images = plot_mean_image_per_class(class_dictionary, frames)
+    # plot_variance_image_per_class(class_dictionary, frames, mean_images)
+    plot_mse_matrix(class_dictionary, frames)
     
     
 
