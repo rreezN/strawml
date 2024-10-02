@@ -154,25 +154,15 @@ def plot_pixel_intensities(class_dict: dict, frames: h5py.File) -> None:
     ax1 = fig.add_subplot(gs[0, 0])
     ax1.set_title('All Classes')
     ax1.set_xlim(0, 256)
-    ax1.set_ylim(0, 0.051)
-    ax1.set_yticks([0, 0.025, 0.05])
+    ax1.set_ylim(0, 0.0151)
+    ax1.set_yticks([0, 0.0075, 0.015])
     ax1.set_xticks([0, 128, 255])
-    # ax1.set_xlabel('Pixel Intensity')
     ax1.set_ylabel('Density')
-    
-    # TODO: I actually only need to loop once, can just add them all together after the loop for the all images histogram...
-    # counts = np.zeros(256)
-    # print('Plotting pixel intensity histogram for all images...')
-    # for frame_name in tqdm(frames.keys()):
-    #     image = decode_binary_image(frames[frame_name]['image'][...])
-    #     image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
-    #     image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) 
-    #     counts += np.histogram(image.ravel(), bins=256, range=(0, 256))[0]
-    
-    # ax1.hist(np.arange(0, 256), bins=256, weights=counts, density=True, histtype='stepfilled')
+
         
     print('Plotting pixel intensity histograms for each class...')
     class_counter = 0
+    total_class_counts = np.zeros(256)
     for row in range(2):
         for col in range(0, 11):
             if row == 0: col += 1
@@ -183,17 +173,18 @@ def plot_pixel_intensities(class_dict: dict, frames: h5py.File) -> None:
             for frame_name in tqdm(class_dict['augmented'].get(float(classes[class_counter]/100), []) + class_dict['original'].get(float(classes[class_counter]/100), [])):
                 image = decode_binary_image(frames[frame_name]['image'][...])
                 image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                # image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
                 class_counts += np.histogram(image.ravel(), bins=256, range=(0, 256))[0]
-            ax.hist(np.arange(0, 256), bins=256, weights=class_counts, density=True, histtype='stepfilled')
+                total_class_counts += class_counts
+            ax.hist(np.arange(0, 256), bins=256, weights=class_counts, density=True, histtype='bar')
             ax.set_title(f'Class {classes[class_counter]}')
             ax.set_xticks([0, 128, 255])
             
-            ax.set_ylim(0, 0.051)
+            ax.set_ylim(0, 0.0151)
             ax.set_xlim(0, 256)
             if col == 0:
                  ax.set_ylabel('Density')
-                 ax.set_yticks([0, 0.025, 0.5])
+                 ax.set_yticks([0, 0.0075, 0.015])
             else:
                 ax.set_yticks([])
             if row == 1 and col == 4:
@@ -201,26 +192,150 @@ def plot_pixel_intensities(class_dict: dict, frames: h5py.File) -> None:
                 
             
             class_counter += 1
+
+    ax1.hist(np.arange(0, 256), bins=256, weights=total_class_counts, density=True, histtype='bar')
     
     plt.suptitle(f'Straw Pixel Intensity Histograms ({frames.filename})')
     plt.savefig('reports/figures/straw_analysis/data/pixel_intensity_histograms.png', dpi=300)
     plt.show()
     
         
-        
+
+def plot_pixel_means_and_variance(class_dict: dict, frames: h5py.File) -> None:
+    """
+    Plot means and variance of pixel intensities for each class.
+    """  
     
+    print("Plotting pixel intensities...")
+    classes_original = list([int(x*100) for x in class_dict['original'].keys()])
+    classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
+    classes = list(set(classes_original) | set(classes_augmented))
+    
+    
+    print('Plotting pixel means and variance for each class...')
+
+    means_all = []
+    variances_all = []
+    stds_all = []
+    for class_counter in range(len(classes)):
+            means = []
+            variances = []
+            stds = []
+            for frame_name in tqdm(class_dict['augmented'].get(float(classes[class_counter]/100), []) + class_dict['original'].get(float(classes[class_counter]/100), [])):
+                image = decode_binary_image(frames[frame_name]['image'][...])
+                image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
+                means = means + [np.mean(image)]
+                variances = variances + [np.var(image)]
+                stds = stds + [np.std(image)]
+            means_all = means_all + [np.mean(means)]
+            variances_all = variances_all + [np.mean(variances)]
+            stds_all = stds_all + [np.mean(stds)]
+
+            print(f'Mean of class {class_counter*5}: {np.mean(means)}')
+            print(f'Variance of class {class_counter*5}: {np.mean(variances)}')
+            print(f'Std of class {class_counter*5}: {np.mean(stds)}')
+    
+    
+    fig = plt.figure(figsize=(16,4))
+    plt.errorbar(classes, means_all, yerr=stds_all, fmt='o', label='Mean', capsize=5)
+    plt.title('Mean Pixel Intensity of Each Class')
+    plt.xlabel('Class')
+    plt.xticks(classes)
+    plt.ylabel('Mean Pixel Intensity')
+    plt.savefig('reports/figures/straw_analysis/data/pixel_intensity_means.png', dpi=300)
+    plt.show()
     
 
+def plot_mean_image_per_class(class_dict: dict, frames: h5py) -> np.ndarray:
+    """Plots the mean image of each class.
+    """
+
+    print('Plotting mean image for each class...')
+    classes_original = list([int(x*100) for x in class_dict['original'].keys()])
+    classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
+    classes = list(set(classes_original) | set(classes_augmented))
     
+    fig, ax = plt.subplots(1, 21, figsize=(17, 4))
+    ax = ax.ravel()
+    
+    mean_images = []
+    for class_counter in range(len(classes)):
+        print(f'Class {classes[class_counter]}')
+        mean_image = np.zeros((1370, 204, 3))
+        count = 0
+        for frame_name in tqdm(class_dict['augmented'].get(float(classes[class_counter]/100), []) + class_dict['original'].get(float(classes[class_counter]/100), [])):
+            image = decode_binary_image(frames[frame_name]['image'][...])
+            image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
+            image = cv2.resize(image, (204, 1370))
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = image / 255
+            mean_image += image    
+            count += 1
+        
+        mean_image = mean_image / count
+        ax[class_counter].imshow(mean_image)
+        ax[class_counter].set_title(f'Class {classes[class_counter]}')
+        ax[class_counter].axis('off')
+        mean_images.append(mean_image)
+        
+    plt.suptitle(f'Mean Image of Each Class ({frames.filename})')
+    plt.tight_layout()
+    plt.savefig('reports/figures/straw_analysis/data/mean_images.png', dpi=300)
+    plt.show()
+    
+    return mean_images
+    
+
+def plot_variance_image_per_class(class_dict: dict, frames: h5py, mean_image: np.ndarray) -> None:
+    """Plots the variance image of each class.
+    """
+
+    print('Plotting mean variance for each class...')
+    classes_original = list([int(x*100) for x in class_dict['original'].keys()])
+    classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
+    classes = list(set(classes_original) | set(classes_augmented))
+    
+    fig, ax = plt.subplots(1, 21, figsize=(17, 4))
+    ax = ax.ravel()
+    
+    for class_counter in range(len(classes)):
+        print(f'Class {classes[class_counter]}')
+        variance_image = np.zeros((1370, 204, 3))
+
+        images_in_class = 0
+        # Calculate the variance image (the variance of each pixel across all images in the class)
+        for frame_name in tqdm(class_dict['augmented'].get(float(classes[class_counter]/100), []) + class_dict['original'].get(float(classes[class_counter]/100), [])):
+            image = decode_binary_image(frames[frame_name]['image'][...])
+            image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
+            image = cv2.resize(image, (204, 1370))
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = image / 255
+            variance_image += (image - mean_image[class_counter])**2
+            images_in_class += 1
+            
+        # scale image to be in [0, 1]
+        if np.max(variance_image) != 0 and np.min(variance_image) != 0:
+            variance_image = (((variance_image - np.min(variance_image) * (1 - 0)) / (np.max(variance_image) - np.min(variance_image))) + 0)
+        
+        ax[class_counter].imshow(variance_image)
+        ax[class_counter].set_title(f'Class {classes[class_counter]}')
+        ax[class_counter].axis('off')
+
+    plt.suptitle(f'Variance Image of Each Class ({frames.filename})')
+    plt.tight_layout()
+    plt.savefig('reports/figures/straw_analysis/data/variance_images.png', dpi=300)
+    plt.show()    
+  
 
 
 if __name__ == '__main__':
     frames = h5py.File('data/processed/augmented/chute_detection.hdf5', 'r')
     class_dictionary = get_frames_by_class(frames)
-    plot_class_distribution(class_dictionary, frames)
-    plot_pixel_intensities(class_dictionary, frames)
-    
-    
+    # plot_class_distribution(class_dictionary, frames)
+    # plot_pixel_intensities(class_dictionary, frames)
+    # plot_pixel_means_and_variance(class_dictionary, frames)
+    mean_images = plot_mean_image_per_class(class_dictionary, frames)
+    plot_variance_image_per_class(class_dictionary, frames, mean_images)
     
     
 
