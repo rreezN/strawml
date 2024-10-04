@@ -429,6 +429,17 @@ def plot_edge_detection(class_dict: dict, frames: h5py.File) -> None:
     plt.show()
     
 
+# TODO:
+# - Plot PCA (2 dimensions) of each image in each class and see if they are separable
+# - Look into some feature engineering
+#    - Histogram of Oriented Gradients (HOG)
+#    - Local Binary Patterns (LBP)
+#    - Fourier Transform
+# - Per-Class Heatmaps
+#    - Heatmap of feature importance for each class e.g. using Grad-CAM
+# - Shannon Entroyp
+# - Mutual Information
+
 
 
 if __name__ == '__main__':
