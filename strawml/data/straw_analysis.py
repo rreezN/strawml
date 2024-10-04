@@ -152,49 +152,64 @@ def plot_pixel_intensities(class_dict: dict, frames: h5py.File) -> None:
     fig = plt.figure(figsize=(14,7))
     gs = gridspec.GridSpec(2, 11, figure=fig, wspace=0.3, hspace=0.3)
     
+    ylim = 0.02
+    yticks = [0, ylim/2, ylim]
+    
+    histtype = 'step'
+    
     ax1 = fig.add_subplot(gs[0, 0])
     ax1.set_title('All Classes')
     ax1.set_xlim(0, 256)
-    ax1.set_ylim(0, 0.0151)
-    ax1.set_yticks([0, 0.0075, 0.015])
+    ax1.set_ylim(0, ylim)
+    ax1.set_yticks(yticks)
     ax1.set_xticks([0, 128, 255])
     ax1.set_ylabel('Density')
 
         
     print('Plotting pixel intensity histograms for each class...')
     class_counter = 0
-    total_class_counts = np.zeros(256)
+    total_class_counts = np.zeros((3, 256))
     for row in range(2):
         for col in range(0, 11):
             if row == 0: col += 1
             if row == 0 and col == 11: break
-            class_counts = np.zeros(256)
+            class_counts = np.zeros((3, 256))
             ax = fig.add_subplot(gs[row, col])
             print(f'Row: {row}, Col: {col}, Class {classes[class_counter]}')
             for frame_name in tqdm(class_dict['augmented'].get(float(classes[class_counter]/100), []) + class_dict['original'].get(float(classes[class_counter]/100), [])):
                 image = decode_binary_image(frames[frame_name]['image'][...])
                 image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
                 # image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                class_counts += np.histogram(image.ravel(), bins=256, range=(0, 256))[0]
+                for channel in range(3):
+                    class_counts[channel] = np.histogram(image[:, :, channel].ravel(), bins=256, range=(0, 256))[0]
                 total_class_counts += class_counts
-            ax.hist(np.arange(0, 256), bins=256, weights=class_counts, density=True, histtype='bar')
+            
+            ax.hist(np.arange(0, 256), bins=256, weights=class_counts[0], density=True, histtype=histtype, alpha=0.25, color='r')
+            ax.hist(np.arange(0, 256), bins=256, weights=class_counts[1], density=True, histtype=histtype, alpha=0.25, color='g')
+            ax.hist(np.arange(0, 256), bins=256, weights=class_counts[2], density=True, histtype=histtype, alpha=0.25, color='b')
             ax.set_title(f'Class {classes[class_counter]}')
             ax.set_xticks([0, 128, 255])
             
-            ax.set_ylim(0, 0.0151)
+            ax.set_ylim(0, ylim)
             ax.set_xlim(0, 256)
             if col == 0:
                  ax.set_ylabel('Density')
-                 ax.set_yticks([0, 0.0075, 0.015])
+                 ax.set_yticks(yticks)
             else:
                 ax.set_yticks([])
-            if row == 1 and col == 4:
+            if row == 1 and col == 5:
                 ax.set_xlabel('Pixel Intensity')
                 
             
             class_counter += 1
+            
+        
 
-    ax1.hist(np.arange(0, 256), bins=256, weights=total_class_counts, density=True, histtype='bar')
+    ax1.hist(np.arange(0, 256), bins=256, weights=total_class_counts[0], density=True, histtype=histtype, alpha=0.25, color='r', label='Red Channel')
+    ax1.hist(np.arange(0, 256), bins=256, weights=total_class_counts[1], density=True, histtype=histtype, alpha=0.25, color='g', label='Green Channel')
+    ax1.hist(np.arange(0, 256), bins=256, weights=total_class_counts[2], density=True, histtype=histtype, alpha=0.25, color='b', label='Blue Channel')
+    
+    fig.legend(loc='center', ncols=3, bbox_to_anchor=(0.475, 0.935))
     
     plt.suptitle(f'Straw Pixel Intensity Histograms ({frames.filename})')
     plt.savefig('reports/figures/straw_analysis/data/pixel_intensity_histograms.png', dpi=300)
@@ -419,13 +434,14 @@ def plot_edge_detection(class_dict: dict, frames: h5py.File) -> None:
 if __name__ == '__main__':
     frames = h5py.File('data/processed/augmented/chute_detection.hdf5', 'r')
     class_dictionary = get_frames_by_class(frames)
+    
     # plot_class_distribution(class_dictionary, frames)
     # plot_pixel_intensities(class_dictionary, frames)
     # plot_pixel_means_and_variance(class_dictionary, frames)
     # mean_images = plot_mean_image_per_class(class_dictionary, frames)
     # plot_variance_image_per_class(class_dictionary, frames, mean_images)
     # plot_mse_matrix(class_dictionary, frames, mean_images)
-    plot_edge_detection(class_dictionary, frames)
+    # plot_edge_detection(class_dictionary, frames)
     
     
 
