@@ -152,49 +152,64 @@ def plot_pixel_intensities(class_dict: dict, frames: h5py.File) -> None:
     fig = plt.figure(figsize=(14,7))
     gs = gridspec.GridSpec(2, 11, figure=fig, wspace=0.3, hspace=0.3)
     
+    ylim = 0.02
+    yticks = [0, ylim/2, ylim]
+    
+    histtype = 'step'
+    
     ax1 = fig.add_subplot(gs[0, 0])
     ax1.set_title('All Classes')
     ax1.set_xlim(0, 256)
-    ax1.set_ylim(0, 0.0151)
-    ax1.set_yticks([0, 0.0075, 0.015])
+    ax1.set_ylim(0, ylim)
+    ax1.set_yticks(yticks)
     ax1.set_xticks([0, 128, 255])
     ax1.set_ylabel('Density')
 
         
     print('Plotting pixel intensity histograms for each class...')
     class_counter = 0
-    total_class_counts = np.zeros(256)
+    total_class_counts = np.zeros((3, 256))
     for row in range(2):
         for col in range(0, 11):
             if row == 0: col += 1
             if row == 0 and col == 11: break
-            class_counts = np.zeros(256)
+            class_counts = np.zeros((3, 256))
             ax = fig.add_subplot(gs[row, col])
             print(f'Row: {row}, Col: {col}, Class {classes[class_counter]}')
             for frame_name in tqdm(class_dict['augmented'].get(float(classes[class_counter]/100), []) + class_dict['original'].get(float(classes[class_counter]/100), [])):
                 image = decode_binary_image(frames[frame_name]['image'][...])
                 image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
                 # image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                class_counts += np.histogram(image.ravel(), bins=256, range=(0, 256))[0]
+                for channel in range(3):
+                    class_counts[channel] = np.histogram(image[:, :, channel].ravel(), bins=256, range=(0, 256))[0]
                 total_class_counts += class_counts
-            ax.hist(np.arange(0, 256), bins=256, weights=class_counts, density=True, histtype='bar')
+            
+            ax.hist(np.arange(0, 256), bins=256, weights=class_counts[0], density=True, histtype=histtype, alpha=0.25, color='r')
+            ax.hist(np.arange(0, 256), bins=256, weights=class_counts[1], density=True, histtype=histtype, alpha=0.25, color='g')
+            ax.hist(np.arange(0, 256), bins=256, weights=class_counts[2], density=True, histtype=histtype, alpha=0.25, color='b')
             ax.set_title(f'Class {classes[class_counter]}')
             ax.set_xticks([0, 128, 255])
             
-            ax.set_ylim(0, 0.0151)
+            ax.set_ylim(0, ylim)
             ax.set_xlim(0, 256)
             if col == 0:
                  ax.set_ylabel('Density')
-                 ax.set_yticks([0, 0.0075, 0.015])
+                 ax.set_yticks(yticks)
             else:
                 ax.set_yticks([])
-            if row == 1 and col == 4:
+            if row == 1 and col == 5:
                 ax.set_xlabel('Pixel Intensity')
                 
             
             class_counter += 1
+            
+        
 
-    ax1.hist(np.arange(0, 256), bins=256, weights=total_class_counts, density=True, histtype='bar')
+    ax1.hist(np.arange(0, 256), bins=256, weights=total_class_counts[0], density=True, histtype=histtype, alpha=0.25, color='r', label='Red Channel')
+    ax1.hist(np.arange(0, 256), bins=256, weights=total_class_counts[1], density=True, histtype=histtype, alpha=0.25, color='g', label='Green Channel')
+    ax1.hist(np.arange(0, 256), bins=256, weights=total_class_counts[2], density=True, histtype=histtype, alpha=0.25, color='b', label='Blue Channel')
+    
+    fig.legend(loc='center', ncols=3, bbox_to_anchor=(0.475, 0.935))
     
     plt.suptitle(f'Straw Pixel Intensity Histograms ({frames.filename})')
     plt.savefig('reports/figures/straw_analysis/data/pixel_intensity_histograms.png', dpi=300)
@@ -337,9 +352,10 @@ def calculate_ssim(image1: np.ndarray, image2: np.ndarray) -> float:
     """
     return ssim(image1, image2)
 
-def plot_mse_matrix(class_dict: dict, frames: h5py.File) -> None:
+def plot_mse_matrix(class_dict: dict, frames: h5py.File, mean_images: list) -> None:
     """Create a matrix of mean squared errors between all classes.
     """
+
     
     print('Calculating MSE matrix...')
     classes_original = list([int(x*100) for x in class_dict['original'].keys()])
@@ -350,29 +366,7 @@ def plot_mse_matrix(class_dict: dict, frames: h5py.File) -> None:
     for i in range(len(classes)):
         for j in range(len(classes)):
             print(f'Calculating MSE between class {classes[i]} and class {classes[j]}')
-            mean_image1 = np.zeros((1370, 204, 3))
-            mean_image2 = np.zeros((1370, 204, 3))
-            count1 = 0
-            count2 = 0
-            for frame_name in tqdm(class_dict['augmented'].get(float(classes[i]/100), []) + class_dict['original'].get(float(classes[i]/100), [])):
-                image = decode_binary_image(frames[frame_name]['image'][...])
-                image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
-                image = cv2.resize(image, (204, 1370))
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                image = image / 255
-                mean_image1 += image
-                count1 += 1
-            for frame_name in tqdm(class_dict['augmented'].get(float(classes[j]/100), []) + class_dict['original'].get(float(classes[j]/100), [])):
-                image = decode_binary_image(frames[frame_name]['image'][...])
-                image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
-                image = cv2.resize(image, (204, 1370))
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                image = image / 255
-                mean_image2 += image
-                count2 += 1
-            mean_image1 = mean_image1 / count1
-            mean_image2 = mean_image2 / count2
-            mse_matrix[i, j] = calculate_mse(mean_image1, mean_image2)
+            mse_matrix[i, j] = calculate_mse(mean_images[i], mean_images[j])
     
     fig, ax = plt.subplots(1, 1, figsize=(8, 8))
     cax = ax.matshow(mse_matrix, cmap='viridis')
@@ -388,16 +382,77 @@ def plot_mse_matrix(class_dict: dict, frames: h5py.File) -> None:
     plt.show()
 
 
+def edge_detection(image: np.ndarray, threshold1: int = 25, threshold2: int = 100) -> np.ndarray:
+    """Detect edges in an image using the Canny edge detector.
+    """
+    edges = cv2.Canny(image, threshold1, threshold2)
+    # edges = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=5)
+    return edges
+
+
+def plot_edge_detection(class_dict: dict, frames: h5py.File) -> None:
+    """Plots the results of edge detection on a random image from each class.
+    """
+
+    print('Plotting edge detection results...')
+    
+    classes_original = list([int(x*100) for x in class_dict['original'].keys()])
+    classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
+    classes = list(set(classes_original) | set(classes_augmented))
+
+    fig, ax = plt.subplots(5, 21, figsize=(17, 24))
+    
+    # threshold1 = 25
+    # threshold2 = 50
+    
+    threshold1s = [25, 50, 75, 100]
+    threshold2s = [50, 100, 150, 200]
+    
+    for class_counter in tqdm(range(len(classes))):
+        all_frames_in_class = class_dict['augmented'].get(float(classes[class_counter]/100), []) + class_dict['original'].get(float(classes[class_counter]/100), [])
+        frame_name = np.random.choice(all_frames_in_class)
+        image = decode_binary_image(frames[frame_name]['image'][...])
+        image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
+        image = cv2.resize(image, (204, 1370))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        ax[0, class_counter].imshow(image)
+        ax[0, class_counter].axis('off')
+        ax[0, class_counter].set_title(f'Class {classes[class_counter]}')
+        for i, threshold1, threshold2 in (zip(range(4), threshold1s, threshold2s)):
+            edges = edge_detection(image, threshold1, threshold2)
+            ax[i+1, class_counter].imshow(edges, cmap='gray')
+            ax[i+1, class_counter].axis('off')
+        
+    plt.suptitle(f'Edge Detection Results (thresh1={threshold1}, thresh2={threshold2}) ({frames.filename})')
+    plt.tight_layout()
+    plt.savefig('reports/figures/straw_analysis/data/edge_detection.png', dpi=300)
+    plt.show()
+    
+
+# TODO:
+# - Plot PCA (2 dimensions) of each image in each class and see if they are separable
+# - Look into some feature engineering
+#    - Histogram of Oriented Gradients (HOG)
+#    - Local Binary Patterns (LBP)
+#    - Fourier Transform
+# - Per-Class Heatmaps
+#    - Heatmap of feature importance for each class e.g. using Grad-CAM
+# - Shannon Entroyp
+# - Mutual Information
+
+
 
 if __name__ == '__main__':
     frames = h5py.File('data/processed/augmented/chute_detection.hdf5', 'r')
     class_dictionary = get_frames_by_class(frames)
+    
     # plot_class_distribution(class_dictionary, frames)
     # plot_pixel_intensities(class_dictionary, frames)
     # plot_pixel_means_and_variance(class_dictionary, frames)
     # mean_images = plot_mean_image_per_class(class_dictionary, frames)
     # plot_variance_image_per_class(class_dictionary, frames, mean_images)
-    plot_mse_matrix(class_dictionary, frames)
+    # plot_mse_matrix(class_dictionary, frames, mean_images)
+    # plot_edge_detection(class_dictionary, frames)
     
     
 
