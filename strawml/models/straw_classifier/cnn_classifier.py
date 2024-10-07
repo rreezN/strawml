@@ -1,7 +1,9 @@
 from __init__ import *
 
+import numpy as np
 import torch
 import argparse
+import cv2
 
 import strawml.models.straw_classifier.utils as utils
 
@@ -9,11 +11,16 @@ import strawml.models.straw_classifier.utils as utils
 class CNNClassifier(torch.nn.Module):
     """ Basic CNN classifier class.
     """
-    def __init__(self, image_size=(448, 448)) -> None:
+    def __init__(self, image_size=(448, 448), img_mean=[0, 0, 0], img_std=[1, 1, 1], input_channels=3) -> None:
         super(CNNClassifier, self).__init__()
 
         self.image_size = image_size
-        self.conv1 = torch.nn.Conv2d(3, 32, 3, dtype=torch.float)
+        
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.mean = torch.Tensor(img_mean).to(self.device)
+        self.std = torch.Tensor(img_std).to(self.device)
+        
+        self.conv1 = torch.nn.Conv2d(input_channels, 32, 3, dtype=torch.float)
         self.pool = torch.nn.MaxPool2d(2, 2)
         self.r = torch.nn.ReLU()
         self.conv2 = torch.nn.Conv2d(32, 64, 3, dtype=torch.float)
@@ -33,7 +40,6 @@ class CNNClassifier(torch.nn.Module):
             Output tensor with shape [N,20]
         
         """  
-        
         x = self.pool(self.r(self.conv1(x)))
         x = self.pool(self.r(self.conv2(x)))
         x = self.pool(self.r(self.conv3(x)))
@@ -63,6 +69,7 @@ class CNNClassifier(torch.nn.Module):
             
         return image_size[0] * image_size[1] * convs[-1].out_channels
 
+    
 def get_args() -> argparse.Namespace:
     args = argparse.ArgumentParser(description='Test the CNN classifier model.')
     args.add_argument('--image_size', type=tuple, default=(1370, 204), help='Size of the input image.')

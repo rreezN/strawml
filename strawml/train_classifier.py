@@ -98,13 +98,14 @@ def get_args():
     """Get the arguments for the training script.
     """
     parser = argparse.ArgumentParser(description='Train the CNN classifier model.')
-    parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
+    parser.add_argument('--batch_size', type=int, default=1, help='Batch size for training')
     parser.add_argument('--epochs', type=int, default=10, help='Number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate for training')
     parser.add_argument('--model_path', type=str, default='models/cnn_classifier.pth', help='Path to load the model from')
     parser.add_argument('--save_path', type=str, default='models/cnn_classifier_new.pth', help='Path to save the model to')
     parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
+    parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     
     return parser.parse_args()
@@ -112,17 +113,20 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
     
-    image_size = (1370, 204)
-    image_size = (224, 224)
+    image_size = (1370//2, 204//2)
+    # image_size = (224, 224)
     
-    train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
-    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
+    train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
+    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
     
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False)
     
-    # model = cnn.CNNClassifier(image_size=image_size)
-    model = convnextv2_atto()
+    input_channels = 3
+    if args.inc_heatmap: input_channels += 3
+    if args.inc_edges: input_channels += 1
+    model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels)
+    # model = convnextv2_atto()
     
     train_model(args, model, train_loader, test_loader)
 
