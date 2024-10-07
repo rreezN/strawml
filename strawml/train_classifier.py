@@ -17,9 +17,10 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
     """Train the CNN classifier model.
     """
     
-    if torch.cuda.is_available():
-        print('Using GPU')
-        model = model.cuda()
+    # TODO: Change this back to using cuda when im not on shitty laptop :((((
+    # if torch.cuda.is_available():
+    #     print('Using GPU')
+    #     model = model.cuda()
     
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     loss_fn = torch.nn.functional.cross_entropy
@@ -32,11 +33,15 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
         epoch_accuracies = []
         # TODO: Temporary bbox this way (?)
         for (frame_data, target) in train_iterator:
+            # TRY: using only the edge image
+            frame_data = frame_data[:, 3, :, :]
+            frame_data = frame_data.unsqueeze(1)
+            
             fullness = target
             
-            if torch.cuda.is_available():
-                frame_data = frame_data.cuda()
-                fullness = fullness.cuda()
+            # if torch.cuda.is_available():
+            #     frame_data = frame_data.cuda()
+            #     fullness = fullness.cuda()
             
             optimizer.zero_grad()
             
@@ -73,9 +78,9 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
             for (frame_data, target) in val_iterator:
                 fullness = target
                 
-                if torch.cuda.is_available():
-                    frame_data = frame_data.cuda()
-                    fullness = fullness.cuda()
+                # if torch.cuda.is_available():
+                #     frame_data = frame_data.cuda()
+                #     fullness = fullness.cuda()
                 
                 output = model(frame_data)
                 _, predicted = torch.max(output, 1)
@@ -98,7 +103,7 @@ def get_args():
     """Get the arguments for the training script.
     """
     parser = argparse.ArgumentParser(description='Train the CNN classifier model.')
-    parser.add_argument('--batch_size', type=int, default=1, help='Batch size for training')
+    parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
     parser.add_argument('--epochs', type=int, default=10, help='Number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate for training')
     parser.add_argument('--model_path', type=str, default='models/cnn_classifier.pth', help='Path to load the model from')
@@ -113,7 +118,8 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
     
-    image_size = (1370//2, 204//2)
+    # TODO: Remove //2 when not on shitty laptop
+    image_size = (1370, 204)
     # image_size = (224, 224)
     
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
@@ -125,6 +131,10 @@ if __name__ == '__main__':
     input_channels = 3
     if args.inc_heatmap: input_channels += 3
     if args.inc_edges: input_channels += 1
+    
+    # TRY: Using only the edge image as input
+    input_channels = 1
+    
     model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels)
     # model = convnextv2_atto()
     

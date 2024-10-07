@@ -405,7 +405,8 @@ class Chute(torch.utils.data.Dataset):
         """
         edges = cv2.Canny(frame_data, 100, 200)
         edges = edges.reshape(1, edges.shape[0], edges.shape[1])
-        edges = torch.from_numpy(edges)
+        edges = torch.from_numpy(edges)/255
+        # TODO: Figure out normalization, might need to do a calculate statistics on the edge images as well, mean is probably 0.0x and std is probably ~1
         return edges
     
     def print_arguments(self):
@@ -472,7 +473,7 @@ if __name__ == '__main__':
     # train_set.plot_data(frame_idx=9)
     
     print("---- STRAW DETECTION DATASET ----")
-    train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=False, data_purpose="straw", image_size=(1370//2, 204//2))
+    train_set = Chute(data_type='train', inc_heatmap=True, inc_edges=True, force_update_statistics=False, data_purpose="straw", image_size=(1370//2, 204//2))
     
     train_set.plot_data(frame_idx=0)
     
