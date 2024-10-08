@@ -3,8 +3,6 @@ import cv2 as cv
 from cv2 import aruco
 from tqdm import tqdm
 import os
-from moms_apriltag import TagGenerator3
-
 
 ARUCO_DICT = {
     "DICT_4X4_50": aruco.DICT_4X4_50,
@@ -44,9 +42,13 @@ def aruco_make(marker_dict, marker_size, id_dict):
     for name, id in tqdm(id_dict.items()):  # genereting 20 markers
         # using funtion to draw a marker
         marker_image = aruco.generateImageMarker(marker_dict, id, marker_size)
+        marker_image = cv.copyMakeBorder(marker_image, 10, 10, 10, 10, cv.BORDER_CONSTANT, value=[255,255,255])
+
         cv.imwrite(f"{marker_path}{name}.png", marker_image)
 
 def april_make(families, id_dict):
+    from moms_apriltag import TagGenerator3
+    
     marker_path = "fiducial_marker/april_tags/"
     if not os.path.exists(marker_path):
         os.makedirs(marker_path)
@@ -57,6 +59,8 @@ def april_make(families, id_dict):
     tagGen = TagGenerator3(families)    
     for name, id in tqdm(id_dict.items()):
         tag = tagGen.generate(id, scale=100)
+        # Add a black border around the tag
+        tag = cv.copyMakeBorder(tag, 10, 10, 10, 10, cv.BORDER_CONSTANT, value=[0, 0, 0])
         cv.imwrite(f"{marker_path}{name}.png", tag)
 
     

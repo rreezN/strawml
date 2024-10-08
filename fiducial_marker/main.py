@@ -13,7 +13,7 @@ from fiducial_marker.detect_marker import ArucoDetector, AprilDetector
 
 def main(args):
 
-    if args.tag_type == "arcuro":
+    if args.tag_type == "aruco":
         # load dictionary from json config file
         with open("fiducial_marker/aruco_config.json", "r") as file:
             config = json.load(file)
@@ -52,11 +52,21 @@ def main(args):
         elif args.mode == 'calibrate':
             ...
         elif args.mode == 'detect':
+            with open('data/hkvision_credentials.txt', 'r') as f:
+                credentials = f.read().splitlines()
+                username = credentials[0]
+                password = credentials[1]
+                ip = credentials[2]
+                rtsp_port = credentials[3]
+            cap = cv2.VideoCapture()
+            cap.set(cv2.CAP_PROP_FPS, 25)
+            cap.open(f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101")
             AD = AprilDetector(detector, config["ids"], window=args.windowed)
             # load file
-            frame = cv2.imread("fiducial_marker/chute.png")
-            AD(frame)
-
+            # frame = cv2.imread("fiducial_marker/chute.png")
+            # AD(frame)
+            AD(cap=cap)
+            # AD()
         
 def get_args() -> argparse.Namespace:
     """
@@ -71,7 +81,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('mode', type=str, choices=['make', 'calibrate', 'detect'], help='Mode to run the script in.')
     parser.add_argument('--tag_type', type=str, default='april', choices=['april', 'aruco'], help='Which tag type to use.')
 
-    parser.add_argument('--windowed', type=bool, default=False, help='Whether to run the script in windowed mode.')
+    parser.add_argument('--windowed', type=bool, default=True, help='Whether to run the script in windowed mode.')
     return parser.parse_args()
 
 if __name__ == '__main__':
