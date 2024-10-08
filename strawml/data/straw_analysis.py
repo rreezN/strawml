@@ -7,7 +7,10 @@ import matplotlib.gridspec as gridspec
 import h5py
 import cv2
 from skimage.metrics import structural_similarity as ssim
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 from tqdm import tqdm
+import re
 
 from strawml.data.make_dataset import decode_binary_image
 from strawml.models.straw_classifier.chute_cropper import rotate_and_crop_to_bbox
@@ -23,11 +26,12 @@ def get_frames_by_class(frames: h5py.File) -> dict:
     frames_by_class = {"augmented": {}, "original": {}}
     frame_names = list(frames.keys())
     
-    print("Removing all cropped, rotated or translated images from the dataset (data_purpose='straw level monitoring')")
+    # banned_augmentations = ['cropping', 'translation', 'rotation', 'color']
+    banned_augmentations = ['cropping', 'translation', 'rotation']
+    print(f"Removing {banned_augmentations} images from the dataset (data_purpose='straw level monitoring')")
     for frame_name in list(frames.keys()):
         attributes = frames[frame_name].attrs
         if 'augmented' in attributes:
-            banned_augmentations = ['cropping', 'translation', 'rotation']
             augmentations = frames[frame_name].attrs['augmented']
             if any(x in augmentations for x in banned_augmentations):
                 frame_names.remove(frame_name)
@@ -52,12 +56,40 @@ def get_frames_by_class(frames: h5py.File) -> dict:
     #     print(f'Class {key}: {len(frames_by_class[key])} frames')
     
     return frames_by_class
+
+def get_all_frames_by_class_order(frames: h5py.File, class_dict: dict) -> list:
+    """Get a list of all frames in the dataset.
+    """
+    classes = np.array(list(class_dict['augmented'].keys()) + list(class_dict['original'].keys()))
+    classes = np.unique(classes)
+    classes = np.sort(classes)
+    all_frames = []
+    for class_key in classes:
+        all_frames += class_dict['augmented'].get(class_key, []) + class_dict['original'].get(class_key, [])
+    return all_frames
+
+def get_idx_of_class(frames: h5py.File, class_dict: dict, class_number: int) -> list:
+    """Get the indices of all frames in a class.
+    """
     
+    classes = np.array(list(class_dict['augmented'].keys()) + list(class_dict['original'].keys()))
+    classes = np.unique(classes)
+    classes = np.sort(classes)
+    all_frames = get_all_frames_by_class_order(frames, class_dict)
+    idx = []
+    frame_names = list(class_dict['augmented'].get(float(class_number*5/100), [])) + list(class_dict['original'].get(float(class_number*5/100), []))
+    for frame_name in frame_names:
+        idx.append(all_frames.index(frame_name))
+
+    return idx
+
 
 def plot_class_distribution(class_dict: dict, frames: h5py.File) -> None:
     """Plot the class distribution of the dataset.
     """
-    print("Plotting class distribution...")
+    
+    print(" ---- Plotting Class Distribution ---- ")
+    
     classes_original = list([int(x*100) for x in class_dict['original'].keys()])
     classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
     classes = list(set(classes_original) | set(classes_augmented))
@@ -125,7 +157,6 @@ def plot_class_distribution(class_dict: dict, frames: h5py.File) -> None:
     plt.savefig('reports/figures/straw_analysis/data/class_distribution.png', dpi=300)
     plt.show()
 
-
 def load_image_by_class(class_dict, classes, class_number) -> np.ndarray:
     augmented = np.random.randint(0, 2) == 1
     if augmented and class_dict['augmented'].get(float(classes[class_number]/100), None) is not None:
@@ -138,12 +169,13 @@ def load_image_by_class(class_dict, classes, class_number) -> np.ndarray:
         first_image, bbox = rotate_and_crop_to_bbox(first_image, frames[class_dict['original'][float(classes[class_number]/100)][image_index]]['annotations']['bbox_chute'][...])
     return cv2.cvtColor(first_image, cv2.COLOR_BGR2RGB)
 
-
 def plot_pixel_intensities(class_dict: dict, frames: h5py.File) -> None:
     """
     Plot histograms of pixel intensities for each class.
     """
-    print("Plotting pixel intensities...")
+    
+    print(" ---- Plotting Pixel Intensities ---- ")
+    
     classes_original = list([int(x*100) for x in class_dict['original'].keys()])
     classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
     classes = list(set(classes_original) | set(classes_augmented))
@@ -215,14 +247,13 @@ def plot_pixel_intensities(class_dict: dict, frames: h5py.File) -> None:
     plt.savefig('reports/figures/straw_analysis/data/pixel_intensity_histograms.png', dpi=300)
     plt.show()
     
-        
-
 def plot_pixel_means_and_variance(class_dict: dict, frames: h5py.File) -> None:
     """
     Plot means and variance of pixel intensities for each class.
     """  
     
-    print("Plotting pixel intensities...")
+    print(" ---- Plotting Pixel Means And Variance ---- ")
+    
     classes_original = list([int(x*100) for x in class_dict['original'].keys()])
     classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
     classes = list(set(classes_original) | set(classes_augmented))
@@ -259,14 +290,14 @@ def plot_pixel_means_and_variance(class_dict: dict, frames: h5py.File) -> None:
     plt.xticks(classes)
     plt.ylabel('Mean Pixel Intensity')
     plt.savefig('reports/figures/straw_analysis/data/pixel_intensity_means.png', dpi=300)
-    plt.show()
-    
+    plt.show()   
 
 def plot_mean_image_per_class(class_dict: dict, frames: h5py) -> np.ndarray:
     """Plots the mean image of each class.
     """
 
-    print('Plotting mean image for each class...')
+    print(" ---- Plotting Mean Image Per Class ---- ")
+    
     classes_original = list([int(x*100) for x in class_dict['original'].keys()])
     classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
     classes = list(set(classes_original) | set(classes_augmented))
@@ -301,12 +332,12 @@ def plot_mean_image_per_class(class_dict: dict, frames: h5py) -> np.ndarray:
     
     return mean_images
     
-
 def plot_variance_image_per_class(class_dict: dict, frames: h5py, mean_image: np.ndarray) -> None:
     """Plots the variance image of each class.
     """
 
-    print('Plotting mean variance for each class...')
+    print(" ---- Plotting Variance Images For Each Class ---- ")
+    
     classes_original = list([int(x*100) for x in class_dict['original'].keys()])
     classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
     classes = list(set(classes_original) | set(classes_augmented))
@@ -356,6 +387,7 @@ def plot_mse_matrix(class_dict: dict, frames: h5py.File, mean_images: list) -> N
     """Create a matrix of mean squared errors between all classes.
     """
 
+    print(" ---- Plotting MSE Matrix ---- ")
     
     print('Calculating MSE matrix...')
     classes_original = list([int(x*100) for x in class_dict['original'].keys()])
@@ -394,7 +426,7 @@ def plot_edge_detection(class_dict: dict, frames: h5py.File) -> None:
     """Plots the results of edge detection on a random image from each class.
     """
 
-    print('Plotting edge detection results...')
+    print(" ---- Plotting Edge Detection ---- ")
     
     classes_original = list([int(x*100) for x in class_dict['original'].keys()])
     classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
@@ -427,8 +459,139 @@ def plot_edge_detection(class_dict: dict, frames: h5py.File) -> None:
     plt.tight_layout()
     plt.savefig('reports/figures/straw_analysis/data/edge_detection.png', dpi=300)
     plt.show()
-    
 
+
+def plot_pca(class_dict: dict, frames: h5py.File) -> None:
+    """Plot PCA of each image in each class.
+    """
+    
+    print(" ---- Plotting PCA ---- ")
+    
+    classes_original = list([int(x*100) for x in class_dict['original'].keys()])
+    classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
+    classes = list(set(classes_original) | set(classes_augmented))
+    
+    num_augmented_images = len([frame for class_key in class_dict['augmented'].keys() for frame in class_dict['augmented'][class_key]])
+    num_original_images = len([frame for class_key in class_dict['original'].keys() for frame in class_dict['original'][class_key]])
+    total_images = num_augmented_images + num_original_images
+    
+    def load_image(frames, frame_name):
+        image = decode_binary_image(frames[frame_name]['image'][...])
+        image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
+        image = cv2.resize(image, (204, 1370))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        return image
+    
+    # Calculate PCA for each image in each class
+    print('Collecting all images...')
+    all_images = np.empty((total_images, 204*1370*1))
+    iter_counter = 0
+    all_frames = get_all_frames_by_class_order(frames, class_dict)
+    for frame_name in tqdm(all_frames):
+        image = load_image(frames, frame_name)
+        all_images[iter_counter] = image.flatten()
+        iter_counter += 1
+    
+    print('Fitting PCA...')
+    pca = PCA(n_components=0.8)
+    coords = pca.fit_transform(all_images)
+    
+    # Normalize
+    # coords = (coords - np.mean(coords, axis=0)) / np.std(coords, axis=0)
+    
+    print("Collecting image coordinates...")
+    coords_by_class = {}
+    for class_counter in range(len(classes)):
+        class_idx = get_idx_of_class(frames, class_dict, class_counter)
+        for idx in class_idx:
+            coord = coords[idx]
+            coords_by_class[class_counter] = coords_by_class.get(class_counter, []) + [coord]
+    
+    # Plot the PCA of each image in each class as a scatter plot
+    print('Plotting PCA of each image in each class...')
+    fig = plt.figure(figsize=(10, 8))
+    plt.grid()
+    for class_counter in range(len(classes)):
+        coords = np.array(coords_by_class[class_counter])
+        plt.scatter(coords[:, 0], coords[:, 1], label=f'{classes[class_counter]}', alpha=0.5)
+    plt.title('PCA of Each Image in Each Class')
+    plt.xlabel('PCA 1')
+    plt.ylabel('PCA 2')
+    # handles, labels = plt.gca().get_legend_handles_labels()
+    # labels, handles = zip(*sorted(zip(labels, handles), key=lambda t: t[0]))
+    handles, labels = plt.gca().get_legend_handles_labels()
+    handles, labels = zip(*[ (handles[i], labels[i]) for i in sorted(range(len(handles)), key=lambda k: list(map(int,labels))[k])] )
+    plt.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.tight_layout()
+    
+    plt.savefig('reports/figures/straw_analysis/data/pca.png', dpi=300)
+    plt.show()
+
+
+def plot_tsne(frames: h5py.File, class_dict: dict) -> None:
+    """Plot t-SNE of each image in each class.
+    """
+    
+    print(" ---- Plotting t-SNE ---- ")
+    
+    classes_original = list([int(x*100) for x in class_dict['original'].keys()])
+    classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
+    classes = list(set(classes_original) | set(classes_augmented))
+    
+    def load_image(frames, frame_name):
+        image = decode_binary_image(frames[frame_name]['image'][...])
+        image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
+        image = cv2.resize(image, (204, 1370))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        return image
+    
+    # Calculate PCA for each image in each class
+    print('Collecting all images...')
+    all_frames = get_all_frames_by_class_order(frames, class_dict)
+    total_images = len(all_frames)
+    all_images = np.empty((total_images, 204*1370*1))
+    iter_counter = 0
+    for frame_name in tqdm(all_frames):
+        image = load_image(frames, frame_name)
+        all_images[iter_counter] = image.flatten()
+        iter_counter += 1
+    
+    print('Fitting t-SNE...')
+    model = TSNE(n_components=2, random_state=0)
+    coords = model.fit_transform(all_images)
+    
+    # Normalize
+    # coords = (coords - np.mean(coords, axis=0)) / np.std(coords, axis=0)
+    
+    print("Collecting image coordinates...")
+    coords_by_class = {}
+    for class_counter in range(len(classes)):
+        class_idx = get_idx_of_class(frames, class_dict, class_counter)
+        for idx in class_idx:
+            coord = coords[idx]
+            coords_by_class[class_counter] = coords_by_class.get(class_counter, []) + [coord]
+    
+    # Plot the t-SNE of each image in each class as a scatter plot
+    print('Plotting t-SNE of each image in each class...')
+    fig = plt.figure(figsize=(10, 8))
+    plt.grid()
+    for class_counter in range(len(classes)):
+        coords = np.array(coords_by_class[class_counter])
+        plt.scatter(coords[:, 0], coords[:, 1], label=f'{classes[class_counter]}', alpha=0.5)
+    plt.title('t-SNE of Each Image in Each Class')
+    plt.xlabel('t-SNE 1')
+    plt.ylabel('t-SNE 2')
+    # handles, labels = plt.gca().get_legend_handles_labels()
+    # labels, handles = zip(*sorted(zip(labels, handles), key=lambda t: t[0]))
+    handles, labels = plt.gca().get_legend_handles_labels()
+    handles, labels = zip(*[ (handles[i], labels[i]) for i in sorted(range(len(handles)), key=lambda k: list(map(int,labels))[k])] )
+    plt.legend(handles, labels, loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.tight_layout()
+    
+    plt.savefig('reports/figures/straw_analysis/data/tsne.png', dpi=300)
+    plt.show()
+    
+    
 # TODO:
 # - Plot PCA (2 dimensions) of each image in each class and see if they are separable
 # - Look into some feature engineering
@@ -453,7 +616,8 @@ if __name__ == '__main__':
     # plot_variance_image_per_class(class_dictionary, frames, mean_images)
     # plot_mse_matrix(class_dictionary, frames, mean_images)
     # plot_edge_detection(class_dictionary, frames)
-    
+    plot_pca(class_dictionary, frames)
+    # plot_tsne(frames, class_dictionary)
     
 
 
