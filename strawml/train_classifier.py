@@ -17,9 +17,10 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
     """Train the CNN classifier model.
     """
     
-    if torch.cuda.is_available():
-        print('Using GPU')
-        model = model.cuda()
+    # TODO: Change this back to using cuda when im not on shitty laptop :((((
+    # if torch.cuda.is_available():
+    #     print('Using GPU')
+    #     model = model.cuda()
     
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     loss_fn = torch.nn.functional.cross_entropy
@@ -32,11 +33,15 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
         epoch_accuracies = []
         # TODO: Temporary bbox this way (?)
         for (frame_data, target) in train_iterator:
+            # TRY: using only the edge image
+            frame_data = frame_data[:, 3, :, :]
+            frame_data = frame_data.unsqueeze(1)
+            
             fullness = target
             
-            if torch.cuda.is_available():
-                frame_data = frame_data.cuda()
-                fullness = fullness.cuda()
+            # if torch.cuda.is_available():
+            #     frame_data = frame_data.cuda()
+            #     fullness = fullness.cuda()
             
             optimizer.zero_grad()
             
@@ -73,9 +78,9 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
             for (frame_data, target) in val_iterator:
                 fullness = target
                 
-                if torch.cuda.is_available():
-                    frame_data = frame_data.cuda()
-                    fullness = fullness.cuda()
+                # if torch.cuda.is_available():
+                #     frame_data = frame_data.cuda()
+                #     fullness = fullness.cuda()
                 
                 output = model(frame_data)
                 _, predicted = torch.max(output, 1)
@@ -105,6 +110,7 @@ def get_args():
     parser.add_argument('--save_path', type=str, default='models/cnn_classifier_new.pth', help='Path to save the model to')
     parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
+    parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     
     return parser.parse_args()
@@ -112,17 +118,25 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
     
+    # TODO: Remove //2 when not on shitty laptop
     image_size = (1370, 204)
-    image_size = (224, 224)
+    # image_size = (224, 224)
     
-    train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
-    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
+    train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
+    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
     
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False)
     
-    # model = cnn.CNNClassifier(image_size=image_size)
-    model = convnextv2_atto()
+    input_channels = 3
+    if args.inc_heatmap: input_channels += 3
+    if args.inc_edges: input_channels += 1
+    
+    # TRY: Using only the edge image as input
+    input_channels = 1
+    
+    model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels)
+    # model = convnextv2_atto()
     
     train_model(args, model, train_loader, test_loader)
 

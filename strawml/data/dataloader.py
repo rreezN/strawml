@@ -13,14 +13,15 @@ from strawml.data.make_dataset import decode_binary_image
 from strawml.models.straw_classifier import chute_cropper as cc
 
 class Chute(torch.utils.data.Dataset):
-    def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True,
-                 random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448)) -> None:
+    def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True, inc_edges: bool = False,
+                 random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448)) -> torch.utils.data.Dataset:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
         self.data_path = data_path
         self.data_type = data_type
         self.inc_heatmap = inc_heatmap
+        self.inc_edges = inc_edges
         self.epsilon = 1e-6 # Small number to avoid division by zero
         # Load the data file
         self.frames = h5py.File(self.data_path, 'a')
@@ -81,10 +82,11 @@ class Chute(torch.utils.data.Dataset):
         frame = self.frames[self.indices[idx]]
         frame_data = decode_binary_image(frame['image'][...])
         frame_data = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
+        
         if self.inc_heatmap:
             heatmap = decode_binary_image(frame['image_diff'][...])
             heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
-        
+    
         
         # print(" ----------- LOADING NEW ITEM ------------ ")
         # print("1. Original images")
@@ -113,6 +115,9 @@ class Chute(torch.utils.data.Dataset):
 
             # print("1.5 Rotation and cropping to bbox")
             # self.plot_data(frame_data=(frame_data, heatmap), labels = [bbox_chute])
+        
+        if self.inc_edges:
+            edges = self.get_edge_features(frame_data)
         
         if self.inc_heatmap: frame_data = (frame_data, heatmap)
         # Transform to tensor images
@@ -155,6 +160,9 @@ class Chute(torch.utils.data.Dataset):
             else:
                 frame_data = self.resize(frame_data)
             
+            if self.inc_edges:
+                edges = self.resize(edges)
+            
             # print("4. Resize")
             # self.plot_data(frame_data=frame_data, labels=[bbox_chute])
             
@@ -166,6 +174,9 @@ class Chute(torch.utils.data.Dataset):
         
         if self.inc_heatmap:
             frame_data = torch.vstack([frame_data[0], frame_data[1]])
+        
+        if self.inc_edges:
+            frame_data = torch.vstack([frame_data, edges])
         
         if self.data_purpose == "straw":
             return frame_data, fullness
@@ -294,7 +305,7 @@ class Chute(torch.utils.data.Dataset):
         if self.inc_heatmap:
             return running_mean, running_std, running_min, running_max, running_mean_hm, running_std_hm, running_min_hm, running_max_hm
         else:
-            return running_mean, running_std, running_mean_hm, running_std_hm
+            return running_mean, running_std, running_min, running_max
         
 
     def plot_data(self, frame_idx: int = 0, frame_data=None, labels=None):
@@ -383,6 +394,21 @@ class Chute(torch.utils.data.Dataset):
             frame_data, labels = self.__getitem__(0)
             return frame_data.shape
     
+    def get_edge_features(self, frame_data: np.ndarray) -> torch.Tensor:
+        """Extracts the edges from the frame data.
+        
+        Parameters:
+        frame_data (np.ndarray): The frame data to extract the edges from. Shape: (H, W, C)
+        
+        Returns:
+        torch.Tensor: The edges of the frame data. Shape: (C, H, W)
+        """
+        edges = cv2.Canny(frame_data, 100, 200)
+        edges = edges.reshape(1, edges.shape[0], edges.shape[1])
+        edges = torch.from_numpy(edges)/255
+        # TODO: Figure out normalization, might need to do a calculate statistics on the edge images as well, mean is probably 0.0x and std is probably ~1
+        return edges
+    
     def print_arguments(self):
         dataset_size = len(self.train_indices) if self.data_type == 'train' else len(self.test_indices)
         print(f'Parameters: \n \
@@ -447,7 +473,7 @@ if __name__ == '__main__':
     # train_set.plot_data(frame_idx=9)
     
     print("---- STRAW DETECTION DATASET ----")
-    train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=False, data_purpose="straw", image_size=(1370//2, 204//2))
+    train_set = Chute(data_type='train', inc_heatmap=True, inc_edges=True, force_update_statistics=False, data_purpose="straw", image_size=(1370//2, 204//2))
     
     train_set.plot_data(frame_idx=0)
     
