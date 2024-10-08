@@ -4,8 +4,8 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import time
 import timeit
+import timm
 
 import data.dataloader as dl
 import strawml.models.straw_classifier.cnn_classifier as cnn
@@ -17,10 +17,9 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
     """Train the CNN classifier model.
     """
     
-    # TODO: Change this back to using cuda when im not on shitty laptop :((((
-    # if torch.cuda.is_available():
-    #     print('Using GPU')
-    #     model = model.cuda()
+    if torch.cuda.is_available():
+        print('Using GPU')
+        model = model.cuda()
     
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     loss_fn = torch.nn.functional.cross_entropy
@@ -34,14 +33,14 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
         # TODO: Temporary bbox this way (?)
         for (frame_data, target) in train_iterator:
             # TRY: using only the edge image
-            frame_data = frame_data[:, 3, :, :]
-            frame_data = frame_data.unsqueeze(1)
+            # frame_data = frame_data[:, 3, :, :]
+            # frame_data = frame_data.unsqueeze(1)
             
             fullness = target
             
-            # if torch.cuda.is_available():
-            #     frame_data = frame_data.cuda()
-            #     fullness = fullness.cuda()
+            if torch.cuda.is_available():
+                frame_data = frame_data.cuda()
+                fullness = fullness.cuda()
             
             optimizer.zero_grad()
             
@@ -76,11 +75,15 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
             start_time = timeit.default_timer()
             
             for (frame_data, target) in val_iterator:
+                # TRY: using only the edge image
+                # frame_data = frame_data[:, 3, :, :]
+                # frame_data = frame_data.unsqueeze(1)
+                
                 fullness = target
                 
-                # if torch.cuda.is_available():
-                #     frame_data = frame_data.cuda()
-                #     fullness = fullness.cuda()
+                if torch.cuda.is_available():
+                    frame_data = frame_data.cuda()
+                    fullness = fullness.cuda()
                 
                 output = model(frame_data)
                 _, predicted = torch.max(output, 1)
@@ -106,7 +109,7 @@ def get_args():
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
     parser.add_argument('--epochs', type=int, default=10, help='Number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate for training')
-    parser.add_argument('--model_path', type=str, default='models/cnn_classifier.pth', help='Path to load the model from')
+    parser.add_argument('--model_path', type=str, default='models/pretrained/convnextv2_atto_1k_224_ema.pth', help='Path to load the model from')
     parser.add_argument('--save_path', type=str, default='models/cnn_classifier_new.pth', help='Path to save the model to')
     parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
@@ -118,9 +121,9 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
     
-    # TODO: Remove //2 when not on shitty laptop
-    image_size = (1370, 204)
-    # image_size = (224, 224)
+    # image_size = (1370, 204) # For CNNClassifier (but can be any size)
+    # image_size = (224, 224) # For ConvNextV2 (for now)
+    image_size = (384, 384) # For ViT
     
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
     test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
@@ -133,10 +136,11 @@ if __name__ == '__main__':
     if args.inc_edges: input_channels += 1
     
     # TRY: Using only the edge image as input
-    input_channels = 1
+    # input_channels = 1
     
-    model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels)
-    # model = convnextv2_atto()
+    # model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels)
+    # model = convnextv2_atto(in_chans=input_channels)
+    model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=21, pretrained=True)
     
     train_model(args, model, train_loader, test_loader)
 
