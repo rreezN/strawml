@@ -8,7 +8,7 @@ import cv2.aruco as aruco
 import argparse
 
 from fiducial_marker.make_marker import ARUCO_DICT, aruco_make, april_make
-from fiducial_marker.detect_marker import ArucoDetector, AprilDetector
+from fiducial_marker.detect_marker import ArucoDetector, RTSPStream
 # from aruco.p_aruco.aruco_calibrate import aruco_calibrate
 
 def main(args):
@@ -52,22 +52,13 @@ def main(args):
         elif args.mode == 'calibrate':
             ...
         elif args.mode == 'detect':
-            with open('data/hkvision_credentials.txt', 'r') as f:
-                credentials = f.read().splitlines()
-                username = credentials[0]
-                password = credentials[1]
-                ip = credentials[2]
-                rtsp_port = credentials[3]
-            cap = cv2.VideoCapture()
-            cap.set(cv2.CAP_PROP_FPS, 25)
-            cap.open(f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101")
-            AD = AprilDetector(detector, config["ids"], window=args.windowed)
             # load file
+            # AD = RTSPStream(detector, config["ids"], window=args.windowed, credentials_path='data/hkvision_credentials.txt')
             # frame = cv2.imread("fiducial_marker/chute.png")
             # AD(frame)
-            AD(cap=cap)
-            # AD()
-        
+            # AD(cap=cap)
+            RTSPStream(detector, config["ids"], window=args.windowed, credentials_path='data/hkvision_credentials.txt')()
+            
 def get_args() -> argparse.Namespace:
     """
     Get the arguments for the data augmentation script.
@@ -85,7 +76,7 @@ def get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 if __name__ == '__main__':
-
+    # TODO Write the functionality to calibrate the camera
     args = get_args()
     main(args)
 
