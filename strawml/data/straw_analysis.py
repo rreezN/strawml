@@ -20,7 +20,14 @@ from strawml.models.straw_classifier.chute_cropper import rotate_and_crop_to_bbo
 
 
 def get_frames_by_class(frames: h5py.File) -> dict:
-    """Get a dictionary of frames by class.
+    """
+    Get a dictionary of frames by class.
+    
+    Parameters:
+        frames: h5py.File: The dataset of frames.
+    
+    Returns:
+        frames_by_class: dict: A dictionary of frames grouped by class.
     """
     print('Sorting frames by class...')
     frames_by_class = {"augmented": {}, "original": {}}
@@ -42,18 +49,8 @@ def get_frames_by_class(frames: h5py.File) -> dict:
             current_class = float(frames[frame_name]['annotations']['fullness'][...])
             frames_by_class['original'][current_class] = frames_by_class['original'].get(current_class, []) + [frame_name]
         
-    
-    
-    # print(frames[frame_names[0]]['annotations']['fullness'][...])
-    # for frame_name in frame_names:
-    #     current_class = float(frames[frame_name]['annotations']['fullness'][...])
-    #     frames_by_class[current_class] = frames_by_class.get(current_class, []) + [frame_name]
-    
     frames_by_class['augmented'] = dict(sorted(frames_by_class['augmented'].items()))
     frames_by_class['original'] = dict(sorted(frames_by_class['original'].items()))
-    
-    # for key in frames_by_class.keys():
-    #     print(f'Class {key}: {len(frames_by_class[key])} frames')
     
     return frames_by_class
 
@@ -83,7 +80,25 @@ def get_idx_of_class(frames: h5py.File, class_dict: dict, class_number: int) -> 
 
     return idx
 
-
+def combine_classes(class_dict: dict, classes_to_combine: list[list[float]]) -> dict:
+    """Combine classes into a single class.
+    """
+    
+    print(" ---- Combining Classes ---- ")
+    
+    classes = np.sort(np.unique(np.array(list(class_dict['augmented'].keys()) + list(class_dict['original'].keys()))))
+    
+    new_class_dict = {"augmented": {}, "original": {}}
+    for new_class in classes_to_combine:
+        new_class_name = f'{min(new_class)}:{max(new_class)}'
+        for class_name in new_class:
+            for frame_name in class_dict['augmented'].get(class_name, []):
+                new_class_dict['augmented'][new_class_name] = new_class_dict['augmented'].get(new_class_name, []) + [frame_name]
+            for frame_name in class_dict['original'].get(class_name, []):
+                new_class_dict['original'][new_class_name] = new_class_dict['original'].get(new_class_name, []) + [frame_name]
+    
+    return new_class_dict
+        
 def plot_class_distribution(class_dict: dict, frames: h5py.File) -> None:
     """Plot the class distribution of the dataset.
     """
@@ -132,11 +147,9 @@ def plot_class_distribution(class_dict: dict, frames: h5py.File) -> None:
     ax2.set_yticks([])
     ax2.set_title(f'Class {classes[0]}')
 
-    
     ax3 = fig.add_subplot(gs[1, 0:3])
     ax3.axis('off')
     ax3.text(0.5, 0.5, f'{total_frames} total\nframes', fontsize=16, fontweight='bold', ha='center', va='center')
-    
     
     class_counter = 1
     for row in range(2):
@@ -149,9 +162,6 @@ def plot_class_distribution(class_dict: dict, frames: h5py.File) -> None:
             ax.set_xticks([])
             ax.set_yticks([])
             class_counter += 1
-    
-    
-    
     
     plt.suptitle(f'Straw Class Distribution and Examples ({frames.filename})')
     plt.savefig('reports/figures/straw_analysis/data/class_distribution.png', dpi=300)
@@ -586,8 +596,7 @@ def plot_tsne(frames: h5py.File, class_dict: dict) -> None:
     
     plt.savefig('reports/figures/straw_analysis/data/tsne.png', dpi=300)
     plt.show()
-    
-    
+
 # TODO:
 # - Look into some feature engineering
 #    - Histogram of Oriented Gradients (HOG)
@@ -616,7 +625,6 @@ if __name__ == '__main__':
     # plot_pca(class_dictionary, frames)
     # plot_tsne(frames, class_dictionary)
     
-
 
 
 
