@@ -413,14 +413,12 @@ def plot_mse_matrix(class_dict: dict, frames: h5py.File, mean_images: list) -> N
     plt.savefig('reports/figures/straw_analysis/data/mse_matrix.png', dpi=300)
     plt.show()
 
-
 def edge_detection(image: np.ndarray, threshold1: int = 25, threshold2: int = 100) -> np.ndarray:
     """Detect edges in an image using the Canny edge detector.
     """
     edges = cv2.Canny(image, threshold1, threshold2)
     # edges = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=5)
     return edges
-
 
 def plot_edge_detection(class_dict: dict, frames: h5py.File) -> None:
     """Plots the results of edge detection on a random image from each class.
@@ -459,7 +457,6 @@ def plot_edge_detection(class_dict: dict, frames: h5py.File) -> None:
     plt.tight_layout()
     plt.savefig('reports/figures/straw_analysis/data/edge_detection.png', dpi=300)
     plt.show()
-
 
 def plot_pca(class_dict: dict, frames: h5py.File) -> None:
     """Plot PCA of each image in each class.
@@ -527,7 +524,6 @@ def plot_pca(class_dict: dict, frames: h5py.File) -> None:
     plt.savefig('reports/figures/straw_analysis/data/pca.png', dpi=300)
     plt.show()
 
-
 def plot_tsne(frames: h5py.File, class_dict: dict) -> None:
     """Plot t-SNE of each image in each class.
     """
@@ -593,7 +589,6 @@ def plot_tsne(frames: h5py.File, class_dict: dict) -> None:
     
     
 # TODO:
-# - Plot PCA (2 dimensions) of each image in each class and see if they are separable
 # - Look into some feature engineering
 #    - Histogram of Oriented Gradients (HOG)
 #    - Local Binary Patterns (LBP)
@@ -602,13 +597,15 @@ def plot_tsne(frames: h5py.File, class_dict: dict) -> None:
 #    - Heatmap of feature importance for each class e.g. using Grad-CAM
 # - Shannon Entroyp
 # - Mutual Information
-
+# - Some of the stuff is hardcoded for 21 classes currently, might need to change that if we decide to go with less classes
+#   - PCA and t-SNE are hardcoded for 21 classes (get_idx_of_class)
 
 
 if __name__ == '__main__':
     frames = h5py.File('data/processed/augmented/chute_detection.hdf5', 'r')
     class_dictionary = get_frames_by_class(frames)
     
+    ## These functions create plots of the dataset for the straw level monitoring model ##
     # plot_class_distribution(class_dictionary, frames)
     # plot_pixel_intensities(class_dictionary, frames)
     # plot_pixel_means_and_variance(class_dictionary, frames)
@@ -616,7 +613,7 @@ if __name__ == '__main__':
     # plot_variance_image_per_class(class_dictionary, frames, mean_images)
     # plot_mse_matrix(class_dictionary, frames, mean_images)
     # plot_edge_detection(class_dictionary, frames)
-    plot_pca(class_dictionary, frames)
+    # plot_pca(class_dictionary, frames)
     # plot_tsne(frames, class_dictionary)
     
 
