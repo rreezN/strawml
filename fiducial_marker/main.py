@@ -76,7 +76,7 @@ def get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 if __name__ == '__main__':
-
+    # TODO Write the functionality to calibrate the camera
     args = get_args()
     main(args)
 
