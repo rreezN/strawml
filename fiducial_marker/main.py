@@ -8,12 +8,12 @@ import cv2.aruco as aruco
 import argparse
 
 from fiducial_marker.make_marker import ARUCO_DICT, aruco_make, april_make
-from fiducial_marker.detect_marker import ArucoDetector, AprilDetector
+from fiducial_marker.detect_marker import ArucoDetector, RTSPStream
 # from aruco.p_aruco.aruco_calibrate import aruco_calibrate
 
 def main(args):
 
-    if args.tag_type == "arcuro":
+    if args.tag_type == "aruco":
         # load dictionary from json config file
         with open("fiducial_marker/aruco_config.json", "r") as file:
             config = json.load(file)
@@ -52,12 +52,13 @@ def main(args):
         elif args.mode == 'calibrate':
             ...
         elif args.mode == 'detect':
-            AD = AprilDetector(detector, config["ids"], window=args.windowed)
             # load file
-            frame = cv2.imread("fiducial_marker/chute.png")
-            AD(frame)
-
-        
+            # AD = RTSPStream(detector, config["ids"], window=args.windowed, credentials_path='data/hkvision_credentials.txt')
+            # frame = cv2.imread("fiducial_marker/chute.png")
+            # AD(frame)
+            # AD(cap=cap)
+            RTSPStream(detector, config["ids"], window=args.windowed, credentials_path='data/hkvision_credentials.txt')()
+            
 def get_args() -> argparse.Namespace:
     """
     Get the arguments for the data augmentation script.
@@ -71,11 +72,11 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('mode', type=str, choices=['make', 'calibrate', 'detect'], help='Mode to run the script in.')
     parser.add_argument('--tag_type', type=str, default='april', choices=['april', 'aruco'], help='Which tag type to use.')
 
-    parser.add_argument('--windowed', type=bool, default=False, help='Whether to run the script in windowed mode.')
+    parser.add_argument('--windowed', type=bool, default=True, help='Whether to run the script in windowed mode.')
     return parser.parse_args()
 
 if __name__ == '__main__':
-
+    # TODO Write the functionality to calibrate the camera
     args = get_args()
     main(args)
 

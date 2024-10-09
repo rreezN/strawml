@@ -564,6 +564,70 @@ def place_digits_on_chute_images() -> None:
                     f.write(' '.join(map(str, inner_label)) + '\n')
             frame_nr += 1
 
+def prepare_data_for_timm(hdf5_file: str, sizes: list[float] = [0.8,0.1,0.1]) -> None:
+    """
+    This function prepares the data for the timm library by creating a folder structure similar to ImageNet.
+    The folder structure is as follows:
+    - data
+        - train
+            - class_0
+            - class_1
+            - ...
+        - val
+            - class_0
+            - class_1
+            - ...
+        - test
+            - class_0
+            - class_1
+            - ...
+    """ 
+    
+    # First ensure the file exists
+    if not os.path.exists(hdf5_file):
+        raise FileNotFoundError(f"The file {hdf5_file} does not exist.")
+    
+    save_path = 'data/processed/timm_format'
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    else:
+        # remove the folder and create a new one
+        shutil.rmtree(save_path)
+        os.makedirs(save_path)
+    
+    frames = h5py.File(hdf5_file, 'r')
+    frame_names = list(frames.keys())
+    
+    # split frames in train, test and validation with 70%, 20% and 10% respectively
+    # random state = 42
+    train_size, test_size, val_size = sizes
+    train_indices, test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=test_size+val_size, random_state=42)
+    test_indices, val_indices, _, _ = train_test_split(test_indices, test_indices, test_size=test_size/(test_size+val_size), random_state=42)
+    # create a dictionary to store the indices
+    index_dict = {'train': train_indices, 'test': test_indices, 'val': val_indices}
+    
+    with h5py.File(hdf5_file, 'r') as hf:        
+        # create a progress bar
+        pbar = tqdm(total = len(frame_names), desc="Converting HDF5 to timm format", position=0)
+        
+        # loop through the datasets and save the images and labels
+        for key, val in index_dict.items():
+            pbar.set_description(f"Converting HDF5 to timm format: {key} set")
+            if not os.path.exists(f'{save_path}/{key}'):
+                os.makedirs(f'{save_path}/{key}')
+            for frame in val:
+                image_bytes = hf[frame]['image'][...]
+                # decode the binary image
+                image = decode_binary_image(image_bytes)
+                # Find the fullness (label)
+                label = hf[frame]['annotations']['fullness'][...]
+                # Save the image to a file
+                if not os.path.exists(f'{save_path}/{key}/{label}'):
+                    os.makedirs(f'{save_path}/{key}/{label}')
+                cv2.imwrite(f'{save_path}/{key}/{label}/{frame}.jpg', image)
+                pbar.update(1)
+    
+
 def main(args: Namespace) -> None:
     """
     The main function that runs the script based on the arguments provided.
@@ -591,12 +655,14 @@ def main(args: Namespace) -> None:
         hdf5_to_yolo(args.hdf5_file, args.with_augmentation)
     elif args.mode == 'place_digits':
         place_digits_on_chute_images()
+    elif args.mode == 'timm':
+        prepare_data_for_timm(args.hdf5_file)
 
 def get_args() -> Namespace:
     # Create the parser
     parser = ArgumentParser()
     # Add arguments to the parser
-    parser.add_argument('mode', type=str, choices=['extract', 'validate', 'tree', 'h5_to_yolo', 'place_digits'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
+    parser.add_argument('mode', type=str, choices=['extract', 'validate', 'tree', 'h5_to_yolo', 'place_digits', 'timm'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
     parser.add_argument('--video_folder', type=str, default='data/raw/videos', help='The folder containing the videos.')
     parser.add_argument('--hdf5_file', type=str, default='data/raw/images/images.hdf5', help='The hdf5 file to save the images to.')
     parser.add_argument('--save_individual_images', type=bool, default=False, help='Whether to save the individual images to the temp_images folder.')
