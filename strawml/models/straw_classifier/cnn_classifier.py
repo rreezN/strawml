@@ -11,7 +11,7 @@ import strawml.models.straw_classifier.utils as utils
 class CNNClassifier(torch.nn.Module):
     """ Basic CNN classifier class.
     """
-    def __init__(self, image_size=(448, 448), img_mean=[0, 0, 0], img_std=[1, 1, 1], input_channels=3) -> None:
+    def __init__(self, image_size=(448, 448), img_mean=[0, 0, 0], img_std=[1, 1, 1], input_channels=3, output_size=21) -> None:
         super(CNNClassifier, self).__init__()
 
         self.image_size = image_size
@@ -27,7 +27,7 @@ class CNNClassifier(torch.nn.Module):
         self.conv3 = torch.nn.Conv2d(64, 128, 3, dtype=torch.float)
         neurons = self.get_linear_layer_neurons()
         self.fc1 = torch.nn.Linear(neurons, 512, dtype=torch.float)
-        self.fc2 = torch.nn.Linear(512, 21, dtype=torch.float)
+        self.fc2 = torch.nn.Linear(512, output_size, dtype=torch.float)
         self.norm = utils.LayerNorm(32, eps=1e-6, data_format="channels_first")
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:

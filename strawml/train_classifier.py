@@ -107,8 +107,8 @@ def get_args():
     """
     parser = argparse.ArgumentParser(description='Train the CNN classifier model.')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
-    parser.add_argument('--epochs', type=int, default=10, help='Number of epochs to train for')
-    parser.add_argument('--lr', type=float, default=0.001, help='Learning rate for training')
+    parser.add_argument('--epochs', type=int, default=25, help='Number of epochs to train for')
+    parser.add_argument('--lr', type=float, default=0.00001, help='Learning rate for training')
     parser.add_argument('--model_path', type=str, default='models/pretrained/convnextv2_atto_1k_224_ema.pth', help='Path to load the model from')
     parser.add_argument('--save_path', type=str, default='models/cnn_classifier_new.pth', help='Path to save the model to')
     parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
@@ -124,6 +124,7 @@ if __name__ == '__main__':
     image_size = (1370, 204) # For CNNClassifier (but can be any size)
     # image_size = (224, 224) # For ConvNextV2 (for now)
     # image_size = (384, 384) # For ViT
+    # image_size = (448, 448) # For Eva02
     
     num_classes_straw = 11
     
@@ -142,10 +143,11 @@ if __name__ == '__main__':
     # TRY: Using only the edge image as input
     # input_channels = 1
     
-    # model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels)
+    model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=num_classes_straw)
     # model = convnextv2_atto(in_chans=input_channels)
-    model = timm.create_model('convnextv2_atto', in_chans=input_channels, num_classes=num_classes_straw, pretrained=True)
-    # model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=21, pretrained=True)
+    # model = timm.create_model('convnextv2_atto', in_chans=input_channels, num_classes=num_classes_straw, pretrained=True)
+    # model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=num_classes_straw, pretrained=True)
+    # model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=num_classes_straw, pretrained=True)
     
     train_model(args, model, train_loader, test_loader)
 
