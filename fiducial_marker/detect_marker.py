@@ -128,14 +128,14 @@ class AprilDetector:
         # undistort the frame when we have the proper filter
         # frame = cv2.undistort(frame, self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"])
         tags = self.detector.detect(frame) #, estimate_tag_pose=True, camera_params=[self.fx, self.fy, self.cx, self.cy], tag_size=0.05) # 5cm
-        if self.check_for_changes(tags):
-            for tag in tags:
-                if tag.tag_id not in self.tag_ids:            
-                    self.tags = np.append(self.tags, tag)
-                    self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
+        for tag in tags:
+            if tag.tag_id not in self.tag_ids:            
+                self.tags = np.append(self.tags, tag)
+                self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
+        self.check_for_changes(tags)
         return self.tags
     
-    def check_for_changes(self, tags: list) -> bool:
+    def check_for_changes(self, tags: list) -> None:
         """
         Check if the camera has moved and the chute tags have changed position. If so, reset the tags and tag_ids arrays.
 
@@ -153,7 +153,7 @@ class AprilDetector:
         if len(tags) == 0:
             self.tags = []
             self.tag_ids = []
-            return False
+            return
         tag_ids = np.array([int(tag.tag_id) for tag in tags])
         accumulated_error = 0
         for i, t in enumerate(self.tag_ids):
@@ -169,7 +169,6 @@ class AprilDetector:
         if accumulated_error/len(self.tag_ids) > 0.1:
             self.tags = []
             self.tag_ids = []
-        return True
 
     def inverse_linear_interpolation(self, x_values: list, y_values: list, y: float) -> int | None:
         """
@@ -396,7 +395,7 @@ class RTSPStream(AprilDetector):
         else:
             self.cap = cv2.VideoCapture(0)
         
-    def create_capture(self, params: str) -> cv2.VideoCapture:
+    def create_capture(self, credentials_path: str) -> cv2.VideoCapture:
         """
         Create a video capture object to receive frames from the RTSP stream.
 
@@ -410,7 +409,7 @@ class RTSPStream(AprilDetector):
         cv2.VideoCapture
             The video capture object to receive frames from the RTSP stream
         """
-        with open('data/hkvision_credentials.txt', 'r') as f:
+        with open(credentials_path, 'r') as f:
             credentials = f.read().splitlines()
             username = credentials[0]
             password = credentials[1]
@@ -421,6 +420,23 @@ class RTSPStream(AprilDetector):
         cap.open(f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101")
         return cap
 
+    def crop_chute(self, frame: np.ndarray, left_tags: list, right_tags: list) -> np.ndarray:
+        """
+        This function will open up an additional cv2 window where the image will be cropped based on the detected tags.
+        Only the chute will be shown in the window.
+        
+        Params:
+        -------
+        frame: np.ndarray
+            The frame in which the AprilTags are to be detected
+        tags: List
+            A list of detected AprilTags in the frame 
+        """
+        if len(left_tags) == 0 or len(right_tags) == 0:
+            return frame
+        # TODO Add logic to crop the chute if the tags are detected
+        return frame
+        
     def receive_frame(self, cap: cv2.VideoCapture) -> None:
         """
         Read frames from the video stream and store them in a queue.
@@ -496,15 +512,17 @@ class RTSPStream(AprilDetector):
         None
             Nothing is returned, only the frames are displayed with the detected AprilTags
         """
-        if frame is None and self.window:
+        if frame is None:
             if cap:
                 self.cap = cap
+            print("1")
             self.thread1 = threading.Thread(target=self.receive_frame, args=(self.cap,))
             self.thread2 = threading.Thread(target=self.display_frame, args=(self.cap,))
             self.thread1.start()
             self.thread2.start()
         elif frame is not None:
             # resize frame half the size
+            print("2")
             frame = cv2.resize(frame, (0, 0), fx=0.3, fy=0.3)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             tags = self.detect(gray)
