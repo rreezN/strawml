@@ -121,12 +121,16 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
     
-    # image_size = (1370, 204) # For CNNClassifier (but can be any size)
+    image_size = (1370, 204) # For CNNClassifier (but can be any size)
     # image_size = (224, 224) # For ConvNextV2 (for now)
-    image_size = (384, 384) # For ViT
+    # image_size = (384, 384) # For ViT
     
-    train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
-    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size)
+    num_classes_straw = 11
+    
+    train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
+                         random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, num_classes_straw=num_classes_straw)
+    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
+                        random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, num_classes_straw=train_set.num_classes_straw)
     
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False)
@@ -140,7 +144,8 @@ if __name__ == '__main__':
     
     # model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels)
     # model = convnextv2_atto(in_chans=input_channels)
-    model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=21, pretrained=True)
+    model = timm.create_model('convnextv2_atto', in_chans=input_channels, num_classes=num_classes_straw, pretrained=True)
+    # model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=21, pretrained=True)
     
     train_model(args, model, train_loader, test_loader)
 

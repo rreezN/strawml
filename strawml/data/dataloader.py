@@ -14,7 +14,7 @@ from strawml.models.straw_classifier import chute_cropper as cc
 
 class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True, inc_edges: bool = False,
-                 random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448)) -> torch.utils.data.Dataset:
+                 random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21) -> torch.utils.data.Dataset:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
@@ -23,6 +23,9 @@ class Chute(torch.utils.data.Dataset):
         self.inc_heatmap = inc_heatmap
         self.inc_edges = inc_edges
         self.epsilon = 1e-6 # Small number to avoid division by zero
+        self.num_classes_straw = num_classes_straw
+        
+        
         # Load the data file
         self.frames = h5py.File(self.data_path, 'a')
         
@@ -32,7 +35,7 @@ class Chute(torch.utils.data.Dataset):
         # If data purpose is straw, we remove all cropped images from the dataset
         if self.data_purpose == "straw":
             # Remove all images that have been cropped
-            banned_augmentations = ['cropping', 'translation', 'rotation', 'color'] # TODO: TBD if we want to keep color
+            banned_augmentations = ['cropping', 'translation', 'rotation'] # TODO: TBD if we want to keep color
             print(f"Removing {banned_augmentations} images from the dataset (data_purpose='straw')")
             for frame_name in list(self.frames.keys()):
                 attributes = self.frames[frame_name].attrs
@@ -193,8 +196,13 @@ class Chute(torch.utils.data.Dataset):
         list(int): The class label. 
         """
         
-        idx = int(fullness/0.05)
-        label = [0] * 21
+        increment = 1/(self.num_classes_straw-1)
+        
+        possible_fullness = np.arange(0, 1, increment)
+        fullness_converted = self.get_closest_value(fullness, possible_fullness)
+        
+        idx = int(fullness_converted/increment)
+        label = [0] * self.num_classes_straw
         label[idx] = 1
         
         return label
@@ -209,13 +217,24 @@ class Chute(torch.utils.data.Dataset):
         Returns:
         float: The fullness value. 
         """
-        
+        # TODO: Update this function to handle multiple number of classes (see convert_fullness_to_class)
         idx = np.argmax(label)
         fullness = (idx * 0.5) / 10
         
         return fullness
 
+    def get_closest_value(self, value: float, values: list[float]) -> float:
+        """Gets the closest value in a list of values to a given value.
 
+        Parameters:
+        value (float): The value to find the closest value to.
+        values (list(float)): The list of values to search.
+
+        Returns:
+        float: The closest value in the list.
+        """
+        return min(values, key=lambda x:abs(x-value))
+    
     def extract_means_and_stds(self, force_update_statistics: bool = False):
         """Extracts the mean and standard deviation of the training data for normalization.
 
@@ -412,11 +431,12 @@ class Chute(torch.utils.data.Dataset):
     def print_arguments(self):
         dataset_size = len(self.train_indices) if self.data_type == 'train' else len(self.test_indices)
         print(f'Parameters: \n \
-                    Data Path:          {self.data_path}\n \
-                    Include Heatmaps:   {self.inc_heatmap} \n \
-                    Data Type:          {self.data_type}\n \
-                    Data size:          {dataset_size}\n \
-                    ')
+                    Data Path:                {self.data_path}\n \
+                    Include Heatmaps:         {self.inc_heatmap} \n \
+                    Data Type:                {self.data_type}\n \
+                    Data size:                {dataset_size}\n \
+                    Number of straw classes:  {self.num_classes_straw}\n \
+                        ')
 
 if __name__ == '__main__':
     import time
