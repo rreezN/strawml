@@ -454,6 +454,7 @@ def augment_chute_data(args: argparse.Namespace) -> None:
                     frame_nr += 1
 
                 if 'color' in args.type:
+                    # TODO: Split color and noise augmentations
                     # print(f"Color, with frame: {frame_nr}")
                     gamma = random.uniform(0.5, 2)
                     gaussian_noise = random.uniform(0, 1)

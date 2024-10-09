@@ -32,11 +32,11 @@ class Chute(torch.utils.data.Dataset):
         # If data purpose is straw, we remove all cropped images from the dataset
         if self.data_purpose == "straw":
             # Remove all images that have been cropped
-            print("Removing all cropped, rotated or translated images from the dataset (data_purpose='straw')")
+            banned_augmentations = ['cropping', 'translation', 'rotation', 'color'] # TODO: TBD if we want to keep color
+            print(f"Removing {banned_augmentations} images from the dataset (data_purpose='straw')")
             for frame_name in list(self.frames.keys()):
                 attributes = self.frames[frame_name].attrs
                 if 'augmented' in attributes:
-                    banned_augmentations = ['cropping', 'translation', 'rotation']
                     augmentations = self.frames[frame_name].attrs['augmented']
                     if any(x in augmentations for x in banned_augmentations):
                         frame_names.remove(frame_name)
