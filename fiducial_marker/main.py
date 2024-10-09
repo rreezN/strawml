@@ -53,7 +53,7 @@ def main(args):
                 decode_sharpening=config["decode_sharpening"],
                 debug=config["debug"]
             )
-            RTSPStream(detector, config["ids"], window=args.windowed, credentials_path='data/hkvision_credentials.txt')()
+            RTSPStream(detector, config["ids"], window=args.windowed, credentials_path='data/hkvision_credentials.txt', rtsp=args.rtsp)()
             
             ## or load file
             # AD = RTSPStream(detector, config["ids"], window=args.windowed, credentials_path='data/hkvision_credentials.txt')
@@ -73,13 +73,12 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('mode', type=str, choices=['make', 'calibrate', 'detect'], help='Mode to run the script in.')
     parser.add_argument('--tag_type', type=str, default='april', choices=['april', 'aruco'], help='Which tag type to use.')
     parser.add_argument('--min_acceptable_images', type=int, default=60, help='Minimum number of images to calibrate the camera.')
-    parser.add_argument('--windowed', type=bool, default=True, help='Whether to run the script in windowed mode.')
-    parser.add_argument('--rtsp', type=bool, default=False, help='Whether to use rtsp stream.')
+    parser.add_argument('--rtsp', action='store_true', help='Whether to use rtsp stream.')
+    parser.add_argument('--windowed', action='store_true', help='Whether to run the script in windowed mode.')
     return parser.parse_args()
 
 if __name__ == '__main__':
     # TODO Write the functionality to calibrate the camera
     args = get_args()
     main(args)
-
 

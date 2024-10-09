@@ -128,14 +128,14 @@ class AprilDetector:
         # undistort the frame when we have the proper filter
         # frame = cv2.undistort(frame, self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"])
         tags = self.detector.detect(frame) #, estimate_tag_pose=True, camera_params=[self.fx, self.fy, self.cx, self.cy], tag_size=0.05) # 5cm
-        self.check_for_changes(tags)
-        for tag in tags:
-            if tag.tag_id not in self.tag_ids:            
-                self.tags = np.append(self.tags, tag)
-                self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
+        if self.check_for_changes(tags):
+            for tag in tags:
+                if tag.tag_id not in self.tag_ids:            
+                    self.tags = np.append(self.tags, tag)
+                    self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
         return self.tags
     
-    def check_for_changes(self, tags: list) -> None:
+    def check_for_changes(self, tags: list) -> bool:
         """
         Check if the camera has moved and the chute tags have changed position. If so, reset the tags and tag_ids arrays.
 
@@ -150,10 +150,10 @@ class AprilDetector:
             Nothing is returned, only if the camera has moved and the chute tags have changed position, the tags and tag_ids
             arrays are reset.
         """
-        if self.tags.size == 0:
+        if len(tags) == 0:
             self.tags = []
             self.tag_ids = []
-            return
+            return False
         tag_ids = np.array([int(tag.tag_id) for tag in tags])
         accumulated_error = 0
         for i, t in enumerate(self.tag_ids):
@@ -169,6 +169,7 @@ class AprilDetector:
         if accumulated_error/len(self.tag_ids) > 0.1:
             self.tags = []
             self.tag_ids = []
+        return True
 
     def inverse_linear_interpolation(self, x_values: list, y_values: list, y: float) -> int | None:
         """

@@ -1,4 +1,3 @@
-from re import T
 from __init__ import *
 import cv2
 from cv2 import aruco
@@ -6,10 +5,7 @@ import numpy as np
 from make_marker import ARUCO_DICT
 import threading
 from threading import Thread
-
-from typing import Optional
 from queue import Queue
-from datetime import datetime
 
 
 def create_aruco_grid(dict_type: str, 
@@ -21,6 +17,9 @@ def create_aruco_grid(dict_type: str,
                       showImage: bool = False) -> None:
     """
     Create a ChAruCo board with the given parameters and save it to a file.
+    
+    Inspired functions from:
+        https://github.com/opencv/opencv/blob/4.x/samples/cpp/tutorial_code/objectDetection/create_board_charuco.cpp
     """
     margins = squareLength - markerLength
     boardSize = (squaresX, squaresY)
@@ -268,10 +267,7 @@ def calibrate_camera(dict_type: str,
     gridboard = aruco.CharucoBoard(size=boardSize, markerLength=markerLength, squareLength=squareLength, dictionary=marker_dict)
     calibrate_stream = RTSPStream(credentials_path='data/hkvision_credentials.txt', rtsp=rtsp)
     calibration, cameraMatrix, distCoeffs, rvecs, tvecs = calibrate_stream(gridboard, marker_dict, min_acceptable_images) # type: ignore
-    # create a unique time id
-    # time_id = datetime.now().strftime("%d%m%Y%H%M")
-    # Save the calibration to a file
-    np.savez(f"fiducial_marker/calibration.npz", cameraMatrix=cameraMatrix, distCoeffs=distCoeffs, rvecs=rvecs, tvecs=tvecs)
+    np.savez(f"fiducial_marker/calibration.npz", calibration=calibration, cameraMatrix=cameraMatrix, distCoeffs=distCoeffs, rvecs=rvecs, tvecs=tvecs)
     
     
 if __name__ == "__main__":

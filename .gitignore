@@ -6,7 +6,7 @@ yolov8n.pt
 fiducial_marker/april_tags
 fiducial_marker/aruco_tags
 fiducial_marker/c_aruco
-
+fiducial_marker/calibration.npz
 
 
 # models
