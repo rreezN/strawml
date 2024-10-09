@@ -1,3 +1,4 @@
+from calendar import c
 import cv2
 from cv2 import aruco
 import numpy as np
@@ -87,7 +88,26 @@ class AprilDetector:
         # Initialize the tags and tag_ids arrays to store the detected tags and their corresponding IDs
         self.tags = np.array([])
         self.tag_ids = np.array([])
+        self.fx = None
+        self.fy = None
+        self.cx = None
+        self.cy = None
+        self.camera_params = self.load_camera_params()
 
+        
+    def load_camera_params(self):
+        # open npz file
+        with np.load("fiducial_marker/calibration.npz") as data:
+            cameraMatrix = data['cameraMatrix']
+            distCoeffs = data['distCoeffs']
+            rvecs = data['rvecs']
+            tvecs = data['tvecs']
+        self.fx = cameraMatrix[0, 0]
+        self.fy = cameraMatrix[1, 1]
+        self.cx = cameraMatrix[0, 2]
+        self.cy = cameraMatrix[1, 2]
+        return {"cameraMatrix": cameraMatrix, "distCoeffs": distCoeffs, "rvecs": rvecs, "tvecs": tvecs}
+            
     def detect(self, frame: np.ndarray) -> np.ndarray[Any] | list:
         """
         Wrapper method to detect AprilTags in a frame using the pupil_apriltags library. While detecting it checks if the
@@ -104,11 +124,10 @@ class AprilDetector:
         --------
         List
             A list of detected AprilTags in the frame
-        """
-
-        # shape = frame.shape
-        # fx, fy, cx, cy = 260, 260, shape[0], shape[1] # needs to be founds through calibration
-        tags = self.detector.detect(frame) # , estimate_tag_pose=True, camera_params=[fx,fy,cx,cy], tag_size=0.05) # 5cm
+        """     
+        # undistort the frame when we have the proper filter
+        # frame = cv2.undistort(frame, self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"])
+        tags = self.detector.detect(frame) #, estimate_tag_pose=True, camera_params=[self.fx, self.fy, self.cx, self.cy], tag_size=0.05) # 5cm
         self.check_for_changes(tags)
         for tag in tags:
             if tag.tag_id not in self.tag_ids:            
@@ -132,6 +151,8 @@ class AprilDetector:
             arrays are reset.
         """
         if self.tags.size == 0:
+            self.tags = []
+            self.tag_ids = []
             return
         tag_ids = np.array([int(tag.tag_id) for tag in tags])
         accumulated_error = 0
@@ -235,7 +256,7 @@ class AprilDetector:
             else:
                 c[3] = corner  # bottom_left
         if len(c) != 4:
-            raise ValueError("The corners must have 4 points with the center in the middle")        
+            raise ValueError("The corners must have 4 points with the center in the middle")
         return np.array(list(dict(sorted(c.items())).values()))
 
     def rotate_line(self, point1: Tuple, point2: Tuple, angle: float) -> Tuple[Tuple[int, int], Tuple[int, int]]:
@@ -320,8 +341,8 @@ class AprilDetector:
                 level_center_right = (top_right + bottom_right) / 2
                 # get the angle of the tag wrt the x-axis for rotation purposes
 
-                tag_angle = self.get_angle(top_left, top_right)
-                print(tag.tag_id, top_left, top_right, np.rad2deg(tag_angle))
+                tag_angle = -self.get_angle(top_left, top_right)
+                # print(tag.tag_id, top_left, top_right, np.rad2deg(tag_angle))
                 min_distance_right = float('inf')
                 min_distance_left = float('inf')
                 closest_left_chute = None
@@ -367,12 +388,13 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, detector, ids, credentials_path, window=True):
+    def __init__(self, detector, ids, credentials_path, window=True, rtsp=True):
         super().__init__(detector, ids, window)
-        self.cap = self.create_capture(credentials_path)
-        self.thread1 = threading.Thread(target=self.receive_frame, args=(self.cap,))
-        self.thread2 = threading.Thread(target=self.display_frame, args=(self.cap,))
-    
+        if rtsp:
+            self.cap = self.create_capture(credentials_path)
+        else:
+            self.cap = cv2.VideoCapture(0)
+        
     def create_capture(self, params: str) -> cv2.VideoCapture:
         """
         Create a video capture object to receive frames from the RTSP stream.
@@ -455,7 +477,7 @@ class RTSPStream(AprilDetector):
         cap.release()
         cv2.destroyAllWindows()
 
-    def __call__(self, frame: Optional[np.ndarray] = None, cap: Optional[cv2.VideoCapture] = None) -> None:
+    def __call__(self, frame: Optional[np.ndarray] = None, cap: Optional[cv2.VideoCapture] = None) -> None | list:
         """
         Upon calling the object, if self.window is True and frame is None, the frames are received from the video stream
         and displayed with the detected AprilTags. If frame is not None, the detected AprilTags are drawn on the frame.
@@ -475,8 +497,9 @@ class RTSPStream(AprilDetector):
         """
         if frame is None and self.window:
             if cap:
-                self.thread1 = threading.Thread(target=self.receive_frame, args=(cap,))
-                self.thread2 = threading.Thread(target=self.display_frame, args=(cap,))
+                self.cap = cap
+            self.thread1 = threading.Thread(target=self.receive_frame, args=(self.cap,))
+            self.thread2 = threading.Thread(target=self.display_frame, args=(self.cap,))
             self.thread1.start()
             self.thread2.start()
         elif frame is not None:

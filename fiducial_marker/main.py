@@ -9,6 +9,7 @@ import argparse
 
 from fiducial_marker.make_marker import ARUCO_DICT, aruco_make, april_make
 from fiducial_marker.detect_marker import ArucoDetector, RTSPStream
+from fiducial_marker.calibrate_marker import calibrate_camera
 # from aruco.p_aruco.aruco_calibrate import aruco_calibrate
 
 def main(args):
@@ -37,27 +38,27 @@ def main(args):
 
         with open("fiducial_marker/april_config.json", "r") as file:
             config = json.load(file)
-        detector = Detector(
-            families=config["dict_type"],
-            nthreads=config["nthreads"],
-            quad_decimate=config["quad_decimate"],
-            quad_sigma=config["quad_sigma"],
-            refine_edges=config["refine_edges"],
-            decode_sharpening=config["decode_sharpening"],
-            debug=config["debug"]
-        )
 
         if args.mode == 'make':
             april_make(config["dict_type"], config["ids"])
         elif args.mode == 'calibrate':
-            ...
+            calibrate_camera(config["calibrate_dict"], min_acceptable_images=args.min_acceptable_images, rtsp=args.rtsp)
         elif args.mode == 'detect':
-            # load file
+            detector = Detector(
+                families=config["dict_type"],
+                nthreads=config["nthreads"],
+                quad_decimate=config["quad_decimate"],
+                quad_sigma=config["quad_sigma"],
+                refine_edges=config["refine_edges"],
+                decode_sharpening=config["decode_sharpening"],
+                debug=config["debug"]
+            )
+            RTSPStream(detector, config["ids"], window=args.windowed, credentials_path='data/hkvision_credentials.txt')()
+            
+            ## or load file
             # AD = RTSPStream(detector, config["ids"], window=args.windowed, credentials_path='data/hkvision_credentials.txt')
             # frame = cv2.imread("fiducial_marker/chute.png")
             # AD(frame)
-            # AD(cap=cap)
-            RTSPStream(detector, config["ids"], window=args.windowed, credentials_path='data/hkvision_credentials.txt')()
             
 def get_args() -> argparse.Namespace:
     """
@@ -71,8 +72,9 @@ def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Augment the chute data.')
     parser.add_argument('mode', type=str, choices=['make', 'calibrate', 'detect'], help='Mode to run the script in.')
     parser.add_argument('--tag_type', type=str, default='april', choices=['april', 'aruco'], help='Which tag type to use.')
-
+    parser.add_argument('--min_acceptable_images', type=int, default=60, help='Minimum number of images to calibrate the camera.')
     parser.add_argument('--windowed', type=bool, default=True, help='Whether to run the script in windowed mode.')
+    parser.add_argument('--rtsp', type=bool, default=False, help='Whether to use rtsp stream.')
     return parser.parse_args()
 
 if __name__ == '__main__':

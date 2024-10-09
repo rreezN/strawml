@@ -1,6 +1,7 @@
 
 {
     "dict_type": "tagStandard41h12",
+    "calibrate_dict": "DICT_4X4_50",
     "nthreads": 4,
     "quad_decimate":1.5,
     "quad_sigma":0.0,
