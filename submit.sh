@@ -1,10 +1,10 @@
 #!/bin/sh
-#BSUB -J yolov8_digit
-#BSUB -o yolov8_digit%J.out
-#BSUB -e yolov8_digit%J.err
-#BSUB -q gpuv100
+#BSUB -J straw_classifier
+#BSUB -o straw_classifier%J.out
+#BSUB -e straw_classifier%J.err
+#BSUB -q cabgpu
 #BSUB -gpu "num=1:mode=exclusive_process"
-#BSUB -n 1
+#BSUB -n 4
 #BSUB -R "rusage[mem=8G]"
 #BSUB -W 10:00
 #BSUB -N 4
@@ -12,7 +12,7 @@
 
 # load a module
 # replace VERSION 
-module load python3/3.10.12
+module load python3/3.10.14
 
 # load CUDA (for GPU support)
 # load the correct CUDA for the pytorch version you have installed

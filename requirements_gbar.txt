@@ -11,7 +11,7 @@ wandb
 scikit-image
 timm
 
---extra-index-url https://download.pytorch.org/whl/cu118
-torch 
-torchvision
+torch
 torchaudio
+torchvision
+torchinfo
