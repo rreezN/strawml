@@ -79,7 +79,7 @@ class AprilDetector:
     provides methods to detect AprilTags in a frame, draw the detected tags on the frame, and given a predicted straw level
     value performs inverse linear interpolation to get the corresponding pixel value on the frame.
     """
-    def __init__(self, detector: pupil_apriltags.bindings.Detector, ids: dict, window: bool=False) -> None:
+    def __init__(self, detector: pupil_apriltags.bindings.Detector, ids: dict, window: bool=False, frame_shape: tuple = (1440, 2560)) -> None:
         self.detector = detector
         self.window = window
         self.ids = ids
@@ -93,6 +93,7 @@ class AprilDetector:
         self.cx = None
         self.cy = None
         self.camera_params = self.load_camera_params()
+        self.newcameramtx, self.roi = cv2.getOptimalNewCameraMatrix(self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"], (frame_shape[1], frame_shape[0]), 1, (frame_shape[1], frame_shape[0]))
 
         
     def load_camera_params(self):
@@ -102,12 +103,36 @@ class AprilDetector:
             distCoeffs = data['distCoeffs']
             rvecs = data['rvecs']
             tvecs = data['tvecs']
+        # load an image to get shape 
+        img = cv2.imread("data/calibration/images/frame_0.jpg")
+        # chagne cx and cy to the center of the image
+        # cameraMatrix[0, 2] = img.shape[1] // 2
+        # cameraMatrix[1, 2] = img.shape[0] // 2
         self.fx = cameraMatrix[0, 0]
         self.fy = cameraMatrix[1, 1]
         self.cx = cameraMatrix[0, 2]
         self.cy = cameraMatrix[1, 2]
         return {"cameraMatrix": cameraMatrix, "distCoeffs": distCoeffs, "rvecs": rvecs, "tvecs": tvecs}
-            
+    
+    def fix_frame(self, frame: np.ndarray) -> np.ndarray:
+        """
+        Fix the frame by undistorting it using the camera parameters.
+
+        Params:
+        -------
+        frame: np.ndarray
+            The frame to be undistorted
+        
+        Returns:
+        --------
+        np.ndarray
+            The undistorted frame
+        """
+        frame = cv2.undistort(frame, self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"], None, self.newcameramtx)
+        x, y, w, h = self.roi
+        frame = frame[y:y+h, x:x+w]
+        return frame
+
     def detect(self, frame: np.ndarray) -> np.ndarray[Any] | list:
         """
         Wrapper method to detect AprilTags in a frame using the pupil_apriltags library. While detecting it checks if the
@@ -126,8 +151,10 @@ class AprilDetector:
             A list of detected AprilTags in the frame
         """     
         # undistort the frame when we have the proper filter
-        # frame = cv2.undistort(frame, self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"])
-        tags = self.detector.detect(frame) #, estimate_tag_pose=True, camera_params=[self.fx, self.fy, self.cx, self.cy], tag_size=0.05) # 5cm
+        # new_K = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"].reshape(-1,1)[:4], (frame.shape[0],frame.shape[1]), np.eye(3), (frame.shape[0]*2,frame.shape[1]*2), balance=0, fov_scale=1)
+        # map1, map2 = cv2.initUndistortRectifyMap(self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"], np.eye(3), new_K, (frame.shape[0]*2,frame.shape[1]*2), cv2.CV_32F)
+        # undistorted_img = cv2.remap(frame, map1, map2, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+        tags = self.detector.detect(frame, estimate_tag_pose=True, camera_params=[self.fx, self.fy, self.cx, self.cy], tag_size=0.05) # 5cm
         for tag in tags:
             if tag.tag_id not in self.tag_ids:            
                 self.tags = np.append(self.tags, tag)
@@ -376,7 +403,7 @@ class AprilDetector:
             cv2.circle(frame, (int(center_chute),  PIXEL_VALUE), 10, (0, 255, 0), -1)
             cv2.putText(frame, f"{straw_level:.2f}%", (int(center_chute) - 20, PIXEL_VALUE - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
         except Exception as e:
-            print(e)
+            print(e, "here")
         return frame
 
 class RTSPStream(AprilDetector):
@@ -476,11 +503,12 @@ class RTSPStream(AprilDetector):
         while True:
             if not self.q.empty():
                 frame = self.q.get()
+                frame = self.fix_frame(frame)
                 if frame_count % 5 == 0:
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     tags = self.detect(gray)
                 frame = self.draw(frame, tags)
-                frame = cv2.resize(frame, (0, 0), fx=0.6, fy=0.6)
+                # frame = cv2.resize(frame, (0, 0), fx=0.6, fy=0.6)
                 # Increment frame count
                 frame_count += 1
                 # Calculate FPS
@@ -515,14 +543,12 @@ class RTSPStream(AprilDetector):
         if frame is None:
             if cap:
                 self.cap = cap
-            print("1")
             self.thread1 = threading.Thread(target=self.receive_frame, args=(self.cap,))
             self.thread2 = threading.Thread(target=self.display_frame, args=(self.cap,))
             self.thread1.start()
             self.thread2.start()
         elif frame is not None:
             # resize frame half the size
-            print("2")
             frame = cv2.resize(frame, (0, 0), fx=0.3, fy=0.3)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             tags = self.detect(gray)

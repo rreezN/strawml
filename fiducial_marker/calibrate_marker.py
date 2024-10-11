@@ -62,12 +62,13 @@ class RTSPStream:
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, credentials_path, window=True, rtsp=True):
-        self.rtsp = rtsp
-        if rtsp:
+    def __init__(self, credentials_path, window=True, rtsp = False, cap: str | int | None = None):
+        if cap is None and rtsp is True:
             self.cap = self.create_capture(credentials_path)
-        else:
-            self.cap = cv2.VideoCapture(0)
+        elif type(cap) is int or cap is None:
+            self.cap = cv2.VideoCapture(cap)
+        elif type(cap) is str:
+            self.cap = cap
         self.q = Queue()
     
     def create_capture(self, params: str) -> cv2.VideoCapture:
@@ -129,6 +130,7 @@ class RTSPStream:
         None
             Nothing is returned, only the frames are displayed with the detected AprilTags
         """
+        from tqdm import tqdm
         # Corners discovered in all images processed
         corners_all = []
 
@@ -140,12 +142,12 @@ class RTSPStream:
 
         # The more valid captures, the better the calibration
         validCaptures = 0
+        pbar = tqdm(total=self.q.qsize(), desc="Calibrating camera")
         while True:
             if not self.q.empty():
+                pbar.update(1)
                 frame = self.q.get()
-                
                 proportion = max(frame.shape) / 1000.0
-                print("Frame captured")
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 # Find the aruco markers
                 corners, ids, _ = aruco.detectMarkers(gray, marker_dict)
@@ -169,6 +171,9 @@ class RTSPStream:
                     image=gray,
                     board=gridboard)
                 
+                if cv2.waitKey(1) & 0xFF ==ord('q'):
+                    break
+
                 # If a Charuco board was found, collect image/corner points
                 # Requires at least 20 squares for a valid calibration image
                 if response > 20:
@@ -194,9 +199,13 @@ class RTSPStream:
                     if cv2.waitKey(1) & 0xFF ==ord('q'):
                         break
                     validCaptures += 1
-                    if validCaptures == min_acceptable_images:
-                        break
-        cap.release()
+                    pbar.set_postfix_str(f"Valid: {validCaptures}")
+                    # if validCaptures == min_acceptable_images:
+                        # break
+            else:
+                break
+        if not type(cap) == str:
+            cap.release()
         cv2.destroyAllWindows()
         
         print("{} valid captures".format(validCaptures))
@@ -223,8 +232,27 @@ class RTSPStream:
         print("Camera intrinsic parameters matrix:\n{}".format(cameraMatrix))
         print("\nCamera distortion coefficients:\n{}".format(distCoeffs))
         return calibration, cameraMatrix, distCoeffs, rvecs, tvecs
-        
-    def __call__(self, gridboard, marker_dict, min_acceptable_images, cap=None) -> None:
+    
+    def load_queue(self) -> None:
+        """
+        Load the images from the path self.cap to the queue.
+
+        Returns:
+        --------
+        None
+            Nothing is returned, only the images are loaded to the queue
+        """
+        import os
+        from tqdm import tqdm
+        images = os.listdir(self.cap)[400:2000]
+        for img in tqdm(images, desc="Loading images to queue"):
+            frame = cv2.imread(os.path.join(self.cap, img))
+            self.q.put(frame)
+
+        # frame = cv2.imread(os.path.join(self.cap, "frame_520.jpg"))
+        # self.q.put(frame)
+
+    def __call__(self, gridboard, marker_dict, min_acceptable_images, cap: None|str|cv2.VideoCapture = None) -> None:
         """
         Upon calling the object, if self.window is True and frame is None, the frames are received from the video stream
         and displayed with the detected AprilTags. If frame is not None, the detected AprilTags are drawn on the frame.
@@ -242,12 +270,19 @@ class RTSPStream:
         None
             Nothing is returned, only the frames are displayed with the detected AprilTags
         """
-        if cap is not None:
-            self.cap = cap
-        self.thread1 = threading.Thread(target=self.receive_frame, args=(self.cap,))
-        self.thread2 = ThreadWithReturnValue(target=self.display_frame, args=(gridboard, self.cap, marker_dict, min_acceptable_images, ))
-        self.thread1.start()
-        self.thread2.start()
+        # if cap is not None:
+        #     self.cap = cap
+        if type(self.cap) == str:
+            # Here we load the images in the path self.cap to the queue
+            self.load_queue()
+            return self.display_frame(gridboard, self.cap, marker_dict, min_acceptable_images)
+            # self.thread2 = ThreadWithReturnValue(target=self.display_frame, args=(gridboard, self.cap, marker_dict, min_acceptable_images, ))
+            # self.thread2.start()
+        else:
+            self.thread1 = threading.Thread(target=self.receive_frame, args=(self.cap,))
+            self.thread2 = ThreadWithReturnValue(target=self.display_frame, args=(gridboard, self.cap, marker_dict, min_acceptable_images, ))
+            self.thread1.start()
+            self.thread2.start()
         return self.thread2.join()
 
 
@@ -261,11 +296,13 @@ def calibrate_camera(dict_type: str,
     """
     Calibrate the camera using the ChAruCo board.
     """
-    # cap = cv2.VideoCapture(0)
+    # cap = cv2.VideoCapture("data/calibration/vlc-record-2024-10-10-14h01m18s-rtsp___10.5.242.32_554_Streaming_Channels_101-.mp4")
+    cap = "data/calibration/images/"
+    # cap = 0
     boardSize = (squaresX, squaresY)
     marker_dict = aruco.getPredefinedDictionary(ARUCO_DICT[dict_type])
     gridboard = aruco.CharucoBoard(size=boardSize, markerLength=markerLength, squareLength=squareLength, dictionary=marker_dict)
-    calibrate_stream = RTSPStream(credentials_path='data/hkvision_credentials.txt', rtsp=rtsp)
+    calibrate_stream = RTSPStream(credentials_path='data/hkvision_credentials.txt', rtsp=rtsp, cap=cap)
     calibration, cameraMatrix, distCoeffs, rvecs, tvecs = calibrate_stream(gridboard, marker_dict, min_acceptable_images) # type: ignore
     np.savez(f"fiducial_marker/calibration.npz", calibration=calibration, cameraMatrix=cameraMatrix, distCoeffs=distCoeffs, rvecs=rvecs, tvecs=tvecs)
     
