@@ -1,6 +1,6 @@
 from calendar import c
 import cv2
-from cv2 import aruco
+from cv2 import aruco, rectangle
 import numpy as np
 from typing import Tuple, Optional, Any
 import os
@@ -70,6 +70,105 @@ class ArucoDetector:
             frame = self.drawMarkers(frame, marker_corners, marker_IDs)
             return frame, marker_corners, marker_IDs
 
+
+class TagGraphWithPositionsCV:
+    def __init__(self, connections, detected_tags):
+        """
+        connections: List of tuples defining the connected tag ids (e.g., (11, 12), (12, 13))
+        detected_tags: List of tuples (center_x, center_y, tag_id) for detected tags
+        image: The image to overlay on
+        corner_tags: List of tag ids that are corner points
+        """
+        self.connections = connections
+        self.detected_tags = {tag_id: (x, y) for (x, y, tag_id) in detected_tags}  # Detected tag positions
+        self.inferred_tags = {}  # Store inferred tag positions
+        self.corner_tags = set([11, 15, 26, 22])  # Store corner tags
+    
+    def interpolate_position(self, tag_id, neighbor_ids, is_corner):
+        """
+        Interpolate the position of a missing tag based on its connected neighbors.
+        For corners, we prioritize direct neighbors (no averaging all around).
+        """
+        neighbor_positions = [self.detected_tags.get(n) for n in neighbor_ids if n in self.detected_tags]
+        
+        if not neighbor_positions:
+            return None
+        
+        if is_corner:
+            if tag_id == 11:
+                try:
+                    x_value = self.detected_tags[15][0]
+                    y_value = self.detected_tags[12][1]
+                except KeyError:
+                    return None
+            if tag_id == 15:
+                try:
+                    x_value = self.detected_tags[16][0]
+                    y_value = self.detected_tags[11][1]
+                except KeyError:
+                    return None
+            if tag_id == 22:
+                try:
+                    x_value = self.detected_tags[26][0]
+
+                    y_value = self.detected_tags[23][1]
+                except KeyError:
+                    return None
+            if tag_id == 26:
+                try:
+                    x_value = self.detected_tags[25][0]
+                    y_value = self.detected_tags[22][1]
+                except KeyError:
+                    return None
+            return (x_value, y_value, tag_id)
+        else:
+            # For edge tags, we average the position
+            avg_x = np.mean([pos[0] for pos in neighbor_positions])
+            avg_y = np.mean([pos[1] for pos in neighbor_positions])
+        
+            return (avg_x, avg_y, tag_id)
+
+    def account_for_missing_tags(self):
+        """
+        Infer the missing tags by interpolating positions based on neighboring connected tags.
+        """
+        for tag1, tag2 in self.connections:
+            # Infer missing tags using neighboring connections
+            if tag1 not in self.detected_tags:
+                neighbors = [n2 if n1 == tag1 else n1 for n1, n2 in self.connections if tag1 in (n1, n2)]
+                is_corner = tag1 in self.corner_tags
+                inferred_position = self.interpolate_position(tag1, neighbors, is_corner)
+                if inferred_position:
+                    self.detected_tags[tag1] = inferred_position
+                    self.inferred_tags[tag1] = inferred_position
+
+            if tag2 not in self.detected_tags:
+                neighbors = [n2 if n1 == tag2 else n1 for n1, n2 in self.connections if tag2 in (n1, n2)]
+                is_corner = tag2 in self.corner_tags
+                inferred_position = self.interpolate_position(tag2, neighbors, is_corner)
+                if inferred_position:
+                    self.detected_tags[tag2] = inferred_position
+                    self.inferred_tags[tag2] = inferred_position
+
+    def draw_overlay(self, image):
+        """
+        Draws the detected and inferred tags on the image along with the connections.
+        """
+        for tag1, tag2 in self.connections:
+            # Get the positions of the two tags
+            pos1 = self.detected_tags.get(tag1)
+            pos2 = self.detected_tags.get(tag2)
+
+            if pos1 and pos2:
+                # Draw circles at the tag positions
+                cv2.circle(image, (int(pos1[0]), int(pos1[1])), 5, (0, 255, 0), -1)  # Green for detected
+                cv2.circle(image, (int(pos2[0]), int(pos2[1])), 5, (0, 255, 0), -1)  # Green for detected
+
+                # Draw line between the connected tags
+                cv2.line(image, (int(pos1[0]), int(pos1[1])), (int(pos2[0]), int(pos2[1])), (255, 0, 0), 2)
+
+        return image
+            
 class AprilDetector:
     """
     NOTE This class is highly customized to detect AprilTags in the chute system af meliora bio. 
@@ -93,6 +192,9 @@ class AprilDetector:
         self.cx = None
         self.cy = None
         self.camera_params = self.load_camera_params()
+        self.tag_connections = [(11, 12), (12, 13), (13, 14), (14, 19), (19, 20), (20, 21), 
+                                (21, 22), (22, 26), (26, 25), (25, 24), (24, 23), (23, 18), 
+                                (18, 17), (17, 16), (16, 15), (15, 11)]
 
         
     def load_camera_params(self):
@@ -289,7 +391,7 @@ class AprilDetector:
 
         return point1, tuple(p2.astype(int))
 
-    def draw(self, frame: np.ndarray, tags: list, straw_level: float = 25) -> np.ndarray:
+    def draw(self, frame: np.ndarray, tags: list, make_cutout: bool = False, straw_level: float = 25) -> np.ndarray:
         """
         Draws the detected AprilTags on the frame. The number tags are drawn in yellow and the chute tags are drawn in blue.
         The function also draws a line from the right side of the number tag to the right side of the chute tag closest to it on the y-axis,
@@ -368,7 +470,14 @@ class AprilDetector:
                     line_begin, line_end = self.rotate_line(line_begin, line_end, -tag_angle)
                     cv2.line(frame, tuple(line_begin), tuple(line_end), (0, 255, 0), 2)
                     cv2.putText(frame, f"{int(tag.tag_id) * 10}%", (int(closest_right_chute[0] + (closest_left_chute[0] - level_center_right[0]))+35, int(level_center_right[1]-5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-     
+            
+            if make_cutout:
+                # combine the left and right chutes
+                chutes = chute_left + chute_right
+                tag_graph = TagGraphWithPositionsCV(self.tag_connections, chutes)
+                tag_graph.account_for_missing_tags()
+                frame = tag_graph.draw_overlay(frame)
+                
             center_chute = (chute_right[0][0] + chute_left[0][0]) // 2
             number_tags = sorted(number_tags, key=lambda x: x.tag_id)
             number_tag_centers = np.array([tag.center for tag in number_tags])
@@ -388,12 +497,13 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, detector, ids, credentials_path, window=True, rtsp=True):
+    def __init__(self, detector, ids, credentials_path, window=True, rtsp=True, make_cutout=False):
         super().__init__(detector, ids, window)
         if rtsp:
             self.cap = self.create_capture(credentials_path)
         else:
             self.cap = cv2.VideoCapture(0)
+        self.make_cutout = make_cutout
         
     def create_capture(self, credentials_path: str) -> cv2.VideoCapture:
         """
@@ -456,7 +566,7 @@ class RTSPStream(AprilDetector):
         while ret and cap.isOpened():
             ret, frame = cap.read()
             self.q.put(frame)        
-    
+
     def display_frame(self, cap: cv2.VideoCapture) -> None:
         """
         Display the frames with the detected AprilTags.
@@ -479,7 +589,7 @@ class RTSPStream(AprilDetector):
                 if frame_count % 5 == 0:
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     tags = self.detect(gray)
-                frame = self.draw(frame, tags)
+                frame = self.draw(frame, tags, self.make_cutout)
                 frame = cv2.resize(frame, (0, 0), fx=0.6, fy=0.6)
                 # Increment frame count
                 frame_count += 1
