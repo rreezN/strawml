@@ -80,7 +80,7 @@ class TagGraphWithPositionsCV:
         corner_tags: List of tag ids that are corner points
         """
         self.connections = connections
-        self.detected_tags = {tag_id: (x, y) for (x, y, tag_id) in detected_tags}  # Detected tag positions
+        self.detected_tags = {tag_id: (int(x), int(y)) for (x, y, tag_id) in detected_tags}  # Detected tag positions
         self.inferred_tags = {}  # Store inferred tag positions
         self.corner_tags = set([11, 15, 26, 22])  # Store corner tags
     
@@ -97,8 +97,8 @@ class TagGraphWithPositionsCV:
         if is_corner:
             if tag_id == 11:
                 try:
-                    x_value = self.detected_tags[15][0]
-                    y_value = self.detected_tags[12][1]
+                    x_value = self.detected_tags[12][0]
+                    y_value = self.detected_tags[15][1]
                 except KeyError:
                     return None
             if tag_id == 15:
@@ -110,7 +110,6 @@ class TagGraphWithPositionsCV:
             if tag_id == 22:
                 try:
                     x_value = self.detected_tags[26][0]
-
                     y_value = self.detected_tags[23][1]
                 except KeyError:
                     return None
@@ -120,13 +119,13 @@ class TagGraphWithPositionsCV:
                     y_value = self.detected_tags[22][1]
                 except KeyError:
                     return None
-            return (x_value, y_value, tag_id)
+            return (int(x_value), int(y_value))
         else:
             # For edge tags, we average the position
             avg_x = np.mean([pos[0] for pos in neighbor_positions])
             avg_y = np.mean([pos[1] for pos in neighbor_positions])
         
-            return (avg_x, avg_y, tag_id)
+            return (int(avg_x), int(avg_y))
 
     def account_for_missing_tags(self):
         """
@@ -150,6 +149,47 @@ class TagGraphWithPositionsCV:
                     self.detected_tags[tag2] = inferred_position
                     self.inferred_tags[tag2] = inferred_position
 
+    def crop_to_size(self, image):
+        from PIL import Image, ImageDraw
+        import numpy as np
+        import cv2
+
+        # Convert the image to RGBA format
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGBA)
+        
+        # Create a mask with the same size as the image
+        maskIm = Image.new('L', (image.shape[1], image.shape[0]), 0)
+        
+        # Create a list to store the ordered coordinates
+        ordered_coords = []
+        
+        # Iterate through the connections and add the coordinates to the list
+        for tag1, tag2 in self.connections:
+            if tag1 in self.detected_tags and self.detected_tags[tag1] not in ordered_coords:
+                ordered_coords.append(self.detected_tags[tag1])
+            if tag2 in self.detected_tags and self.detected_tags[tag2] not in ordered_coords:
+                ordered_coords.append(self.detected_tags[tag2])
+        
+        # Draw the polygon on the mask
+        ImageDraw.Draw(maskIm).polygon(ordered_coords, outline=1, fill=1)
+        
+        # Convert the mask to a numpy array
+        mask = np.array(maskIm)
+        
+        # Apply the mask to the image
+        newImArray = np.empty(image.shape, dtype='uint8')
+        newImArray[:, :, :3] = image[:, :, :3]
+        newImArray[:, :, 3] = mask * 255
+        
+        # Convert the numpy array back to an image
+        newIm = Image.fromarray(newImArray, "RGBA")
+        
+        # get bbox
+        bbox = newIm.getbbox()
+        newIm = newIm.crop(bbox)
+        # Return the cropped image as a numpy array
+        return np.array(newIm)
+    
     def draw_overlay(self, image):
         """
         Draws the detected and inferred tags on the image along with the connections.
@@ -209,7 +249,59 @@ class AprilDetector:
         self.cx = cameraMatrix[0, 2]
         self.cy = cameraMatrix[1, 2]
         return {"cameraMatrix": cameraMatrix, "distCoeffs": distCoeffs, "rvecs": rvecs, "tvecs": tvecs}
-            
+    
+    def gaussian_filter(self, kernel_size,img,sigma=1, muu=0):
+        x, y = np.meshgrid(np.linspace(-1, 1, kernel_size),
+                        np.linspace(-1, 1, kernel_size))
+        dst = np.sqrt(x**2+y**2)
+        normal = 1/(((2*np.pi)**0.5)*sigma)
+        gauss = np.exp(-((dst-muu)**2 / (2.0 * sigma**2))) * normal
+        gauss = np.pad(gauss, [(0, img.shape[0] - gauss.shape[0]), (0, img.shape[1] - gauss.shape[1])], 'constant')
+        return gauss
+
+    def fft_deblur(self, img,kernel_size,kernel_sigma=5,factor='wiener',const=0.002):
+        gauss = self.gaussian_filter(kernel_size,img,kernel_sigma)
+        img_fft = np.fft.fft2(img)
+        gauss_fft = np.fft.fft2(gauss)
+        weiner_factor = 1 / (1+(const/np.abs(gauss_fft)**2))
+        if factor!='wiener':
+            weiner_factor = factor
+        recon = img_fft/gauss_fft
+        recon*=weiner_factor
+        recon = np.abs(np.fft.ifft2(recon))
+        return recon
+       
+    def fix_frame(self, frame: np.ndarray) -> np.ndarray:
+        """
+        Fix the frame by undistorting it using the camera parameters.
+
+        Params:
+        -------
+        frame: np.ndarray
+            The frame to be undistorted
+        
+        Returns:
+        --------
+        np.ndarray
+            The undistorted frame
+        """
+        w, h = frame.shape[1], frame.shape[0]
+        # newcameramtx, roi=cv2.getOptimalNewCameraMatrix(self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"], (w,h), 1, (w,h))
+        # dst = cv2.undistort(frame, self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"], None, newcameramtx)
+        
+        # x,y,w,h = roi
+        # dst = dst[y:y+h, x:x+w]
+        
+        # frame = self.fft_deblur(dst, 5, 5, factor="wiener")
+        # kernel = np.array([[0, -1, 0],
+        #            [-1, 5,-1],
+        #            [0, -1, 0]])
+        # image_sharp = cv2.filter2D(src=dst, ddepth=-1, kernel=kernel)
+        frame = cv2.undistort(frame, self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"])
+
+        return frame.astype(np.uint8)
+    
+         
     def detect(self, frame: np.ndarray) -> np.ndarray[Any] | list:
         """
         Wrapper method to detect AprilTags in a frame using the pupil_apriltags library. While detecting it checks if the
@@ -227,9 +319,10 @@ class AprilDetector:
         List
             A list of detected AprilTags in the frame
         """     
-        # undistort the frame when we have the proper filter
-        # frame = cv2.undistort(frame, self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"])
-        tags = self.detector.detect(frame) #, estimate_tag_pose=True, camera_params=[self.fx, self.fy, self.cx, self.cy], tag_size=0.05) # 5cm
+        # Detect tags on the frame
+        # frame = self.fix_frame(frame)
+
+        tags = self.detector.detect(frame, tag_size=0.05) #, estimate_tag_pose=True, camera_params=[self.fx, self.fy, self.cx, self.cy], tag_size=0.05) # 5cm
         for tag in tags:
             if tag.tag_id not in self.tag_ids:            
                 self.tags = np.append(self.tags, tag)
@@ -412,6 +505,8 @@ class AprilDetector:
 
         number_tags = []
         chute_tags = []
+        if len(tags) == 0:
+            return frame
         for t in tags:
             corners = self.order_corners(t.corners, t.center)
             if t.tag_id in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
@@ -476,16 +571,22 @@ class AprilDetector:
                 chutes = chute_left + chute_right
                 tag_graph = TagGraphWithPositionsCV(self.tag_connections, chutes)
                 tag_graph.account_for_missing_tags()
+                cutout = tag_graph.crop_to_size(frame)
                 frame = tag_graph.draw_overlay(frame)
                 
+                # # save cutout image to disk
+                cv2.imwrite("fiducial_marker/cutout.jpg", cutout)
+            
             center_chute = (chute_right[0][0] + chute_left[0][0]) // 2
             number_tags = sorted(number_tags, key=lambda x: x.tag_id)
             number_tag_centers = np.array([tag.center for tag in number_tags])
-            PIXEL_VALUE = self.inverse_linear_interpolation(number_tag_centers[:, 1], np.array(range(0, 11))*10, straw_level)
-            cv2.circle(frame, (int(center_chute),  PIXEL_VALUE), 10, (0, 255, 0), -1)
-            cv2.putText(frame, f"{straw_level:.2f}%", (int(center_chute) - 20, PIXEL_VALUE - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+            # PIXEL_VALUE = self.inverse_linear_interpolation(number_tag_centers[:, 1], np.array(range(0, 11))*10, straw_level)
+            # cv2.circle(frame, (int(center_chute),  PIXEL_VALUE), 10, (0, 255, 0), -1)
+            # cv2.putText(frame, f"{straw_level:.2f}%", (int(center_chute) - 20, PIXEL_VALUE - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
         except Exception as e:
-            print(e)
+            print("ERROR", e)
+            
+
         return frame
 
 class RTSPStream(AprilDetector):
@@ -586,6 +687,7 @@ class RTSPStream(AprilDetector):
         while True:
             if not self.q.empty():
                 frame = self.q.get()
+                # frame = self.fix_frame(frame)
                 if frame_count % 5 == 0:
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     tags = self.detect(gray)
@@ -625,14 +727,12 @@ class RTSPStream(AprilDetector):
         if frame is None:
             if cap:
                 self.cap = cap
-            print("1")
             self.thread1 = threading.Thread(target=self.receive_frame, args=(self.cap,))
             self.thread2 = threading.Thread(target=self.display_frame, args=(self.cap,))
             self.thread1.start()
             self.thread2.start()
         elif frame is not None:
             # resize frame half the size
-            print("2")
             frame = cv2.resize(frame, (0, 0), fx=0.3, fy=0.3)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             tags = self.detect(gray)
