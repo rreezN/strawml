@@ -182,6 +182,8 @@ class TagGraphWithPositionsCV:
         newImArray[:, :, 3] = mask * 255
         
         # Convert the numpy array back to an image
+        # NOTE When perfoming inference with CNN model, we should use this newIm as it makes a cutout that is non-square and more accurate.
+        # The code under is just for visualisation as jpg, but that is not needed when running inference.
         newIm = Image.fromarray(newImArray, "RGBA")
         
         # get bbox
