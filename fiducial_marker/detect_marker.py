@@ -90,6 +90,13 @@ class TagGraphWithPositionsCV:
         For corners, we prioritize direct neighbors (no averaging all around).
         """
         neighbor_positions = [self.detected_tags.get(n) for n in neighbor_ids if n in self.detected_tags]
+        # TODO Account for slanting in the image, e.g. the top right corner should have a 90 degree angle to the top left corner with
+        # the line created by the right site tags.
+        # left_line = [11, 12, 13, 14, 19, 20, 21, 22]
+        # left_line_coordinates = [self.detected_tags[tag] for tag in left_line]
+        
+        # right_line = [15, 16, 17, 18, 23, 24, 25, 26]
+        
         
         if not neighbor_positions:
             return None
@@ -273,7 +280,7 @@ class AprilDetector:
         recon = np.abs(np.fft.ifft2(recon))
         return recon
        
-    def fix_frame(self, frame: np.ndarray) -> np.ndarray:
+    def fix_frame(self, frame: np.ndarray, blur: bool = False) -> np.ndarray:
         """
         Fix the frame by undistorting it using the camera parameters.
 
@@ -287,7 +294,14 @@ class AprilDetector:
         np.ndarray
             The undistorted frame
         """
-        w, h = frame.shape[1], frame.shape[0]
+        # mtx, dst = self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"]
+        # h,  w = frame.shape[:2]
+        # # change c_x and c_y to the center of the image
+        # mtx[0, 2] = w/2
+        # mtx[1, 2] = h/2
+        # newcameramtx, roi = cv2.getOptimalNewCameraMatrix(mtx, dst, (w,h), 1, (w,h))
+        
+        # image = cv2.undistort(frame, mtx, dst, None, newcameramtx)
         # newcameramtx, roi=cv2.getOptimalNewCameraMatrix(self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"], (w,h), 1, (w,h))
         # dst = cv2.undistort(frame, self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"], None, newcameramtx)
         
@@ -299,11 +313,21 @@ class AprilDetector:
         #            [-1, 5,-1],
         #            [0, -1, 0]])
         # image_sharp = cv2.filter2D(src=dst, ddepth=-1, kernel=kernel)
-        frame = cv2.undistort(frame, self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"])
+        # frame = cv2.undistort(frame, self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"])
+        # K, d = self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"]
+        # final_K = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(K, d, (w, h), np.eye(3), balance=1.0)
 
-        return frame.astype(np.uint8)
-    
-         
+        # map_1, map_2 = cv2.fisheye.initUndistortRectifyMap(K, d, np.eye(3), final_K, (w, h), cv2.CV_32FC1)
+
+        # undistorted_image = cv2.remap(frame, map_1, map_2, interpola½tion=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+
+        # NOTE down here we apply image correction to the frame, meaning gamma correction, brightness and contrast
+        # image = cv2.bilateralFilter(frame, 9, 75, 75)
+        if blur:
+            image = cv2.GaussianBlur(frame, (7, 7), 0.7) 
+            return image.astype(np.uint8)
+        return frame 
+        
     def detect(self, frame: np.ndarray) -> np.ndarray[Any] | list:
         """
         Wrapper method to detect AprilTags in a frame using the pupil_apriltags library. While detecting it checks if the
@@ -689,10 +713,10 @@ class RTSPStream(AprilDetector):
         while True:
             if not self.q.empty():
                 frame = self.q.get()
-                # frame = self.fix_frame(frame)
+                frame = self.fix_frame(frame)
                 if frame_count % 5 == 0:
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    tags = self.detect(gray)
+                    tags = self.detect(self.fix_frame(gray, blur=True))
                 frame = self.draw(frame, tags, self.make_cutout)
                 frame = cv2.resize(frame, (0, 0), fx=0.6, fy=0.6)
                 # Increment frame count
