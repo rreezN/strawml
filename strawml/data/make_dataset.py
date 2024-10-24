@@ -126,7 +126,7 @@ def extract_frames_from_video(video_name: str,
 
         # save frame to temp_images folder if save_individual_images is True
         if save_individual_images:
-            cv2.imwrite(f'data/raw/temp_images/frame_{image_id}.jpg', frame)
+            cv2.imwrite(f'data/calibration/images/frame_{image_id}.jpg', frame)
 
         # Calculate the difference between two consecutive frames 
         frame_diff = cv2.absdiff(frame, prev_frame)
