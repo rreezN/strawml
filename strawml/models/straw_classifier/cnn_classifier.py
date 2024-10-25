@@ -15,6 +15,7 @@ class CNNClassifier(torch.nn.Module):
         super(CNNClassifier, self).__init__()
 
         self.image_size = image_size
+        self.output_size = output_size
         
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.mean = torch.Tensor(img_mean).to(self.device)
@@ -27,7 +28,10 @@ class CNNClassifier(torch.nn.Module):
         self.conv3 = torch.nn.Conv2d(64, 128, 3, dtype=torch.float)
         neurons = self.get_linear_layer_neurons()
         self.fc1 = torch.nn.Linear(neurons, 512, dtype=torch.float)
-        self.fc2 = torch.nn.Linear(512, output_size, dtype=torch.float)
+        
+        # Output layer
+        self.fc2 = torch.nn.Linear(512, self.output_size, dtype=torch.float)
+        
         self.norm = utils.LayerNorm(32, eps=1e-6, data_format="channels_first")
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -46,7 +50,8 @@ class CNNClassifier(torch.nn.Module):
         x = torch.flatten(x, 1)
         x = self.r(self.fc1(x))
         x = self.fc2(x)
-        x = torch.nn.functional.softmax(x, dim=0)
+        if not self.output_size == 1:
+            x = torch.nn.functional.softmax(x, dim=0)
         return x
     
     def get_linear_layer_neurons(self) -> int:
