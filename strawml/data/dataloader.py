@@ -14,7 +14,8 @@ from strawml.models.straw_classifier import chute_cropper as cc
 
 class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True, inc_edges: bool = False,
-                 random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21) -> torch.utils.data.Dataset:
+                 random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21,
+                 continuous: bool = False) -> torch.utils.data.Dataset:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
@@ -24,7 +25,7 @@ class Chute(torch.utils.data.Dataset):
         self.inc_edges = inc_edges
         self.epsilon = 1e-6 # Small number to avoid division by zero
         self.num_classes_straw = num_classes_straw
-        
+        self.continuous = continuous
         
         # Load the data file
         self.frames = h5py.File(self.data_path, 'a')
@@ -104,7 +105,8 @@ class Chute(torch.utils.data.Dataset):
             fullness = anno['fullness'][...]
             obstructed = anno['obstructed'][...]
             
-            fullness = self.convert_fullness_to_class(fullness)
+            if not self.continuous:
+                fullness = self.convert_fullness_to_class(fullness)
         except KeyError as e:
             # If the annotations are not present, print the error and the keys of the frame
             print(f'\nKeyError: {e} in frame {self.indices[idx]}')
