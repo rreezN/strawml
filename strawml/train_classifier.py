@@ -14,7 +14,7 @@ from strawml.models.straw_classifier.convnextv2 import *
 import strawml.models.straw_classifier.chute_cropper as cc
 
 
-def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.DataLoader, val_loader: torch.utils.data.DataLoader) -> None:
+def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_loader: torch.utils.data.DataLoader) -> None:
     """Train the CNN classifier model.
     """
     
@@ -122,7 +122,8 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
                 if sum(val_lossses)/len(val_lossses) < best_accuracy:
                     best_accuracy = sum(val_lossses)/len(val_lossses)
                     print(f'New best loss: {best_accuracy}')
-                    model_save_path = args.save_path.split('.')[0] + '_best.pth'
+                    model_name = args.model + '_cont'
+                    model_save_path = args.save_path + model_name + '_best.pth'
                     torch.save(model.state_dict(), model_save_path)
                     if not args.no_wandb:
                         wandb.log({'best_val_loss': best_accuracy})
@@ -139,7 +140,8 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
                 if accuracy > best_accuracy:
                     print(f'New best accuracy: {accuracy:.2f}%')
                     best_accuracy = accuracy
-                    model_save_path = args.save_path.split('.')[0] + '_best.pth'
+                    model_name = args.model + '_classifier'
+                    model_save_path = args.save_path + model_name + '_best.pth'
                     torch.save(model.state_dict(), model_save_path)
                     if not args.no_wandb:
                         wandb.log({'best_val_accuracy': best_accuracy})
@@ -185,7 +187,7 @@ def get_args():
     parser.add_argument('--epochs', type=int, default=25, help='Number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.00001, help='Learning rate for training')
     parser.add_argument('--model_path', type=str, default='models/pretrained/convnextv2_atto_1k_224_ema.pth', help='Path to load the model from')
-    parser.add_argument('--save_path', type=str, default='models/cnn_classifier.pth', help='Path to save the model to')
+    parser.add_argument('--save_path', type=str, default='models/', help='Path to save the model to')
     parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
     parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
@@ -231,20 +233,20 @@ if __name__ == '__main__':
     if not args.no_wandb:
         initialize_wandb(args)
     
+    feature_extraction = False
     if args.cont:
+        feature_extraction = True
         args.num_classes_straw = 1
-        if args.model != 'cnn':
-            raise ValueError('Continuous prediction only available for the CNN model.')
     
     match args.model:
         case 'cnn':
             model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw)
         case 'convnextv2':
-            model = timm.create_model('convnextv2_atto', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+            model = timm.create_model('convnextv2_atto', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True, features_only=feature_extraction)
         case 'vit':
-            model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+            model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True, features_only=feature_extraction)
         case 'eva02':
-            model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+            model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True, features_only=feature_extraction)
     
     train_model(args, model, train_loader, test_loader)
 

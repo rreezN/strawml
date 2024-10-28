@@ -250,7 +250,10 @@ class Chute(torch.utils.data.Dataset):
         if "mean" in list(self.frames.attrs.keys()) and not force_update_statistics:
             print(f"Statistics already extracted, loading from file: {self.data_path}")
             if self.inc_heatmap:
-                return self.frames.attrs['mean'], self.frames.attrs['std'], self.frames.attrs['min'], self.frames.attrs['max'], self.frames.attrs['mean_hm'], self.frames.attrs['std_hm'], self.frames.attrs['min_hm'], self.frames.attrs['max_hm']
+                if "mean_hm" in list(self.frames.attrs.keys()):
+                    return self.frames.attrs['mean'], self.frames.attrs['std'], self.frames.attrs['min'], self.frames.attrs['max'], self.frames.attrs['mean_hm'], self.frames.attrs['std_hm'], self.frames.attrs['min_hm'], self.frames.attrs['max_hm']
+                else:
+                    raise ValueError("Heatmap statistics not found in file. Run with force_update_statistics=True to update the statistics.")
             return self.frames.attrs['mean'], self.frames.attrs['std'], self.frames.attrs['min'], self.frames.attrs['max']
         
         import strawml.data.extract_statistics as es
@@ -445,13 +448,7 @@ if __name__ == '__main__':
     from torch.utils.data import DataLoader
 
     print("---- CHUTE DETECTION DATASET ----")
-    train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=False)
-    
-    # trainset.plot_data()
-    # test_set = Platoon(data_type='test', pm_windowsize=2)
-    # test_set.plot_data()
-    # val_set = Platoon(data_type='val', pm_windowsize=2)
-    # val_set.plot_data()
+    train_set = Chute(data_type='train', inc_heatmap=False, force_update_statistics=False)
     
     print("Measuring time taken to load a batch")
     train_loader = DataLoader(train_set, batch_size=1, shuffle=True, num_workers=0)
@@ -495,7 +492,7 @@ if __name__ == '__main__':
     # train_set.plot_data(frame_idx=9)
     
     print("---- STRAW DETECTION DATASET ----")
-    train_set = Chute(data_type='train', inc_heatmap=True, inc_edges=True, force_update_statistics=False, data_purpose="straw", image_size=(1370//2, 204//2))
+    train_set = Chute(data_type='train', inc_heatmap=False, inc_edges=True, force_update_statistics=False, data_purpose="straw", image_size=(1370//2, 204//2))
     
     train_set.plot_data(frame_idx=0)
     
