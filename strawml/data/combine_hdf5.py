@@ -82,6 +82,12 @@ def check_validity(data_path: str, file: str):
             if 'image_diff' not in f[group]:
                 raise ValueError(f'{file} is missing the "image_diff" dataset in the "{group}" group.')
             
+            # Check if image actually contains an image
+            if f[group]['image'].shape[0] == 0:
+                raise ValueError(f'The "image" dataset in the "{group}" group is empty.')
+            if f[group]['image_diff'].shape[0] == 0:
+                raise ValueError(f'The "image_diff" dataset in the "{group}" group is empty.')
+            
             # ensure that 'annotations' has a fullness score 
             if 'fullness' not in f[group]['annotations']:
                 raise ValueError(f'The "annotations" dataset in the "{group}" group is missing the "fullness" attribute.')

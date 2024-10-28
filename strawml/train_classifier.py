@@ -42,7 +42,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             # TRY: using only the edge image
             # frame_data = frame_data[:, 3, :, :]
             # frame_data = frame_data.unsqueeze(1)
-            
+
             fullness = target
             
             if torch.cuda.is_available():

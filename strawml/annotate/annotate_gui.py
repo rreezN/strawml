@@ -338,6 +338,8 @@ class ImageBox(ttk.Frame):
     def reset(self) -> None:
         """Resets the bounding boxes and updates the 'Next' button state.
         """
+        # TODO: Something fucky is happening when you reset a bounding box and it loads again
+        # not getting set correctly, resulting in the visual not matching the actual values
         self.top_left = None
         self.top_right = None
         self.bottom_right = None
