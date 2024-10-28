@@ -142,8 +142,11 @@ class RTSPStream:
 
         # The more valid captures, the better the calibration
         validCaptures = 0
+        validCaptures_names = []
         pbar = tqdm(total=self.q.qsize(), desc="Calibrating camera")
+        counter = 0
         while True:
+            counter += 1
             if not self.q.empty():
                 pbar.update(1)
                 frame = self.q.get()
@@ -199,16 +202,18 @@ class RTSPStream:
                     if cv2.waitKey(1) & 0xFF ==ord('q'):
                         break
                     validCaptures += 1
+                    validCaptures_names += [counter]
                     pbar.set_postfix_str(f"Valid: {validCaptures}")
-                    # if validCaptures == min_acceptable_images:
-                        # break
+                    if validCaptures == min_acceptable_images:
+                        break
             else:
                 break
         if not type(cap) == str:
             cap.release()
         cv2.destroyAllWindows()
-        
+
         print("{} valid captures".format(validCaptures))
+        print("{} valid captures".format(validCaptures_names))
         if validCaptures < min_acceptable_images:
             print("Calibration was unsuccessful. We couldn't detect enough charucoboards in the video.")
             print("Perform a better capture or reduce the minimum number of valid captures required.")
@@ -221,13 +226,35 @@ class RTSPStream:
             exit()
         print("Generating calibration...")
         
+                
+        object_points = []
+        image_points = []
+        objPoints = gridboard.getChessboardCorners()
+
+        count = 0
+        for corners, ids in zip(corners_all, ids_all): 
+            if len(corners) >= 4:
+                count += 1
+                obj_points = objPoints[ids]
+                object_points.append(obj_points)
+                image_points.append(corners)
+        
+        K = np.zeros((3, 3))
+        D = np.zeros((4, 1))
+        
         # Now that we've seen all of our images, perform the camera calibration
-        calibration, cameraMatrix, distCoeffs, rvecs, tvecs = aruco.calibrateCameraCharuco(charucoCorners=corners_all, 
-                                                                                           charucoIds=ids_all, 
-                                                                                           board=gridboard, 
-                                                                                           imageSize=image_size, 
-                                                                                           cameraMatrix=None, 
-                                                                                           distCoeffs=None) # type: ignore
+        # calibration, cameraMatrix, distCoeffs, rvecs, tvecs = aruco.calibrateCameraCharuco(charucoCorners=corners_all, 
+        #                                                                                    charucoIds=ids_all, 
+        #                                                                                    board=gridboard, 
+        #                                                                                    imageSize=image_size, 
+        #                                                                                    cameraMatrix=None, 
+        #                                                                                    distCoeffs=None) # type: ignore
+        calibration, cameraMatrix, distCoeffs, rvecs, tvecs = cv2.fisheye.calibrate(object_points, 
+                                                                                    image_points,
+                                                                                    image_size,
+                                                                                    K,
+                                                                                    D)
+
         # Print matrix and distortion coefficient to the console
         print("Camera intrinsic parameters matrix:\n{}".format(cameraMatrix))
         print("\nCamera distortion coefficients:\n{}".format(distCoeffs))
@@ -244,7 +271,10 @@ class RTSPStream:
         """
         import os
         from tqdm import tqdm
-        images = os.listdir(self.cap)[400:2000]
+        import random
+        images = os.listdir(self.cap)
+        # randomly shuffle the images
+        images = random.sample(images, len(images))[400:1800]
         for img in tqdm(images, desc="Loading images to queue"):
             frame = cv2.imread(os.path.join(self.cap, img))
             self.q.put(frame)
@@ -308,4 +338,4 @@ def calibrate_camera(dict_type: str,
     
     
 if __name__ == "__main__":
-    calibrate_camera("DICT_4X4_50", 20, rtsp=False)
+    calibrate_camera("DICT_4X4_50", min_acceptable_images=20, rtsp=False)
