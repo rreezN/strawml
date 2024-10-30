@@ -2,7 +2,7 @@ import h5py
 import os
 from argparse import ArgumentParser, Namespace
 
-def combine_hdf5(data_path: str, file1: str, file2: str, output_file:str):
+def combine_hdf5(data_path: str, file1: str, file2: str, output_file:str, force=True):
     """
     Combines the contents of two HDF5 files into a new file.
 
@@ -30,21 +30,43 @@ def combine_hdf5(data_path: str, file1: str, file2: str, output_file:str):
         raise ValueError(f'{data_path + file2} does not exist.')
     if not file1.endswith('.hdf5') or not file2.endswith('.hdf5'):
         raise ValueError('Files must be in HDF5 format.')
-    with h5py.File(data_path + file1, 'r') as f1, h5py.File(data_path + file2, 'r') as f2:
-        # Create a new file
-        with h5py.File(data_path + output_file, 'w') as f_combined:
-            # Copy the contents of the first file
-            for name in f1:
-                f1.copy(name, f_combined)
-            
-            # Append the contents of the second file
-            for name in f2:
-                if name in f_combined:
-                    continue
-                else:
-                    f2.copy(name, f_combined)
-            print('Files combined successfully!')
-            
+    
+
+
+    with h5py.File(data_path + file1, 'r') as f1:
+        if force:
+            # we find the highets index name in f1 and add to the names of f2
+            # we then add the contents of f2 to f1
+            # we then save f1 to the output file
+            k = list(f1.keys()) 
+            values = [int(key.split(".")[0].split("_")[-1]) for key in k]
+            max_value = max(values)
+            # Change the name of the keys in f2
+            with h5py.File(data_path + file2, 'r') as f2:
+                with h5py.File('temp.hdf5', 'w') as f_new:
+                    for name in list(f2.keys()):
+                        frame_nr = int(name.split(".")[0].split("_")[-1]) + max_value
+                        new_name = f"frame_{frame_nr}"
+                        # Copy the dataset to the new file with the new key
+                        f2.copy(name, f_new, new_name)
+            # Delete the old file and rename the new file
+
+        with h5py.File("temp.hdf5", 'r') as f2:
+            # Create a new file
+            with h5py.File(data_path + output_file, 'w') as f_combined:
+                # Copy the contents of the first file
+                for name in f1:
+                    f1.copy(name, f_combined)
+                
+                # Append the contents of the second file
+                for name in f2:
+                    if name in f_combined:
+                        print(name)
+                        continue
+                    else:
+                        f2.copy(name, f_combined)
+        print('Files combined successfully!')
+        os.remove('temp.hdf5') 
     check_validity(data_path, output_file)
 
 def check_validity(data_path: str, file: str):
@@ -102,6 +124,7 @@ def get_args() -> Namespace:
     parser.add_argument('--file1', type=str, help='The first file to combine.')
     parser.add_argument('--file2', type=str, help='The second file to combine.')
     parser.add_argument('--output_file', type=str, default='chute_detection_combined.hdf5', help='The name of the output file.')
+    parser.add_argument('--force', type=bool, default=True, help='Whether to force the combination of the files.')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -110,4 +133,5 @@ if __name__ == '__main__':
     file1 = args.file1
     file2 = args.file2
     output_file = args.output_file
-    combine_hdf5(data_path, file1, file2, output_file)
+    force = args.force
+    combine_hdf5(data_path, file1, file2, output_file, force)
