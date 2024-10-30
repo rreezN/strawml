@@ -783,6 +783,7 @@ class MainApplication(ttk.Frame):
         #     return
         
         if self.image_box.rect is None or self.fullness_box.full_amount.get() == -1:
+            print("No annotations to save.")
             return
         
         new_hdf5_file = f'data/interim/{self.file_button.get()}'
@@ -813,11 +814,25 @@ class MainApplication(ttk.Frame):
         # Create a new group for the annotations
         annotation_group = group.create_group('annotations')
         
+        def get_box_width_and_height():
+            # Get the bounding box coordinates
+            x1, y1, x2, y2, x3, y3, x4, y4 = img_box.get_coords()
+            
+            # Get the width and height of the bounding box
+            width = max(x1, x2, x3, x4) - min(x1, x2, x3, x4)
+            height = max(y1, y2, y3, y4) - min(y1, y2, y3, y4)
+            return width, height
+        
         # Save the bounding box coordinates (scaled to correct size)
         img_box = self.image_box
         if img_box.rect != None:
             coords = [img_box.top_right[0]*2, img_box.top_right[1]*2, img_box.bottom_right[0]*2, img_box.bottom_right[1]*2, img_box.bottom_left[0]*2, img_box.bottom_left[1]*2, img_box.top_left[0]*2, img_box.top_left[1]*2]
             annotation_group.create_dataset('bbox_chute', data=coords)
+            width, height = get_box_width_and_height()
+            if width < 25 or height < 25:
+                print("WARNING: Saving a bounding box with width or height less than 25 pixels.")
+        else:
+            print("No chute bounding box to save.")
         # if img_box.start_x2 != None:
         #     coords = [img_box.curX2*2, img_box.start_y2*2, img_box.curX2*2, img_box.curY2*2, img_box.start_x2*2, img_box.curY2*2, img_box.start_x2*2, img_box.start_y2*2]
         #     annotation_group.create_dataset('bbox_straw', data=coords)
@@ -827,6 +842,8 @@ class MainApplication(ttk.Frame):
         obstructed = self.obstructed_box.obstructed.get()
         if fullness != -1: # If the fullness is not set, don't save it
             annotation_group.create_dataset('fullness', data=fullness)
+        else:
+            print("No fullness value to save.")
         annotation_group.create_dataset('obstructed', data=obstructed)
         
         
