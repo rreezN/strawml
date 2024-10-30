@@ -49,10 +49,13 @@ class Chute(torch.utils.data.Dataset):
         # Create indices for train, test and validation
         # TODO: Validation set
         self.train_indices, self.test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=0.15, random_state=random_state)
+        self.val_indices, self.test_indices, _, _ = train_test_split(self.test_indices, self.test_indices, test_size=0.5, random_state=random_state)
         
         # Set the indices based on the data type
         if data_type == 'train':
             self.indices = self.train_indices
+        elif data_type == 'val':
+            self.indices = self.val_indices
         elif data_type == 'test':
             self.indices = self.test_indices
         else:
@@ -459,7 +462,7 @@ if __name__ == '__main__':
 
     print("---- CHUTE DETECTION DATASET ----")
     # train_set = Chute(data_type='train', inc_heatmap=False, inc_edges=True, force_update_statistics=False, data_path = 'data/interim/chute_detection.hdf5', image_size=(384, 384))
-    train_set = Chute(data_path = 'data/interim/chute_detection_new.hdf5', data_type='train', inc_heatmap=False, inc_edges=False,
+    train_set = Chute(data_path = 'data/interim/chute_detection.hdf5', data_type='train', inc_heatmap=False, inc_edges=False,
                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
                          num_classes_straw=11, continuous=False)
     print("Measuring time taken to load a batch")

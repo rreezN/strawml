@@ -126,7 +126,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     model_save_path = args.save_path + model_name + '_best.pth'
                     torch.save(model.state_dict(), model_save_path)
                     if not args.no_wandb:
-                        wandb.log({'best_val_loss': best_accuracy})
+                        wandb.log(step=epoch+1, data={'best_val_loss': best_accuracy})
                         wandb.save(model_save_path)
             else:
                 accuracy = 100 * correct /total
@@ -134,8 +134,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {elapsed_time:.2f} seconds. (Batch Size: {args.batch_size})')
 
                 if not args.no_wandb:
-                    wandb.log({'train_accuracy': sum(epoch_accuracies)/len(epoch_accuracies), 
-                                'val_accuracy': accuracy, })
+                    wandb.log(step=epoch+1, 
+                              data={'train_accuracy': sum(epoch_accuracies)/len(epoch_accuracies), 
+                                'val_accuracy': accuracy,})
                 
                 if accuracy > best_accuracy:
                     print(f'New best accuracy: {accuracy:.2f}%')
@@ -144,7 +145,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     model_save_path = args.save_path + model_name + '_best.pth'
                     torch.save(model.state_dict(), model_save_path)
                     if not args.no_wandb:
-                        wandb.log({'best_val_accuracy': best_accuracy})
+                        wandb.log(step=epoch+1, data={'best_val_accuracy': best_accuracy})
                         wandb.save(model_save_path)
                     
             if not args.no_wandb:
@@ -215,7 +216,7 @@ if __name__ == '__main__':
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
                          num_classes_straw=args.num_classes_straw, continuous=args.cont)
-    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
+    test_set = dl.Chute(data_path=args.data_path, data_type='val', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                         random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
                         num_classes_straw=args.num_classes_straw, continuous=args.cont)
     
