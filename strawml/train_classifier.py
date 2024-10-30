@@ -14,7 +14,7 @@ from strawml.models.straw_classifier.convnextv2 import *
 import strawml.models.straw_classifier.chute_cropper as cc
 
 
-def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.DataLoader, val_loader: torch.utils.data.DataLoader) -> None:
+def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_loader: torch.utils.data.DataLoader) -> None:
     """Train the CNN classifier model.
     """
     
@@ -23,9 +23,14 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
         model = model.cuda()
     
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    loss_fn = torch.nn.functional.cross_entropy
     
-    best_accuracy = 0.0
+    if args.cont:
+        loss_fn = torch.nn.functional.mse_loss
+        best_accuracy = 1000000.0
+    else:
+        loss_fn = torch.nn.functional.cross_entropy
+        best_accuracy = 0.0
+    
     
     for epoch in range(args.epochs):
         train_iterator = tqdm(train_loader, unit="batch", position=0, leave=False)
@@ -33,12 +38,11 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
         model.train()
         epoch_accuracies = []
         epoch_losses = []
-        # TODO: Temporary bbox this way (?)
         for (frame_data, target) in train_iterator:
             # TRY: using only the edge image
             # frame_data = frame_data[:, 3, :, :]
             # frame_data = frame_data.unsqueeze(1)
-            
+
             fullness = target
             
             if torch.cuda.is_available():
@@ -49,6 +53,7 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
             
             # Forward pass
             output = model(frame_data)
+            if args.cont: output = output.squeeze()
             loss = loss_fn(output, fullness)
             
             epoch_losses += [loss.item()]
@@ -57,18 +62,24 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
             loss.backward()
             optimizer.step()
 
+            if args.cont:
+                train_iterator.set_postfix(loss=loss.item(), fullness=torch.mean(fullness).item(), prediction=torch.mean(output).item())
+            else:
             # Save accuracy
-            _, predicted = torch.max(output, 1)
-            _, target_fullness = torch.max(fullness, 1)
-            correct = sum(predicted == target_fullness)
-            accuracy = 100 * correct / args.batch_size
-            epoch_accuracies.append(accuracy.item())
+                _, predicted = torch.max(output, 1)
+                _, target_fullness = torch.max(fullness, 1)
+                correct = sum(predicted == target_fullness)
+                accuracy = 100 * correct / args.batch_size
+                epoch_accuracies.append(accuracy.item())
         
-            train_iterator.set_postfix(loss=loss.item(), accuracy=sum(epoch_accuracies)/len(epoch_accuracies))
+                train_iterator.set_postfix(loss=loss.item(), accuracy=sum(epoch_accuracies)/len(epoch_accuracies))
+
+        if args.cont:
+            print(f'Epoch: {epoch+1}, Training Loss: {sum(epoch_losses)/len(epoch_losses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')
+        else:
+            print(f'Epoch: {epoch+1}, Training Accuracy: {sum(epoch_accuracies)/len(epoch_accuracies):.2f}%')
         
-        print(f'Epoch: {epoch+1}, Training Accuracy: {sum(epoch_accuracies)/len(epoch_accuracies):.2f}%')
         model.eval()
-        
         
         with torch.no_grad():
             correct = 0
@@ -92,38 +103,58 @@ def train_model(args, model: torch.nn.Module, train_loader: torch.utils.data.Dat
                     fullness = fullness.cuda()
                 
                 output = model(frame_data)
+                if args.cont: output = output.squeeze()
                 val_loss = loss_fn(output, fullness)
                 val_lossses.append(val_loss.item())
                 
-                _, predicted = torch.max(output, 1)
-                total += args.batch_size
-                _, target_fullness = torch.max(fullness, 1)
-                correct += sum(predicted == target_fullness)
+                if not args.cont:
+                    _, predicted = torch.max(output, 1)
+                    total += args.batch_size
+                    _, target_fullness = torch.max(fullness, 1)
+                    correct += sum(predicted == target_fullness)
             
             end_time = timeit.default_timer()
             elapsed_time = end_time - start_time
             average_time = elapsed_time / len(val_loader)
             
-            accuracy = 100 * correct /total
-            correct = correct.detach().cpu()
+            if args.cont:
+                print(f'Epoch: {epoch+1}, Validation Loss: {sum(val_lossses)/len(val_lossses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')
+                if sum(val_lossses)/len(val_lossses) < best_accuracy:
+                    best_accuracy = sum(val_lossses)/len(val_lossses)
+                    print(f'New best loss: {best_accuracy}')
+                    model_name = args.model + '_cont'
+                    model_save_path = args.save_path + model_name + '_best.pth'
+                    torch.save(model.state_dict(), model_save_path)
+                    if not args.no_wandb:
+                        wandb.log({'best_val_loss': best_accuracy})
+                        wandb.save(model_save_path)
+            else:
+                accuracy = 100 * correct /total
+                correct = correct.detach().cpu()
+                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {elapsed_time:.2f} seconds. (Batch Size: {args.batch_size})')
+
+                if not args.no_wandb:
+                    wandb.log({'train_accuracy': sum(epoch_accuracies)/len(epoch_accuracies), 
+                                'val_accuracy': accuracy, })
+                
+                if accuracy > best_accuracy:
+                    print(f'New best accuracy: {accuracy:.2f}%')
+                    best_accuracy = accuracy
+                    model_name = args.model + '_classifier'
+                    model_save_path = args.save_path + model_name + '_best.pth'
+                    torch.save(model.state_dict(), model_save_path)
+                    if not args.no_wandb:
+                        wandb.log({'best_val_accuracy': best_accuracy})
+                        wandb.save(model_save_path)
+                    
+            if not args.no_wandb:
+                wandb.log(step=epoch+1, 
+                        data={'train_loss': sum(epoch_losses)/len(epoch_losses), 
+                              'val_loss': sum(val_lossses)/len(val_lossses), 
+                              'epoch': epoch+1})
             
-            wandb.log(step=epoch+1, 
-                      data={'train_accuracy': sum(epoch_accuracies)/len(epoch_accuracies), 
-                            'val_accuracy': accuracy, 
-                            'train_loss': sum(epoch_losses)/len(epoch_losses), 
-                            'val_loss': sum(val_lossses)/len(val_lossses), 
-                            'epoch': epoch+1})
-            print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {elapsed_time:.2f} seconds. (Batch Size: {args.batch_size})')
-            
-            if accuracy > best_accuracy:
-                print(f'New best accuracy: {accuracy:.2f}%')
-                best_accuracy = accuracy
-                model_save_path = args.save_path.split('.')[0] + '_best.pth'
-                wandb.log({'best_val_accuracy': best_accuracy})
-                torch.save(model.state_dict(), model_save_path)
-                wandb.save(model_save_path)
     
-    wandb.finish()
+    if not args.no_wandb: wandb.finish()
 
 def initialize_wandb(args: argparse.Namespace) -> None:
     """Initialize the Weights and Biases logging.
@@ -139,9 +170,10 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'inc_heatmap': args.inc_heatmap,
             'inc_edges': args.inc_edges,
             'seed': args.seed,
-            'model': 'EvA-02',
+            'model': args.model,
             'image_size': image_size,
-            'num_classes_straw': num_classes_straw,
+            'num_classes_straw': args.num_classes_straw,
+            'continuous': args.cont
         })
 
     
@@ -155,28 +187,37 @@ def get_args():
     parser.add_argument('--epochs', type=int, default=25, help='Number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.00001, help='Learning rate for training')
     parser.add_argument('--model_path', type=str, default='models/pretrained/convnextv2_atto_1k_224_ema.pth', help='Path to load the model from')
-    parser.add_argument('--save_path', type=str, default='models/cnn_classifier.pth', help='Path to save the model to')
+    parser.add_argument('--save_path', type=str, default='models/', help='Path to save the model to')
     parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
     parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
-    
+    parser.add_argument('--no_wandb', action='store_true', help='Do not use Weights and Biases for logging')
+    parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnextv2', 'vit', 'eva02'])
+    parser.add_argument('--image_size', type=tuple, default=(1370, 204), help='Image size for the model (only for CNN)')
+    parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
+    parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class (only for CNN model currently)')
     return parser.parse_args()
 
 if __name__ == '__main__':
     args = get_args()
     
-    # image_size = (1370, 204) # For CNNClassifier (but can be any size)
-    # image_size = (224, 224) # For ConvNextV2 (for now)
-    # image_size = (384, 384) # For ViT
-    image_size = (448, 448) # For Eva02
-    
-    num_classes_straw = 11
+    match args.model:
+        case 'cnn':
+            image_size = args.image_size
+        case 'convnextv2':
+            image_size = (224, 224)
+        case 'vit':
+            image_size = (384, 384)
+        case 'eva02':
+            image_size = (448, 448)
     
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
-                         random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, num_classes_straw=num_classes_straw)
+                         random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
+                         num_classes_straw=args.num_classes_straw, continuous=args.cont)
     test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
-                        random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, num_classes_straw=train_set.num_classes_straw)
+                        random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
+                        num_classes_straw=args.num_classes_straw, continuous=args.cont)
     
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False)
@@ -189,13 +230,23 @@ if __name__ == '__main__':
     # input_channels = 1
     
     # WANDB
-    initialize_wandb(args)
+    if not args.no_wandb:
+        initialize_wandb(args)
     
-    # model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=num_classes_straw)
-    # model = convnextv2_atto(in_chans=input_channels)
-    # model = timm.create_model('convnextv2_atto', in_chans=input_channels, num_classes=num_classes_straw, pretrained=True)
-    # model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=num_classes_straw, pretrained=True)
-    model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=num_classes_straw, pretrained=True)
+    feature_extraction = False
+    if args.cont:
+        feature_extraction = True
+        args.num_classes_straw = 1
+    
+    match args.model:
+        case 'cnn':
+            model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw)
+        case 'convnextv2':
+            model = timm.create_model('convnextv2_atto', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True, features_only=feature_extraction)
+        case 'vit':
+            model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True, features_only=feature_extraction)
+        case 'eva02':
+            model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True, features_only=feature_extraction)
     
     train_model(args, model, train_loader, test_loader)
 

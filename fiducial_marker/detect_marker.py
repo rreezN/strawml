@@ -285,7 +285,7 @@ class AprilDetector:
         recon = np.abs(np.fft.ifft2(recon))
         return recon
        
-    def fix_frame(self, frame: np.ndarray, blur: bool = False) -> np.ndarray:
+    def fix_frame(self, frame: np.ndarray, blur: bool = False, balance: int = 1) -> np.ndarray:
         """
         Fix the frame by undistorting it using the camera parameters.
 
@@ -293,20 +293,30 @@ class AprilDetector:
         -------
         frame: np.ndarray
             The frame to be undistorted
+        blur: bool
+            A boolean flag to indicate if the frame is to be blurred
+        balance: int
+            The balance factor to be used for undistortion
         
         Returns:
         --------
         np.ndarray
             The undistorted frame
         """
-        # mtx, dst = self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"]
-        # h,  w = frame.shape[:2]
-        # # change c_x and c_y to the center of the image
+        K, D = self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"]
+        h,  w = frame.shape[:2]
+        # change c_x and c_y to the center of the image
         # mtx[0, 2] = w/2
         # mtx[1, 2] = h/2
         # newcameramtx, roi = cv2.getOptimalNewCameraMatrix(mtx, dst, (w,h), 1, (w,h))
-        
-        # image = cv2.undistort(frame, mtx, dst, None, newcameramtx)
+        new_K = K.copy()
+        new_K[0,0] *= balance  # Scale fx
+        new_K[1,1] *= balance  # Scale fy
+            
+        undistorted_image = cv2.fisheye.undistortImage(frame, K, D, Knew=new_K,new_size=(w,h))
+
+
+
         # newcameramtx, roi=cv2.getOptimalNewCameraMatrix(self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"], (w,h), 1, (w,h))
         # dst = cv2.undistort(frame, self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"], None, newcameramtx)
         
@@ -331,7 +341,7 @@ class AprilDetector:
         if blur:
             image = cv2.GaussianBlur(frame, (7, 7), 0.7) 
             return image.astype(np.uint8)
-        return frame 
+        return undistorted_image 
         
     def detect(self, frame: np.ndarray) -> np.ndarray[Any] | list:
         """

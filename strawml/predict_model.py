@@ -1,17 +1,230 @@
 import torch
+import argparse
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+import timeit
+import timm
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, auc
 
-def predict(
-    model: torch.nn.Module,
-    dataloader: torch.utils.data.DataLoader
-) -> None:
-    """Run prediction for a given model and dataloader.
-    
-    Args:
-        model: model to use for prediction
-        dataloader: dataloader with batches
-    
-    Returns
-        Tensor of shape [N, d] where N is the number of samples and d is the output dimension of the model
+import data.dataloader as dl
+import strawml.models.straw_classifier.cnn_classifier as cnn
 
+
+def predict_model(args, model: torch.nn.Module, dataloader: DataLoader) -> tuple:
+    """Predict the output of a model on a dataset.
     """
-    return torch.cat([model(batch) for batch in dataloader], 0)
+    
+    if torch.cuda.is_available():
+        print("Using GPU")
+        model = model.cuda()
+    
+    if args.cont:
+        loss_fn = torch.nn.functional.mse_loss
+    else:
+        loss_fn = torch.nn.functional.cross_entropy
+    
+    model.eval()
+    with torch.no_grad():
+        data_iterator = tqdm(dataloader, desc="Predicting", unit="batch", position=0, leave=False)
+        data_iterator.set_description(f"Predicting on {dataloader.dataset.data_type} data")
+        
+        accuracies = np.array([])
+        losses = np.array([])
+        outputs = np.array([])
+        fullnesses = np.array([])
+        
+        for (frame_data, target) in data_iterator:
+            fullness = target
+            
+            if torch.cuda.is_available():
+                frame_data = frame_data.cuda()
+                fullness = fullness.cuda()
+
+            output = model(frame_data)
+            if args.cont: output = output.squeeze()
+            loss = loss_fn(output, fullness)
+            losses = np.append(losses, loss.item())
+            
+            if not args.cont:
+                _, predicted = torch.max(output, 1)
+                _, target_fullness = torch.max(fullness, 1)
+                correct = sum(predicted == target_fullness)
+                accuracy = 100 * correct / args.batch_size
+                accuracies = np.append(accuracies, accuracy.item())
+                output = predicted
+                fullness = target_fullness
+            outputs = np.append(outputs, output.cpu().numpy())
+            fullnesses = np.append(fullnesses, fullness.cpu().numpy())
+    
+    return outputs, fullnesses, accuracies, losses
+
+
+def plot_cont_predictions(outputs, fullnesses):
+    """Plot the continuous predictions.
+    """
+    
+    outputs = np.array(outputs)
+    fullnesses = np.array(fullnesses)
+    
+    MSE = np.square(np.subtract(outputs, fullnesses)).mean()
+    MAE = np.abs(np.subtract(outputs, fullnesses)).mean()
+    RMSE = np.sqrt(MSE)
+    PRMSE = np.sqrt(np.mean(np.sum(np.square(np.subtract(outputs, fullnesses)))) / np.sum(np.square(fullnesses)))
+    
+    # Calculate accuracy of the model
+    # Any prediction within x% of the true value is considered correct
+    acceptable = 0.1
+    accuracy = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
+    
+    plt.plot(outputs, label='Predicted')
+    plt.plot(fullnesses, label='True')
+    
+    # Plot acceptable range
+    plt.fill_between(np.arange(len(outputs)), fullnesses*(1-acceptable), fullnesses*(1+acceptable), color='gray', alpha=0.5, label='threshold')
+    
+    plt.legend()
+    plt.yticks(np.arange(0, 1.1, 0.1))
+    plt.grid()
+    plt.xlabel('Frame')
+    plt.ylabel('Fullness')
+    plt.title(f'Predicted vs True Fullness, MSE: {MSE:.3f}, MAE: {MAE:.3f}, RMSE: {RMSE:.3f}, PRMSE: {PRMSE:.3f}, accuracy: {accuracy*100:.1f}%')
+    plt.savefig('reports/figures/straw_analysis/model_results/cont_predictions.png', dpi=300)
+    plt.show()
+
+
+def plot_roc(outputs, fullness):
+    """Plots the ROC curve for the model.
+    """
+    
+    fpr, tpr, thresholds = roc_curve(fullness, outputs)
+    roc_auc = auc(fpr, tpr)
+    
+    plt.figure()
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:0.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic (ROC) Curve')
+    plt.legend(loc="lower right")
+    plt.savefig('reports/figures/straw_analysis/model_results/roc.png', dpi=300)
+    plt.show()
+    
+    
+
+def plot_confusion_matrix(outputs, fullness, num_classes):
+    """Plot the confusion matrix for the model.
+    """
+    
+    accuracy = np.sum(outputs == fullness) / len(outputs)
+    confusion_matrix = np.zeros((num_classes, num_classes))
+    for i in range(len(outputs)):
+        confusion_matrix[int(fullness[i]), int(outputs[i])] += 1
+    
+    labels = [f'{i*10}%' for i in range(num_classes)]
+    
+    plt.imshow(confusion_matrix, cmap='viridis')
+    plt.colorbar()
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.title(f'Confusion Matrix, accuracy: {accuracy*100:.1f}%')
+    # Set xticks and yticks with labels
+    plt.xticks(ticks=np.arange(num_classes), labels=labels, rotation=45)
+    plt.yticks(ticks=np.arange(num_classes), labels=labels)
+    
+    # Plot numbers on each square
+    for i in range(num_classes):
+        for j in range(num_classes):
+            plt.text(j, i, int(confusion_matrix[i, j]), ha='center', va='center', color='black' if confusion_matrix[i, j] > np.max(confusion_matrix)/2 else 'white')
+    plt.tight_layout()
+    plt.savefig('reports/figures/straw_analysis/model_results/confusion_matrix.png', dpi=300)
+    plt.show()
+    
+
+
+def convert_class_to_fullness(class_num):
+    """Convert the class number to the fullness value.
+    """
+    return (class_num + 1) * 5
+
+
+def get_args() -> argparse.Namespace:
+    """Get the arguments for the training script.
+    """
+    parser = argparse.ArgumentParser(description='Train the CNN classifier model.')
+    parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
+    parser.add_argument('--epochs', type=int, default=25, help='Number of epochs to train for')
+    parser.add_argument('--lr', type=float, default=0.00001, help='Learning rate for training')
+    parser.add_argument('--model_path', type=str, default='models/vit_classifier_best.pth', help='Path to load the model from')
+    parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
+    parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
+    parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
+    parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
+    parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnextv2', 'vit', 'eva02'])
+    parser.add_argument('--image_size', type=tuple, default=(1370, 204), help='Image size for the model (only for CNN)')
+    parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
+    parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class (only for CNN model currently)')
+    return parser.parse_args()
+
+
+if __name__ == '__main__':
+    args = get_args()
+    
+    match args.model:
+        case 'cnn':
+            image_size = args.image_size
+        case 'convnextv2':
+            image_size = (224, 224)
+        case 'vit':
+            image_size = (384, 384)
+        case 'eva02':
+            image_size = (448, 448)
+    
+    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, image_size=image_size,
+                        random_state=args.seed, force_update_statistics=False, data_purpose='straw',
+                        num_classes_straw=args.num_classes_straw, continuous=args.cont)
+    
+    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    
+    input_channels = 3
+    if args.inc_heatmap:
+        input_channels += 3
+    if args.inc_edges:
+        input_channels += 1
+    
+    if args.cont:
+        args.num_classes_straw = 1
+        if args.model != 'cnn':
+            raise ValueError("Continuous output is only supported for the CNN model.")
+    
+    match args.model:
+        case 'cnn':
+            model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw)
+        case 'convnextv2':
+            model = timm.create_model('convnextv2_atto', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
+        case 'vit':
+            model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
+        case 'eva02':
+            model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
+    
+
+    model.load_state_dict(torch.load(args.model_path))
+    
+    outputs, fullnesses, accuracies, losses = predict_model(args, model, test_loader)
+    
+    print(f"Mean loss: {sum(losses) / len(losses)}")
+    if not args.cont:
+        print(f"Mean accuracy: {sum(accuracies) / len(accuracies)}")
+    else:
+        print(f"Mean output: {sum(outputs) / len(outputs)}")
+        print(f"Mean fullness: {sum(fullnesses) / len(fullnesses)}")
+    
+    print("Done predicting.")
+    
+    if args.cont:
+        plot_cont_predictions(outputs, fullnesses)
+    else:
+        plot_confusion_matrix(outputs, fullnesses, args.num_classes_straw)

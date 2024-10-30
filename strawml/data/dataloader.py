@@ -14,7 +14,8 @@ from strawml.models.straw_classifier import chute_cropper as cc
 
 class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True, inc_edges: bool = False,
-                 random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21) -> torch.utils.data.Dataset:
+                 random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21,
+                 continuous: bool = False) -> torch.utils.data.Dataset:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
@@ -24,7 +25,7 @@ class Chute(torch.utils.data.Dataset):
         self.inc_edges = inc_edges
         self.epsilon = 1e-6 # Small number to avoid division by zero
         self.num_classes_straw = num_classes_straw
-        
+        self.continuous = continuous
         
         # Load the data file
         self.frames = h5py.File(self.data_path, 'a')
@@ -46,6 +47,7 @@ class Chute(torch.utils.data.Dataset):
 
         
         # Create indices for train, test and validation
+        # TODO: Validation set
         self.train_indices, self.test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=0.15, random_state=random_state)
         
         # Set the indices based on the data type
@@ -66,6 +68,9 @@ class Chute(torch.utils.data.Dataset):
             self.train_mean, self.train_std, self.train_min, self.train_max = self.extract_means_and_stds(force_update_statistics)
         # Store the mean and std of the training data for normalization       
         self.print_arguments()
+        
+        self.empty_frames = []
+        self.bad_frames = ['frame_489', 'frame_379', 'frame_375', 'frame_370', 'frame_392', 'frame_478', 'frame_371', 'frame_436', 'frame_457', 'frame_456', 'frame_492', 'frame_496', 'frame_450', 'frame_459', 'frame_432', 'frame_451', 'frame_486', 'frame_396', 'frame_382', 'frame_441', 'frame_439', 'frame_470', 'frame_390', 'frame_369', 'frame_367', 'frame_453', 'frame_383', 'frame_395', 'frame_493', 'frame_385', 'frame_487', 'frame_366', 'frame_452', 'frame_466', 'frame_377', 'frame_442', 'frame_393', 'frame_431', 'frame_471', 'frame_426', 'frame_462', 'frame_435', 'frame_394', 'frame_446', 'frame_481', 'frame_438', 'frame_495', 'frame_454', 'frame_482', 'frame_388', 'frame_474', 'frame_427', 'frame_464', 'frame_475', 'frame_376', 'frame_399', 'frame_473', 'frame_468', 'frame_449', 'frame_460', 'frame_491', 'frame_444', 'frame_430', 'frame_397', 'frame_429', 'frame_389', 'frame_386', 'frame_465', 'frame_428', 'frame_494', 'frame_368', 'frame_463', 'frame_479', 'frame_476', 'frame_387', 'frame_490', 'frame_472', 'frame_372', 'frame_483', 'frame_448', 'frame_374', 'frame_373', 'frame_391', 'frame_437', 'frame_469']
 
     def __len__(self):
         return len(self.indices)
@@ -104,7 +109,8 @@ class Chute(torch.utils.data.Dataset):
             fullness = anno['fullness'][...]
             obstructed = anno['obstructed'][...]
             
-            fullness = self.convert_fullness_to_class(fullness)
+            if not self.continuous:
+                fullness = self.convert_fullness_to_class(fullness)
         except KeyError as e:
             # If the annotations are not present, print the error and the keys of the frame
             print(f'\nKeyError: {e} in frame {self.indices[idx]}')
@@ -112,13 +118,19 @@ class Chute(torch.utils.data.Dataset):
         
         # Rotate and crop the image to the bounding box if we are training on the straw dataset
         if self.data_purpose == "straw":
+            # if self.indices[idx] in self.bad_frames:
+            #     print(f"Bad frame detected: {self.indices[idx]}")
             frame_data, bbox_chute = cc.rotate_and_crop_to_bbox(frame_data, bbox_chute)
             if self.inc_heatmap:
                 heatmap, _ = cc.rotate_and_crop_to_bbox(heatmap, bbox_chute)
 
             # print("1.5 Rotation and cropping to bbox")
             # self.plot_data(frame_data=(frame_data, heatmap), labels = [bbox_chute])
-        
+
+        if frame_data.shape == (2, 0, 3):
+            # print(f"\nEmpty frame: {self.indices[idx]}")
+            self.empty_frames.append(self.indices[idx])
+            return torch.Tensor([0]), torch.Tensor([0])
         if self.inc_edges:
             edges = self.get_edge_features(frame_data)
         
@@ -248,7 +260,10 @@ class Chute(torch.utils.data.Dataset):
         if "mean" in list(self.frames.attrs.keys()) and not force_update_statistics:
             print(f"Statistics already extracted, loading from file: {self.data_path}")
             if self.inc_heatmap:
-                return self.frames.attrs['mean'], self.frames.attrs['std'], self.frames.attrs['min'], self.frames.attrs['max'], self.frames.attrs['mean_hm'], self.frames.attrs['std_hm'], self.frames.attrs['min_hm'], self.frames.attrs['max_hm']
+                if "mean_hm" in list(self.frames.attrs.keys()):
+                    return self.frames.attrs['mean'], self.frames.attrs['std'], self.frames.attrs['min'], self.frames.attrs['max'], self.frames.attrs['mean_hm'], self.frames.attrs['std_hm'], self.frames.attrs['min_hm'], self.frames.attrs['max_hm']
+                else:
+                    raise ValueError("Heatmap statistics not found in file. Run with force_update_statistics=True to update the statistics.")
             return self.frames.attrs['mean'], self.frames.attrs['std'], self.frames.attrs['min'], self.frames.attrs['max']
         
         import strawml.data.extract_statistics as es
@@ -443,14 +458,10 @@ if __name__ == '__main__':
     from torch.utils.data import DataLoader
 
     print("---- CHUTE DETECTION DATASET ----")
-    train_set = Chute(data_type='train', inc_heatmap=True, force_update_statistics=False)
-    
-    # trainset.plot_data()
-    # test_set = Platoon(data_type='test', pm_windowsize=2)
-    # test_set.plot_data()
-    # val_set = Platoon(data_type='val', pm_windowsize=2)
-    # val_set.plot_data()
-    
+    # train_set = Chute(data_type='train', inc_heatmap=False, inc_edges=True, force_update_statistics=False, data_path = 'data/interim/chute_detection.hdf5', image_size=(384, 384))
+    train_set = Chute(data_path = 'data/interim/chute_detection_new.hdf5', data_type='train', inc_heatmap=False, inc_edges=False,
+                         random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
+                         num_classes_straw=11, continuous=False)
     print("Measuring time taken to load a batch")
     train_loader = DataLoader(train_set, batch_size=1, shuffle=True, num_workers=0)
 
@@ -480,8 +491,8 @@ if __name__ == '__main__':
         # fullness = target[2]
         
         # Skip timing dataloader
-        if i > 0:
-            break
+        # if i > 0:
+        #     break
     
     print(f'\nTotal time taken: {np.sum(durations):.2f}')
     print(f'Max duration: {np.max(durations):.2f} at index {np.argmax(durations)}')
@@ -490,12 +501,14 @@ if __name__ == '__main__':
     # Print example statistics of the last batch
     print(f'Last data shape: {data[0].shape}')
     
+    print(train_set.empty_frames)
+    
     # train_set.plot_data(frame_idx=9)
     
     print("---- STRAW DETECTION DATASET ----")
-    train_set = Chute(data_type='train', inc_heatmap=True, inc_edges=True, force_update_statistics=False, data_purpose="straw", image_size=(1370//2, 204//2))
+    # train_set = Chute(data_type='train', inc_heatmap=False, inc_edges=True, force_update_statistics=False, data_purpose="straw", image_size=(1370//2, 204//2))
     
-    train_set.plot_data(frame_idx=0)
+    # train_set.plot_data(frame_idx=0)
     
     
     
