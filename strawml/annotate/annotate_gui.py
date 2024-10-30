@@ -135,8 +135,10 @@ class ImageBox(ttk.Frame):
             raise FileNotFoundError(f"Could not find image group {image_group} in either HDF5 file.")
 
         image = decode_binary_image(image_bytes)
-        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.resize(image, (0, 0), fx=self.parent.image_scale, fy=self.parent.image_scale)
+        frame = cv2.Canny(image, 100, 200)
+        cv2.imshow('frame', frame)
         self.image = image
         self.image_size = self.image.shape[:2]
         
@@ -166,7 +168,7 @@ class ImageBox(ttk.Frame):
         self.new_image = ImageTk.PhotoImage(Image.fromarray(image))
         self.canvas.create_image(self.image_size[1]/2, self.image_size[0]/2, image=self.new_image)
         
-        self.load_previous_bbox()
+        # self.load_previous_bbox()
         # Initialize bounding box parameters
         if not self.chute_annotated:
             self.rect = None

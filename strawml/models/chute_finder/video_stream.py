@@ -8,7 +8,7 @@ import time
 import threading
 
 class VideoStreamCustom:
-    def __init__(self, model_name=None, object_detect=True, yolo_threshold=0.3, device='cuda', verbose=False, sahi=False) -> None:
+    def __init__(self, model_name=None, object_detect=True, yolo_threshold=0.3, device='cpu', verbose=False, sahi=False) -> None:
         self.object_detect = object_detect
         self.yolo_threshold = yolo_threshold
         self.model_name = model_name

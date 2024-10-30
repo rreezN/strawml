@@ -327,10 +327,13 @@ def hdf5_to_yolo(hdf5_file: str,
         os.makedirs(save_path)
     
     # Load json file
-    with open('data/processed/augmented/frame_to_augment.json', 'r') as f:
-        frame_to_augment_frame = json.load(f)
-    frame_names = list(frame_to_augment_frame.keys())
-    
+    if with_augmentation:
+        with open('data/processed/augmented/frame_to_augment.json', 'r') as f:
+            frame_to_augment_frame = json.load(f)
+        frame_names = list(frame_to_augment_frame.keys())
+    else:
+        with h5py.File(hdf5_file, 'r') as hf:
+            frame_names = list(np.arange(hf.__len__()))
     # split frames in train, test and validation with 70%, 20% and 10% respectively
     # random state = 42
     train_size, test_size, val_size = sizes
@@ -497,7 +500,6 @@ def place_digits_on_chute_images() -> None:
     img = cv2.imread("data/processed/chute_image_for_backgroud_creation.jpg")[:1440, :1250]
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    import matplotlib.pyplot as plt
     for data_type in data_dict.keys():
         # create data_type folder if it does not exist
         if not os.path.exists(f'data/processed/digits_on_chute_images/{data_type}'):
@@ -652,7 +654,7 @@ def main(args: Namespace) -> None:
     elif args.mode == 'tree':
         print_hdf5_tree(args.hdf5_file)
     elif args.mode == 'h5_to_yolo':
-        hdf5_to_yolo(args.hdf5_file, args.with_augmentation)
+        hdf5_to_yolo(hdf5_file=args.hdf5_file, with_augmentation=args.with_augmentation)
     elif args.mode == 'place_digits':
         place_digits_on_chute_images()
     elif args.mode == 'timm':
@@ -670,7 +672,7 @@ def get_args() -> Namespace:
     parser.add_argument('--description', type=str, default='Dataset created for a master\'s project at Meliora Bio.', help='The description of the dataset.')
     parser.add_argument('--dataset_name', type=str, default='straw-chute', help='The name of the dataset.')
     parser.add_argument('--fbf', type=int, default=30, help='Number of frames between frames to extract.')
-    parser.add_argument('--with_augmentation', type=bool, default=True, help='Whether to include augmented images in the YOLO format.')
+    parser.add_argument('--with_augmentation',  type=bool, default=True, help='Whether to include augmented images in the YOLO format.')
     return parser.parse_args()
 
 if __name__ == '__main__':

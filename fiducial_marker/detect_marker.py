@@ -192,7 +192,7 @@ class TagGraphWithPositionsCV:
         # NOTE When perfoming inference with CNN model, we should use this newIm as it makes a cutout that is non-square and more accurate.
         # The code under is just for visualisation as jpg, but that is not needed when running inference.
         newIm = Image.fromarray(newImArray, "RGBA")
-        
+        # cv2.imwrite("fiducial_marker/cutout.jpg", cv2.cvtColor(np.array(newIm), cv2.COLOR_RGBA2BGRA))
         # get bbox
         bbox = newIm.getbbox()
         newIm = newIm.crop(bbox)
@@ -606,7 +606,7 @@ class AprilDetector:
                 frame = tag_graph.draw_overlay(frame)
                 
                 # # save cutout image to disk
-                cv2.imwrite("fiducial_marker/cutout.jpg", cutout)
+                # cv2.imwrite("fiducial_marker/cutout.jpg", cutout)
             
             center_chute = (chute_right[0][0] + chute_left[0][0]) // 2
             number_tags = sorted(number_tags, key=lambda x: x.tag_id)
@@ -732,6 +732,8 @@ class RTSPStream(AprilDetector):
                 # Display FPS on the frame
                 cv2.putText(frame, f'FPS: {fps:.2f}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
                 cv2.imshow('frame', frame)
+                # save the frame
+                cv2.imwrite(f"fiducial_marker/frame_with_cutout.png", frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
         cap.release()

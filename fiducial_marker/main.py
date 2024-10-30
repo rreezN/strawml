@@ -76,6 +76,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--rtsp', action='store_true', help='Whether to use rtsp stream.')
     parser.add_argument('--windowed', action='store_true', help='Whether to run the script in windowed mode.')
     parser.add_argument('--make_cutout', action='store_true', help='Whether to make a cutout of the detected marker.')
+    
     return parser.parse_args()
 
 if __name__ == '__main__':

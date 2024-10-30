@@ -40,6 +40,8 @@ def load_image(hf_path: str,
         bbox_chute = hf[frame_nr]['annotations']['bbox_chute'][...]
     return image, image_diff, bbox_chute
 
+    
+    
 def visualise_augmentation(image: np.ndarray, 
                            image_diff: np.ndarray, 
                            bbox: np.ndarray, 
@@ -420,6 +422,9 @@ def augment_chute_data(args: argparse.Namespace) -> None:
     for frame in frame_keys:
         prob = random.random() 
         image, image_diff, bbox_chute = load_image(hf_path, frame)
+        if image is None:
+            print(f"Could not load image for frame: {frame}")
+            continue
         augment_frame_nrs = []
         if prob <= args.fraction:
             pbar.set_description_str(f"Frame: {frame}, Probability: {round(prob, 2)}")
