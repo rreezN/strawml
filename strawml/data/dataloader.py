@@ -459,7 +459,7 @@ if __name__ == '__main__':
 
     print("---- CHUTE DETECTION DATASET ----")
     # train_set = Chute(data_type='train', inc_heatmap=False, inc_edges=True, force_update_statistics=False, data_path = 'data/interim/chute_detection.hdf5', image_size=(384, 384))
-    train_set = Chute(data_path = 'data/interim/chute_detection_new.hdf5', data_type='train', inc_heatmap=False, inc_edges=False,
+    train_set = Chute(data_path = 'data/processed/augmented/chute_detection.hdf5', data_type='train', inc_heatmap=False, inc_edges=False,
                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
                          num_classes_straw=11, continuous=False)
     print("Measuring time taken to load a batch")
