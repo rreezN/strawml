@@ -15,7 +15,7 @@ from strawml.models.straw_classifier import chute_cropper as cc
 class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True, inc_edges: bool = False,
                  random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21,
-                 continuous: bool = False) -> torch.utils.data.Dataset:
+                 continuous: bool = False, subsample: float = 1.0) -> torch.utils.data.Dataset:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
@@ -26,6 +26,7 @@ class Chute(torch.utils.data.Dataset):
         self.epsilon = 1e-6 # Small number to avoid division by zero
         self.num_classes_straw = num_classes_straw
         self.continuous = continuous
+        self.subsample = subsample
         
         # Load the data file
         self.frames = h5py.File(self.data_path, 'a')
@@ -49,13 +50,15 @@ class Chute(torch.utils.data.Dataset):
         # Create indices for train, test and validation
         # TODO: Validation set
         self.train_indices, self.test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=0.15, random_state=random_state)
-        self.val_indices, self.test_indices, _, _ = train_test_split(self.test_indices, self.test_indices, test_size=0.5, random_state=random_state)
+        # self.val_indices, self.test_indices, _, _ = train_test_split(self.test_indices, self.test_indices, test_size=0.5, random_state=random_state)
+        
+        self.train_indices = self.train_indices[:int(len(self.train_indices)*self.subsample)]
         
         # Set the indices based on the data type
         if data_type == 'train':
             self.indices = self.train_indices
-        elif data_type == 'val':
-            self.indices = self.val_indices
+        # elif data_type == 'val':
+        #     self.indices = self.val_indices
         elif data_type == 'test':
             self.indices = self.test_indices
         else:

@@ -65,7 +65,10 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             if feature_regressor is not None:
                 output = feature_regressor(output)
                 output = output.squeeze()
-                
+            
+            if not args.cont and model != 'cnn':
+                    output = torch.nn.functional.softmax(output, dim=1)
+            
             loss = loss_fn(output, fullness)
             
             epoch_losses += [loss.item()]
@@ -126,7 +129,10 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if feature_regressor is not None:
                     output = feature_regressor(output)
                     output = output.squeeze()
-                    
+                
+                if not args.cont and model != 'cnn':
+                    output = torch.nn.functional.softmax(output, dim=1)
+                
                 val_loss = loss_fn(output, fullness)
                 val_lossses.append(val_loss.item())
                 
@@ -212,10 +218,9 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'model': args.model,
             'image_size': image_size,
             'num_classes_straw': args.num_classes_straw,
-            'continuous': args.cont
+            'continuous': args.cont,
+            'data_subsample': args.data_subsample
         })
-
-    
 
 
 def get_args():
@@ -236,6 +241,7 @@ def get_args():
     parser.add_argument('--image_size', type=tuple, default=(1370, 204), help='Image size for the model (only for CNN)')
     parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
     parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class (only for CNN model currently)')
+    parser.add_argument('--data_subsample', type=float, default=1.0, help='Amount of the data to subsample for training (1.0 = 100%, 0.5 = 50%)')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -253,10 +259,10 @@ if __name__ == '__main__':
     
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
-                         num_classes_straw=args.num_classes_straw, continuous=args.cont)
-    test_set = dl.Chute(data_path=args.data_path, data_type='val', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
+                         num_classes_straw=args.num_classes_straw, continuous=args.cont, data_subsample=args.data_subsample)
+    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                         random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
-                        num_classes_straw=args.num_classes_straw, continuous=args.cont)
+                        num_classes_straw=args.num_classes_straw, continuous=args.cont, data_subsample=args.data_subsample)
     
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False)
