@@ -17,7 +17,9 @@ with open('data/hkvision_credentials.txt', 'r') as f:
 # video_stream = VideoStreamCustom(model_name="models/yolov8n-digits-one-cls-multi-d.pt", object_detect=True, yolo_threshold=0.2, verbose=False, sahi=True)
 
 # Object detection model
-video_stream = VideoStreamCustom(model_name="runs/obb/train2/weights/best.pt", object_detect=True, yolo_threshold=0.2, verbose=False, sahi=False)
+# video_stream = VideoStreamCustom(model_name="runs/obb/yolo11n-obb-adamw-50e/weights/best.pt", object_detect=True, yolo_threshold=0.2, verbose=False, sahi=False)
+# video_stream = VideoStreamCustom(model_name="runs/obb/yolo11n-obb-adamw-50e/weights/best.pt", object_detect=True, yolo_threshold=0.2, verbose=False, sahi=False)
+video_stream = VideoStreamCustom(model_name="runs/obb/yolo11s-obb-adamw-50e/weights/best.pt", object_detect=True, yolo_threshold=0.2, verbose=False, sahi=False)
 
 # Edge detection model
 # video_stream = VideoStreamStraw()
