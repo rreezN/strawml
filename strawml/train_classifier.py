@@ -7,20 +7,22 @@ from tqdm import tqdm
 import timeit
 import timm
 import wandb
+import os
 
 import data.dataloader as dl
 import strawml.models.straw_classifier.cnn_classifier as cnn
-from strawml.models.straw_classifier.convnextv2 import *
-import strawml.models.straw_classifier.chute_cropper as cc
+import strawml.models.straw_classifier.feature_model as feature_model
 
 
-def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_loader: torch.utils.data.DataLoader) -> None:
+def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_loader: torch.utils.data.DataLoader, feature_regressor: torch.nn.Module = None) -> None:
     """Train the CNN classifier model.
     """
     
     if torch.cuda.is_available():
         print('Using GPU')
         model = model.cuda()
+        if feature_regressor is not None:
+            feature_regressor = feature_regressor.cuda()
     
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     
@@ -36,6 +38,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
         train_iterator = tqdm(train_loader, unit="batch", position=0, leave=False)
         train_iterator.set_description(f'Training Epoch {epoch+1}/{args.epochs}')
         model.train()
+        if feature_regressor is not None:
+            feature_regressor.train()
         epoch_accuracies = []
         epoch_losses = []
         for (frame_data, target) in train_iterator:
@@ -52,8 +56,16 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             optimizer.zero_grad()
             
             # Forward pass
-            output = model(frame_data)
+            if args.cont and args.model != 'cnn':
+                features = model.forward_features(frame_data)
+                output = features
+            else:
+                output = model(frame_data)
             if args.cont: output = output.squeeze()
+            if feature_regressor is not None:
+                output = feature_regressor(output)
+                output = output.squeeze()
+                
             loss = loss_fn(output, fullness)
             
             epoch_losses += [loss.item()]
@@ -80,6 +92,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             print(f'Epoch: {epoch+1}, Training Accuracy: {sum(epoch_accuracies)/len(epoch_accuracies):.2f}%')
         
         model.eval()
+        if feature_regressor is not None:
+            feature_regressor.eval()
         
         with torch.no_grad():
             correct = 0
@@ -102,8 +116,17 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     frame_data = frame_data.cuda()
                     fullness = fullness.cuda()
                 
-                output = model(frame_data)
+                # Forward pass
+                if args.cont and args.model != 'cnn':
+                    features = model.forward_features(frame_data)
+                    output = features
+                else:
+                    output = model(frame_data)
                 if args.cont: output = output.squeeze()
+                if feature_regressor is not None:
+                    output = feature_regressor(output)
+                    output = output.squeeze()
+                    
                 val_loss = loss_fn(output, fullness)
                 val_lossses.append(val_loss.item())
                 
@@ -122,20 +145,36 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if sum(val_lossses)/len(val_lossses) < best_accuracy:
                     best_accuracy = sum(val_lossses)/len(val_lossses)
                     print(f'New best loss: {best_accuracy}')
-                    model_name = args.model + '_cont'
-                    model_save_path = args.save_path + model_name + '_best.pth'
-                    torch.save(model.state_dict(), model_save_path)
+                    if args.model != 'cnn':
+                        model_folder = f'{args.save_path}{args.model}_regressor/'
+                        os.makedirs(model_folder, exist_ok=True)
+                        model_name = args.model + '_feature_extractor'
+                        model_save_path = model_folder + model_name + '_best.pth'
+                        regressor_name = args.model + '_regressor'
+                        regressor_save_path = model_folder + regressor_name + '_best.pth'
+                        torch.save(model.state_dict(), model_save_path)
+                        torch.save(feature_regressor.state_dict(), regressor_save_path)
+                        if not args.no_wandb:
+                            wandb.save(model_save_path)
+                            wandb.save(regressor_save_path)
+                    else:
+                        model_name = args.model + '_regressor'
+                        model_save_path = args.save_path + model_name + '_best.pth'
+                        torch.save(model.state_dict(), model_save_path)
+                        if not args.no_wandb:
+                            wandb.save(model_save_path)
+                            
                     if not args.no_wandb:
-                        wandb.log({'best_val_loss': best_accuracy})
-                        wandb.save(model_save_path)
+                        wandb.log(step=epoch+1, data={'best_val_loss': best_accuracy})
             else:
                 accuracy = 100 * correct /total
                 correct = correct.detach().cpu()
                 print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {elapsed_time:.2f} seconds. (Batch Size: {args.batch_size})')
 
                 if not args.no_wandb:
-                    wandb.log({'train_accuracy': sum(epoch_accuracies)/len(epoch_accuracies), 
-                                'val_accuracy': accuracy, })
+                    wandb.log(step=epoch+1, 
+                              data={'train_accuracy': sum(epoch_accuracies)/len(epoch_accuracies), 
+                                'val_accuracy': accuracy,})
                 
                 if accuracy > best_accuracy:
                     print(f'New best accuracy: {accuracy:.2f}%')
@@ -144,7 +183,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     model_save_path = args.save_path + model_name + '_best.pth'
                     torch.save(model.state_dict(), model_save_path)
                     if not args.no_wandb:
-                        wandb.log({'best_val_accuracy': best_accuracy})
+                        wandb.log(step=epoch+1, data={'best_val_accuracy': best_accuracy})
                         wandb.save(model_save_path)
                     
             if not args.no_wandb:
@@ -215,7 +254,7 @@ if __name__ == '__main__':
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
                          num_classes_straw=args.num_classes_straw, continuous=args.cont)
-    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
+    test_set = dl.Chute(data_path=args.data_path, data_type='val', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                         random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
                         num_classes_straw=args.num_classes_straw, continuous=args.cont)
     
@@ -233,21 +272,26 @@ if __name__ == '__main__':
     if not args.no_wandb:
         initialize_wandb(args)
     
-    feature_extraction = False
     if args.cont:
-        feature_extraction = True
         args.num_classes_straw = 1
     
     match args.model:
         case 'cnn':
             model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw)
         case 'convnextv2':
-            model = timm.create_model('convnextv2_atto', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True, features_only=feature_extraction)
+            model = timm.create_model('convnextv2_atto', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
         case 'vit':
-            model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True, features_only=feature_extraction)
+            model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
         case 'eva02':
-            model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True, features_only=feature_extraction)
+            model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
     
-    train_model(args, model, train_loader, test_loader)
+    if args.cont and args.model != 'cnn':
+        feature_shape = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1])).shape
+        feature_size = feature_shape[1] * feature_shape[2]
+        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+    else:
+        feature_regressor = None
+    
+    train_model(args, model, train_loader, test_loader, feature_regressor)
 
     

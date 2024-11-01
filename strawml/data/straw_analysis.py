@@ -611,11 +611,11 @@ def plot_tsne(frames: h5py.File, class_dict: dict) -> None:
 
 
 if __name__ == '__main__':
-    frames = h5py.File('data/processed/augmented/chute_detection.hdf5', 'r')
+    frames = h5py.File('data/interim/chute_detection.hdf5', 'r')
     class_dictionary = get_frames_by_class(frames)
     
     ## These functions create plots of the dataset for the straw level monitoring model ##
-    # plot_class_distribution(class_dictionary, frames)
+    plot_class_distribution(class_dictionary, frames)
     # plot_pixel_intensities(class_dictionary, frames)
     # plot_pixel_means_and_variance(class_dictionary, frames)
     # mean_images = plot_mean_image_per_class(class_dictionary, frames)

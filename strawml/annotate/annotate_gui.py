@@ -168,7 +168,7 @@ class ImageBox(ttk.Frame):
         self.new_image = ImageTk.PhotoImage(Image.fromarray(image))
         self.canvas.create_image(self.image_size[1]/2, self.image_size[0]/2, image=self.new_image)
         
-        # self.load_previous_bbox()
+        self.load_previous_bbox()
         # Initialize bounding box parameters
         if not self.chute_annotated:
             self.rect = None
@@ -783,7 +783,7 @@ class MainApplication(ttk.Frame):
         #     return
         
         if self.image_box.rect is None or self.fullness_box.full_amount.get() == -1:
-            print("No annotations to save.")
+            print(f"{self.image_box.current_image_group}: No annotations to save.")
             return
         
         new_hdf5_file = f'data/interim/{self.file_button.get()}'
@@ -830,7 +830,7 @@ class MainApplication(ttk.Frame):
             annotation_group.create_dataset('bbox_chute', data=coords)
             width, height = get_box_width_and_height()
             if width < 25 or height < 25:
-                print("WARNING: Saving a bounding box with width or height less than 25 pixels.")
+                print(f"WARNING: Saving a bounding box with width or height less than 25 pixels {frame}.")
         else:
             print("No chute bounding box to save.")
         # if img_box.start_x2 != None:
