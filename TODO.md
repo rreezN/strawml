@@ -19,3 +19,7 @@
 - [ ] Setup predict_model to work with pretrained regressions
 - [ ] Cross-validation
 - [ ] More features ?
+
+
+## BIG ONE
+- [ ] Go through http://karpathy.github.io/2019/04/25/recipe/
