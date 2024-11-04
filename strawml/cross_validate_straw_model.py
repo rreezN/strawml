@@ -72,11 +72,12 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 output = features
             else:
                 output = model(frame_data)
-            if args.cont: output = output.squeeze()
+            if args.cont and len(output.shape) > 3: output = output.squeeze()
             if feature_regressor is not None:
                 output = feature_regressor(output)
-                output = output.squeeze()
             if args.cont:
+                if len(output.shape) > 1:
+                    output = output.flatten()
                 output = torch.clamp(output, 0, 1)
             
             loss = loss_fn(output, fullness)
@@ -378,15 +379,16 @@ if __name__ == '__main__':
         initialize_wandb(args)
         
     for fold, (train_idx, val_idx) in enumerate(kf.split(train_set)):
-        LOG_DICT['custom_step'] = 0
-        LOG_DICT[f'f{fold}_train_loss'] = None
-        LOG_DICT[f'f{fold}_val_loss'] = None
-        LOG_DICT[f'f{fold}_train_accuracy'] = None
-        LOG_DICT[f'f{fold}_val_accuracy'] = None
-        LOG_DICT[f'f{fold}_best_val_loss'] = None
-        LOG_DICT[f'f{fold}_best_val_accuracy'] = None
-        LOG_DICT[f'f{fold}_epoch'] = None
-        LOG_DICT[f'f{fold}_inference_time'] = None
+        if not args.no_wandb:
+            LOG_DICT['custom_step'] = 0
+            LOG_DICT[f'f{fold}_train_loss'] = None
+            LOG_DICT[f'f{fold}_val_loss'] = None
+            LOG_DICT[f'f{fold}_train_accuracy'] = None
+            LOG_DICT[f'f{fold}_val_accuracy'] = None
+            LOG_DICT[f'f{fold}_best_val_loss'] = None
+            LOG_DICT[f'f{fold}_best_val_accuracy'] = None
+            LOG_DICT[f'f{fold}_epoch'] = None
+            LOG_DICT[f'f{fold}_inference_time'] = None
         
         print(f'Training fold {fold+1}/{args.folds}')
         train_loader = DataLoader(train_set, batch_size=args.batch_size, sampler=SubsetRandomSampler(train_idx))

@@ -61,11 +61,12 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 output = features
             else:
                 output = model(frame_data)
-            if args.cont: output = output.squeeze()
+            if args.cont and len(output.shape) > 3: output = output.squeeze()
             if feature_regressor is not None:
                 output = feature_regressor(output)
-                output = output.squeeze()
             if args.cont:
+                if len(output.shape) > 1:
+                    output = output.flatten()
                 output = torch.clamp(output, 0, 1)
             
             
