@@ -66,9 +66,6 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 output = feature_regressor(output)
                 output = output.squeeze()
             
-            # TODO: I don't think we need to do this softmax here, as the loss function will do it for us
-            if not args.cont and model != 'cnn':
-                    output = torch.nn.functional.softmax(output, dim=1)
             
             loss = loss_fn(output, fullness)
             
@@ -131,15 +128,11 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     output = feature_regressor(output)
                     output = output.squeeze()
                 
-                
                 val_loss = loss_fn(output, fullness)
                 val_lossses.append(val_loss.item())
-                
-                # TODO: Fix this after fixing cnn model
-                if not args.cont and model != 'cnn':
-                    output = torch.nn.functional.softmax(output, dim=1)
                     
                 if not args.cont:
+                    output = torch.nn.functional.softmax(output, dim=1)
                     _, predicted = torch.max(output, 1)
                     total += args.batch_size
                     _, target_fullness = torch.max(fullness, 1)

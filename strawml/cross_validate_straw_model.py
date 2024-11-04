@@ -76,9 +76,6 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 output = feature_regressor(output)
                 output = output.squeeze()
             
-            if not args.cont and model != 'cnn':
-                output = torch.nn.functional.softmax(output, dim=1)
-            
             loss = loss_fn(output, fullness)
             train_losses.append(loss.item())
             
@@ -152,13 +149,12 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     output = feature_regressor(output)
                     output = output.squeeze()
                 
-                if not args.cont and model != 'cnn':
-                    output = torch.nn.functional.softmax(output, dim=1)
                 
                 val_loss = loss_fn(output, fullness)
                 val_losses.append(val_loss.item())
                 
                 if not args.cont:
+                    output = torch.nn.functional.softmax(output, dim=1)
                     _, predicted = torch.max(output, 1)
                     total += args.batch_size
                     _, target_fullness = torch.max(fullness, 1)

@@ -50,9 +50,6 @@ class CNNClassifier(torch.nn.Module):
         x = torch.flatten(x, 1)
         x = self.r(self.fc1(x))
         x = self.fc2(x)
-        # TODO: Check if softmax is needed as the loss function might already be using it
-        if not self.output_size == 1:
-            x = torch.nn.functional.softmax(x, dim=0)
         return x
     
     def get_linear_layer_neurons(self) -> int:
