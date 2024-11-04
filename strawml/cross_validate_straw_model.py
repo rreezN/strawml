@@ -100,9 +100,10 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 train_iterator.set_postfix(loss=loss.item(), accuracy=sum(train_accuracies)/len(train_accuracies))
 
         mean_train_loss = np.mean(train_losses)
-        mean_train_accuracy = np.mean(train_accuracies)
         epoch_train_losses.append(mean_train_loss)
-        epoch_train_accuracies.append(mean_train_accuracy)
+        if not args.cont:
+            mean_train_accuracy = np.mean(train_accuracies)
+            epoch_train_accuracies.append(mean_train_accuracy)
         
         if not args.no_wandb:
             if not args.cont:
