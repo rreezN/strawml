@@ -7,18 +7,22 @@ import timm
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
+from scipy.stats import linregress
 
 import data.dataloader as dl
 import strawml.models.straw_classifier.cnn_classifier as cnn
+import strawml.models.straw_classifier.feature_model as feature_model
 
 
-def predict_model(args, model: torch.nn.Module, dataloader: DataLoader) -> tuple:
+def predict_model(args, model: torch.nn.Module, dataloader: DataLoader, feature_regressor: torch.nn.Module = None) -> tuple:
     """Predict the output of a model on a dataset.
     """
     
     if torch.cuda.is_available():
         print("Using GPU")
         model = model.cuda()
+        if feature_regressor is not None:
+            feature_regressor = feature_regressor.cuda()
     
     if args.cont:
         loss_fn = torch.nn.functional.mse_loss
@@ -42,8 +46,21 @@ def predict_model(args, model: torch.nn.Module, dataloader: DataLoader) -> tuple
                 frame_data = frame_data.cuda()
                 fullness = fullness.cuda()
 
-            output = model(frame_data)
-            if args.cont: output = output.squeeze()
+            # Forward pass
+                if args.cont and args.model != 'cnn':
+                    features = model.forward_features(frame_data)
+                    output = features
+                else:
+                    output = model(frame_data)
+                if args.cont: output = output.squeeze()
+                if feature_regressor is not None:
+                    output = feature_regressor(output)
+                    output = output.squeeze()
+
+                if args.cont:
+                    output = torch.clamp(output, 0, 1)
+                    # output = torch.sigmoid(output)
+                
             loss = loss_fn(output, fullness)
             losses = np.append(losses, loss.item())
             
@@ -78,19 +95,41 @@ def plot_cont_predictions(outputs, fullnesses):
     acceptable = 0.1
     accuracy = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
     
+    model_name = f'{args.model}_reg' if args.cont else f'{args.model}_cls'
+    
+    plt.figure(figsize=(10, 5))
     plt.plot(outputs, label='Predicted')
     plt.plot(fullnesses, label='True')
     
     # Plot acceptable range
-    plt.fill_between(np.arange(len(outputs)), fullnesses*(1-acceptable), fullnesses*(1+acceptable), color='gray', alpha=0.5, label='threshold')
+    plt.fill_between(np.arange(len(outputs)), fullnesses*(1-acceptable), fullnesses*(1+acceptable), color='gray', alpha=0.5, label=f'threshold={acceptable*100:.0f}%')
     
     plt.legend()
     plt.yticks(np.arange(0, 1.1, 0.1))
     plt.grid()
     plt.xlabel('Frame')
     plt.ylabel('Fullness')
-    plt.title(f'Predicted vs True Fullness, MSE: {MSE:.3f}, MAE: {MAE:.3f}, RMSE: {RMSE:.3f}, PRMSE: {PRMSE:.3f}, accuracy: {accuracy*100:.1f}%')
+    plt.title(f'{model_name} Predicted vs True Fullness, MSE: {MSE:.3f}, MAE: {MAE:.3f}, RMSE: {RMSE:.3f}, PRMSE: {PRMSE:.3f}, accuracy: {accuracy*100:.1f}%')
+    plt.tight_layout()
     plt.savefig('reports/figures/straw_analysis/model_results/cont_predictions.png', dpi=300)
+    plt.show()
+    
+    
+    # Plot regression fit
+    plt.figure(figsize=(10, 5))
+    # adding the regression line to the scatter plot
+    slope, intercept, r_value, p_value, std_err = linregress(fullnesses, outputs)
+    plt.plot(fullnesses, slope*fullnesses + intercept, color='royalblue', label=f'Regression Fit ' + r"($R^2 = $" + f"{r_value**2:.2f})", zorder=2)
+    # Plot targets and predictions
+    plt.scatter(fullnesses, outputs, color='indianred', alpha=.75, label='Predicted vs True', zorder=0)
+    # Plot 1:1 line
+    plt.plot([0, 1], [0, 1], color='black', linestyle='--', linewidth=1, alpha=.75, zorder=1)
+    plt.xlabel('True Fullness')
+    plt.ylabel('Predicted Fullness')
+    plt.title(f'{model_name} Predicted vs True Fullness')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig('reports/figures/straw_analysis/model_results/cont_predictions_scatter.png', dpi=300)
     plt.show()
 
 
@@ -159,7 +198,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--epochs', type=int, default=25, help='Number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.00001, help='Learning rate for training')
     parser.add_argument('--model_path', type=str, default='models/vit_classifier_best.pth', help='Path to load the model from')
-    parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
+    parser.add_argument('--data_path', type=str, default='data/interim/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
     parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
@@ -197,8 +236,6 @@ if __name__ == '__main__':
     
     if args.cont:
         args.num_classes_straw = 1
-        if args.model != 'cnn':
-            raise ValueError("Continuous output is only supported for the CNN model.")
     
     match args.model:
         case 'cnn':
@@ -211,9 +248,19 @@ if __name__ == '__main__':
             model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
     
 
-    model.load_state_dict(torch.load(args.model_path))
+    if args.cont and args.model != 'cnn':
+        feature_shape = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1])).shape
+        feature_size = feature_shape[1] * feature_shape[2]
+        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+        
+        model.load_state_dict(torch.load(f'{args.model_path}/{args.model}_feature_extractor_best.pth'))
+        feature_regressor.load_state_dict(torch.load(f'{args.model_path}/{args.model}_regressor_best.pth'))
+        
+    else:
+        feature_regressor = None
+        model.load_state_dict(torch.load(args.model_path))
     
-    outputs, fullnesses, accuracies, losses = predict_model(args, model, test_loader)
+    outputs, fullnesses, accuracies, losses = predict_model(args, model, test_loader, feature_regressor=feature_regressor)
     
     print(f"Mean loss: {sum(losses) / len(losses)}")
     if not args.cont:
