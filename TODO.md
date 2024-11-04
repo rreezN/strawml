@@ -12,12 +12,13 @@
   - [ ] Heatmap only
 - [ ] Include edges
   - [ ] Edges only
+- [ ] Greyscale (1 input layer)
 - [ ] Data amount experiments (only include 10% of training data, 25%, 50% etc.)
 
 ## Model implementations
 - [X] Feature extraction from pretrained to use in continuous version
 - [ ] Setup predict_model to work with pretrained regressions
-- [ ] Cross-validation
+- [X] Cross-validation
 - [ ] More features ?
 
 

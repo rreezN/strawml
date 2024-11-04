@@ -24,6 +24,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
     
     global OVERALL_BEST_ACCURACY
     global fold
+    global LOG_DICT
     
     if torch.cuda.is_available():
         model = model.cuda()
@@ -46,7 +47,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
     
     for epoch in range(args.epochs):
         train_iterator = tqdm(train_loader, unit="batch", position=0, leave=False)
-        train_iterator.set_description(f'Training Epoch {epoch+1}/{args.epochs}')
+        train_iterator.set_description(f'Fold {fold+1}/{args.folds} Training Epoch {epoch+1}/{args.epochs}')
         model.train()
         if feature_regressor is not None:
             feature_regressor.train()
@@ -75,6 +76,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             if feature_regressor is not None:
                 output = feature_regressor(output)
                 output = output.squeeze()
+            if args.cont:
+                output = torch.clamp(output, 0, 1)
             
             loss = loss_fn(output, fullness)
             train_losses.append(loss.item())
@@ -102,9 +105,12 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
         
         if not args.no_wandb:
             if not args.cont:
-                wandb.log(step=epoch+1, data={f'f{fold+1}_train_loss': mean_train_loss, f'f{fold+1}_train_accuracy': mean_train_accuracy})
+                LOG_DICT[f'f{fold+1}_train_loss'] = mean_train_loss
+                LOG_DICT[f'f{fold+1}_train_accuracy'] = mean_train_accuracy
+                # wandb.log(data={f'f{fold+1}_train_loss': mean_train_loss, f'f{fold+1}_train_accuracy': mean_train_accuracy})
             else:
-                wandb.log(step=epoch+1, data={f'f{fold+1}_train_loss': mean_train_loss})
+                LOG_DICT[f'f{fold+1}_train_loss'] = mean_train_loss
+                # wandb.log(data={f'f{fold+1}_train_loss': mean_train_loss})
             
             
         if args.cont:
@@ -120,7 +126,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             correct = 0
             total = 0
             val_iterator = tqdm(val_loader, unit="batch", position=0, leave=False)
-            val_iterator.set_description(f'Validating Epoch {epoch+1}/{args.epochs}')
+            val_iterator.set_description(f'Fold {fold+1}/{args.folds} Validating Epoch {epoch+1}/{args.epochs}')
             
             # Time the inference time
             start_time = timeit.default_timer()
@@ -148,6 +154,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if feature_regressor is not None:
                     output = feature_regressor(output)
                     output = output.squeeze()
+                if args.cont:
+                    output = torch.clamp(output, 0, 1)
                 
                 
                 val_loss = loss_fn(output, fullness)
@@ -165,6 +173,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             end_time = timeit.default_timer()
             elapsed_time = end_time - start_time
             average_time = elapsed_time / len(val_loader)
+            LOG_DICT[f'f{fold+1}_inference_time'] = average_time
             
             # Save the best model
             if args.cont:
@@ -192,15 +201,16 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     #         wandb.save(model_save_path)
                             
                     if not args.no_wandb:
-                        wandb.log(step=epoch+1, data={f'f{fold+1}_best_val_loss': best_accuracy})
+                        LOG_DICT[f'f{fold+1}_best_val_loss'] = best_accuracy
+                        # wandb.log(data={f'f{fold+1}_best_val_loss': best_accuracy})
             else:
                 correct = correct.detach().cpu()
                 accuracy = 100 * correct /total
                 print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.2f} seconds, Total Inference Time: {elapsed_time:.2f} seconds. (Batch Size: {args.batch_size})')
 
                 if not args.no_wandb:
-                    wandb.log(step=epoch+1, 
-                              data={f'f{fold+1}_val_accuracy': accuracy,})
+                    LOG_DICT[f'f{fold+1}_val_accuracy'] = accuracy
+                    # wandb.log(data={f'f{fold+1}_val_accuracy': accuracy,})
                 
                 if accuracy > best_accuracy:
                     print(f'New best accuracy: {accuracy:.2f}%')
@@ -247,9 +257,14 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                         wandb.save(model_save_path)
                 
             if not args.no_wandb:
-                wandb.log(step=epoch+1, 
-                        data={f'f{fold+1}_val_loss': np.mean(val_losses), 
-                              'epoch': epoch+1})
+                LOG_DICT['custom_step'] = epoch+1
+                LOG_DICT[f'f{fold+1}_val_loss'] = np.mean(val_losses)
+                LOG_DICT[f'f{fold+1}_epoch'] = epoch+1
+                
+                # wandb.log(data={f'f{fold+1}_val_loss': np.mean(val_losses), 
+                #               f'f{fold+1}_epoch': epoch+1})
+                
+                wandb.log(LOG_DICT)
             
             epoch_val_losses.append(np.mean(val_losses))
             if not args.cont:
@@ -280,7 +295,28 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'folds': args.folds,
             'data_subsample': args.data_subsample
         })
-
+    
+    global LOG_DICT
+    LOG_DICT = {}
+    wandb.define_metric('custom_step')
+    for fold in range(args.folds):
+        LOG_DICT['custom_step'] = 0
+        LOG_DICT[f'f{fold+1}_train_loss'] = None
+        LOG_DICT[f'f{fold+1}_val_loss'] = None
+        LOG_DICT[f'f{fold+1}_train_accuracy'] = None
+        LOG_DICT[f'f{fold+1}_val_accuracy'] = None
+        LOG_DICT[f'f{fold+1}_best_val_loss'] = None
+        LOG_DICT[f'f{fold+1}_best_val_accuracy'] = None
+        LOG_DICT[f'f{fold+1}_epoch'] = None
+        LOG_DICT[f'f{fold+1}_inference_time'] = None
+        
+        wandb.define_metric(f'f{fold+1}_train_loss', step_metric='custom_step')
+        wandb.define_metric(f'f{fold+1}_val_loss', step_metric='custom_step')
+        wandb.define_metric(f'f{fold+1}_train_accuracy', step_metric='custom_step')
+        wandb.define_metric(f'f{fold+1}_val_accuracy', step_metric='custom_step')
+        wandb.define_metric(f'f{fold+1}_best_val_loss', step_metric='custom_step')
+        wandb.define_metric(f'f{fold+1}_best_val_accuracy', step_metric='custom_step')
+        wandb.define_metric(f'f{fold+1}_epoch', step_metric='custom_step')
 
 def get_args():
     """Get the arguments for the training script.
@@ -335,12 +371,23 @@ if __name__ == '__main__':
     fold_val_accuracies = []
     best_accuracies = []
     OVERALL_BEST_ACCURACY = -1.0 if not args.cont else torch.inf
+    global LOG_DICT
     
     # WANDB
     if not args.no_wandb:
         initialize_wandb(args)
         
     for fold, (train_idx, val_idx) in enumerate(kf.split(train_set)):
+        LOG_DICT['custom_step'] = 0
+        LOG_DICT[f'f{fold}_train_loss'] = None
+        LOG_DICT[f'f{fold}_val_loss'] = None
+        LOG_DICT[f'f{fold}_train_accuracy'] = None
+        LOG_DICT[f'f{fold}_val_accuracy'] = None
+        LOG_DICT[f'f{fold}_best_val_loss'] = None
+        LOG_DICT[f'f{fold}_best_val_accuracy'] = None
+        LOG_DICT[f'f{fold}_epoch'] = None
+        LOG_DICT[f'f{fold}_inference_time'] = None
+        
         print(f'Training fold {fold+1}/{args.folds}')
         train_loader = DataLoader(train_set, batch_size=args.batch_size, sampler=SubsetRandomSampler(train_idx))
         test_loader = DataLoader(train_set, batch_size=args.batch_size, sampler=SubsetRandomSampler(val_idx))
@@ -399,8 +446,9 @@ if __name__ == '__main__':
     print(f'Mean Best Validation Loss: {mean_best_val_loss:.4f} +/- {std_best_val_loss:.4f}')
     
     if not args.no_wandb:
-        wandb.log({'mean_best_val_loss': mean_best_val_loss, 'std_best_val_loss': std_best_val_loss,
-                   'mean_best_val_accuracy': mean_best_val_accuracy, 'std_best_val_accuracy': std_best_val_accuracy})
+        wandb.log({'mean_best_val_loss': mean_best_val_loss, 'std_best_val_loss': std_best_val_loss})
+        if not args.cont:
+            wandb.log({'mean_best_val_accuracy': mean_best_val_accuracy, 'std_best_val_accuracy': std_best_val_accuracy})
     
     model_folder = f'{args.model}_classifier/' if not args.cont else f'{args.model}_regressor/'
     for i in range(args.folds):
