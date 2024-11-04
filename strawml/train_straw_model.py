@@ -148,7 +148,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             average_time = elapsed_time / len(val_loader)
             
             if args.cont:
-                print(f'Epoch: {epoch+1}, Validation Loss: {sum(val_lossses)/len(val_lossses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')
+                print(f'Epoch: {epoch+1}, Average Inference Time: {average_time:.6f} Validation Loss: {sum(val_lossses)/len(val_lossses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')
                 if sum(val_lossses)/len(val_lossses) < best_accuracy:
                     best_accuracy = sum(val_lossses)/len(val_lossses)
                     print(f'New best loss: {best_accuracy}')
@@ -180,8 +180,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if not args.no_wandb:
                     wandb.log(step=epoch+1, 
                               data={'train_accuracy': sum(epoch_accuracies)/len(epoch_accuracies), 
-                                'val_accuracy': accuracy,
-                                'inference_time': average_time,})
+                                'val_accuracy': accuracy})
                 
                 if accuracy > best_accuracy:
                     print(f'New best accuracy: {accuracy:.2f}%')
@@ -197,7 +196,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 wandb.log(step=epoch+1, 
                         data={'train_loss': sum(epoch_losses)/len(epoch_losses), 
                               'val_loss': sum(val_lossses)/len(val_lossses), 
-                              'epoch': epoch+1})
+                              'epoch': epoch+1,
+                              'inference_time': average_time,})
             
     
     if not args.no_wandb: wandb.finish()
