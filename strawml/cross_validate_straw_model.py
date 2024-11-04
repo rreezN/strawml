@@ -319,6 +319,7 @@ def initialize_wandb(args: argparse.Namespace) -> None:
         wandb.define_metric(f'f{fold+1}_best_val_loss', step_metric='custom_step')
         wandb.define_metric(f'f{fold+1}_best_val_accuracy', step_metric='custom_step')
         wandb.define_metric(f'f{fold+1}_epoch', step_metric='custom_step')
+        wandb.define_metric(f'f{fold+1}_inference_time', step_metric='custom_step')
 
 def get_args():
     """Get the arguments for the training script.
@@ -334,10 +335,10 @@ def get_args():
     parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--no_wandb', action='store_true', help='Do not use Weights and Biases for logging')
-    parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnextv2', 'vit', 'eva02'])
+    parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
     parser.add_argument('--image_size', type=tuple, default=(1370, 204), help='Image size for the model (only for CNN)')
     parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
-    parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class (only for CNN model currently)')
+    parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class')
     parser.add_argument('--folds', type=int, default=5, help='Number of folds for cross-validation')
     parser.add_argument('--data_subsample', type=float, default=1.0, help='Amount of the data to subsample for training (1.0 = 100%, 0.5 = 50%)')
     return parser.parse_args()
@@ -415,6 +416,8 @@ if __name__ == '__main__':
                 model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
             case 'eva02':
                 model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+            case 'caformer':
+                model = timm.create_model('caformer_m36,.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
         
         if args.cont and args.model != 'cnn':
             feature_shape = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1])).shape
