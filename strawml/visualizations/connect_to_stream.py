@@ -15,5 +15,6 @@ detector = Detector(
     decode_sharpening=config["decode_sharpening"],
     debug=config["debug"]
 )
-RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', rtsp=True, 
-           make_cutout=False, od_model_name="runs/obb/yolo11s-obb-adamw-50e/weights/best.pt", object_detect=True, yolo_threshold=0.2, with_vit=True)()
+RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', rtsp=True, make_cutout=True, 
+           object_detect=True, od_model_name="runs/obb/yolo11s-obb-adamw-50e/weights/best.pt", yolo_threshold=0.2, 
+           with_vit=True)()

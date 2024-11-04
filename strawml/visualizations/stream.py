@@ -1,3 +1,4 @@
+from __init__ import *
 from calendar import c
 import cv2
 import numpy as np
@@ -12,21 +13,62 @@ from torchvision import transforms
 import h5py
 from strawml.models.straw_classifier import chute_cropper as cc
 from strawml.models.chute_finder.yolo import ObjectDetect
-
+from sklearn.linear_model import LinearRegression
 
 class TagGraphWithPositionsCV:
     def __init__(self, connections, detected_tags):
         """
-        connections: List of tuples defining the connected tag ids (e.g., (11, 12), (12, 13))
-        detected_tags: List of tuples (center_x, center_y, tag_id) for detected tags
-        image: The image to overlay on
-        corner_tags: List of tag ids that are corner points
+        Class to represent a graph of connected tags with inferred positions for missing tags.
+
+        Params:
+        -------
+        connections: 
+            List of tuples defining the connected tag ids (e.g., (11, 12), (12, 13))
+        detected_tags: 
+            List of tuples (center_x, center_y, tag_id) for detected tags
+        image: 
+            The image to overlay on
+        corner_tags: 
+            List of tag ids that are corner points
         """
         self.connections = connections
         self.detected_tags = {tag_id: (int(x), int(y)) for (x, y, tag_id) in detected_tags}  # Detected tag positions
         self.inferred_tags = {}  # Store inferred tag positions
         self.corner_tags = set([11, 15, 26, 22])  # Store corner tags
     
+    def intersection_point(self, x1, y1, x2, y2, x3, y3):
+        # Calculate the slope of the original line passing through (x1, y1) and (x2, y2)
+        if x2 == x1:  # Original line is vertical
+            slope_original = None
+            intercept_original = None
+        else:
+            slope_original = (y2 - y1) / (x2 - x1)
+            intercept_original = y1 - slope_original * x1  # y-intercept of the original line
+        
+        # Determine the slope and intercept of the orthogonal line through (x3, y3)
+        if slope_original is None:  # Original line is vertical, orthogonal line is horizontal
+            # The intersection point is at x = x1, y = y3
+            intersection_x = x1
+            intersection_y = y3
+        elif slope_original == 0:  # Original line is horizontal, orthogonal line is vertical
+            # The intersection point is at y = y1, x = x3
+            intersection_x = x3
+            intersection_y = y1
+        else:
+            # Slope of the orthogonal line
+            slope_orthogonal = -1 / slope_original
+            intercept_orthogonal = y3 - slope_orthogonal * x3  # y-intercept of the orthogonal line
+            
+            # Solve for x by setting the two line equations equal
+            # m * x + b = m' * x + b'
+            intersection_x = (intercept_orthogonal - intercept_original) / (slope_original - slope_orthogonal)
+            
+            # Substitute x back into one of the line equations to find y
+            intersection_y = slope_original * intersection_x + intercept_original
+        
+        return (intersection_x, intersection_y)
+
+
     def interpolate_position(self, tag_id, neighbor_ids, is_corner):
         """
         Interpolate the position of a missing tag based on its connected neighbors.
@@ -46,26 +88,51 @@ class TagGraphWithPositionsCV:
         if is_corner:
             if tag_id == 11:
                 try:
-                    x_value = self.detected_tags[12][0]
-                    y_value = self.detected_tags[15][1]
+                    # draw a line between tag 12+13 and find the intersection with a line drawn from 15 such that it is perpendicular to the line between 12+13
+                    x_value, y_value = self.intersection_point(self.detected_tags[12][0], 
+                                                               self.detected_tags[12][1], 
+                                                               self.detected_tags[13][0], 
+                                                               self.detected_tags[13][1], 
+                                                               self.detected_tags[15][0], 
+                                                               self.detected_tags[15][1])
+                    # x_value = self.detected_tags[12][0]
+                    # y_value = self.detected_tags[15][1]
                 except KeyError:
                     return None
             if tag_id == 15:
                 try:
-                    x_value = self.detected_tags[16][0]
-                    y_value = self.detected_tags[11][1]
+                    x_value, y_value = self.intersection_point(self.detected_tags[16][0], 
+                                                               self.detected_tags[16][1], 
+                                                               self.detected_tags[17][0], 
+                                                               self.detected_tags[17][1], 
+                                                               self.detected_tags[11][0], 
+                                                               self.detected_tags[11][1])
+                    # x_value = self.detected_tags[16][0]
+                    # y_value = self.detected_tags[11][1]
                 except KeyError:
                     return None
             if tag_id == 22:
                 try:
-                    x_value = self.detected_tags[26][0]
-                    y_value = self.detected_tags[23][1]
+                    x_value, y_value = self.intersection_point(self.detected_tags[20][0], 
+                                                               self.detected_tags[20][1], 
+                                                               self.detected_tags[21][0], 
+                                                               self.detected_tags[21][1], 
+                                                               self.detected_tags[26][0], 
+                                                               self.detected_tags[26][1])
+                    # x_value = self.detected_tags[26][0]
+                    # y_value = self.detected_tags[23][1]
                 except KeyError:
                     return None
             if tag_id == 26:
                 try:
-                    x_value = self.detected_tags[25][0]
-                    y_value = self.detected_tags[22][1]
+                    x_value, y_value = self.intersection_point(self.detected_tags[24][0], 
+                                                               self.detected_tags[24][1], 
+                                                               self.detected_tags[25][0], 
+                                                               self.detected_tags[25][1], 
+                                                               self.detected_tags[22][0], 
+                                                               self.detected_tags[22][1])
+                    # x_value = self.detected_tags[25][0]
+                    # y_value = self.detected_tags[22][1]
                 except KeyError:
                     return None
             return (int(x_value), int(y_value))
@@ -102,44 +169,36 @@ class TagGraphWithPositionsCV:
         from PIL import Image, ImageDraw
         import numpy as np
         import cv2
+        
+        # see if tag 11, 15, 22, 26 are detected
+        if 11 not in self.detected_tags or 15 not in self.detected_tags or 22 not in self.detected_tags or 26 not in self.detected_tags:
+            return None
+        
+        # now we use the coordinates of the detected tags to crop the image
+        x1, y1 = self.detected_tags[11][0], self.detected_tags[11][1]
+        x2, y2 = self.detected_tags[15][0], self.detected_tags[15][1]
+        x3, y3 = self.detected_tags[22][0], self.detected_tags[22][1]
+        x4, y4 = self.detected_tags[26][0], self.detected_tags[26][1]
 
-        # Convert the image to RGBA format
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGBA)
-        
-        # Create a mask with the same size as the image
-        maskIm = Image.new('L', (image.shape[1], image.shape[0]), 0)
-        
-        # Create a list to store the ordered coordinates
-        ordered_coords = []
-        
-        # Iterate through the connections and add the coordinates to the list
-        for tag1, tag2 in self.connections:
-            if tag1 in self.detected_tags and self.detected_tags[tag1] not in ordered_coords:
-                ordered_coords.append(self.detected_tags[tag1])
-            if tag2 in self.detected_tags and self.detected_tags[tag2] not in ordered_coords:
-                ordered_coords.append(self.detected_tags[tag2])
-        
-        # Draw the polygon on the mask
-        ImageDraw.Draw(maskIm).polygon(ordered_coords, outline=1, fill=1)
-        
-        # Convert the mask to a numpy array
-        mask = np.array(maskIm)
-        
-        # Apply the mask to the image
-        newImArray = np.empty(image.shape, dtype='uint8')
-        newImArray[:, :, :3] = image[:, :, :3]
-        newImArray[:, :, 3] = mask * 255
-        
-        # Convert the numpy array back to an image
-        # NOTE When perfoming inference with CNN model, we should use this newIm as it makes a cutout that is non-square and more accurate.
-        # The code under is just for visualisation as jpg, but that is not needed when running inference.
-        newIm = Image.fromarray(newImArray, "RGBA")
-        # cv2.imwrite("fiducial_marker/cutout.jpg", cv2.cvtColor(np.array(newIm), cv2.COLOR_RGBA2BGRA))
-        # get bbox
-        bbox = newIm.getbbox()
-        newIm = newIm.crop(bbox)
-        # Return the cropped image as a numpy array
-        return np.array(newIm)
+        pts_src = np.array([[x1, y1], [x2, y2], [x3, y3], [x4, y4]], dtype='float32')
+
+        # Ensure the output is a rectangular
+        width = max(abs(x2 - x1), abs(x4 - x3))  # Largest horizontal difference
+        height = max(abs(y3 - y1), abs(y4 - y2)) # Largest vertical difference
+
+        # Define the destination points for the square output
+        pts_dst = np.array([[0, 0], 
+                            [width - 1, 0], 
+                            [0, height - 1], 
+                            [width - 1, height - 1]]
+                            , dtype='float32')
+        # Compute the perspective transformation matrix
+        M = cv2.getPerspectiveTransform(pts_src, pts_dst)
+
+        # Apply the perspective warp to create a square cutout
+        cutout = cv2.warpPerspective(image, M, (width, height))
+
+        return np.array(cutout)
     
     def draw_overlay(self, image):
         """
@@ -193,6 +252,8 @@ class AprilDetector:
         self.tag_connections = [(11, 12), (12, 13), (13, 14), (14, 19), (19, 20), (20, 21), 
                                 (21, 22), (22, 26), (26, 25), (25, 24), (24, 23), (23, 18), 
                                 (18, 17), (17, 16), (16, 15), (15, 11)]
+        self.processed_tags = set()  # Track tags that have already been re-centered
+        self.detected_tags = []  # Store all detected tags during each frame
         self.with_vit = with_vit
         if with_vit:
             self.mean, self.std = self.load_normalisation_constants()
@@ -201,7 +262,6 @@ class AprilDetector:
             self.model.to(self.device)
             self.transform = transforms.Normalize(mean=self.mean, std=self.std)
             self.resize = transforms.Resize((384, 384))
-
 
     def load_normalisation_constants(self):
         # Loads the normalisation constants from 
@@ -292,47 +352,160 @@ class AprilDetector:
         np.ndarray
             The undistorted frame
         """
+        if blur:
+            image = cv2.GaussianBlur(frame, (7, 7), 0.7) 
+            return image.astype(np.uint8)
         K, D = self.camera_params["cameraMatrix"], self.camera_params["distCoeffs"]
         h,  w = frame.shape[:2]
         new_K = K.copy()
         new_K[0,0] *= balance  # Scale fx
-        new_K[1,1] *= balance  # Scale fy
-            
+        new_K[1,1] *= balance  # Scale fy 
         undistorted_image = cv2.fisheye.undistortImage(frame, K, D, Knew=new_K,new_size=(w,h))
+        return undistorted_image  
+       
+    # def detect_(self, frame: np.ndarray) -> np.ndarray[Any] | list:
+    #     """
+    #     Wrapper method to detect AprilTags in a frame using the pupil_apriltags library. While detecting it checks if the
+    #     detected tags are already present in the tags array. If not, it appends the new tags to the tags array. Also, for 
+    #     each time the function is called it checks if the camera has moved and the chute tags have changed position. If so,
+    #     it resets the tags and tag_ids arrays.
 
-        if blur:
-            image = cv2.GaussianBlur(frame, (7, 7), 0.7) 
-            return image.astype(np.uint8)
-        return undistorted_image 
+    #     Params:
+    #     -------
+    #     frame: np.ndarray
+    #         The frame in which the AprilTags are to be detected
         
-    def detect(self, frame: np.ndarray) -> np.ndarray[Any] | list:
-        """
-        Wrapper method to detect AprilTags in a frame using the pupil_apriltags library. While detecting it checks if the
-        detected tags are already present in the tags array. If not, it appends the new tags to the tags array. Also, for 
-        each time the function is called it checks if the camera has moved and the chute tags have changed position. If so,
-        it resets the tags and tag_ids arrays.
+    #     Returns:
+    #     --------
+    #     List
+    #         A list of detected AprilTags in the frame
+    #     """     
+    #     tags = self.detector.detect(frame, estimate_tag_pose=True, camera_params=[self.fx, self.fy, self.cx, self.cy], tag_size=0.05) # 5cm
+    #     for tag in tags:
+    #         if tag.tag_id not in self.tag_ids:            
+    #             self.tags = np.append(self.tags, tag)
+    #             self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
+    #     self.check_for_changes(tags)
+    #     return self.tags
 
-        Params:
-        -------
+    def detect(self, frame: np.ndarray) -> list:
+        """
+        Detects AprilTags in a frame, and performs further detection centered on each tag found.
+        Ensures that each tag is only re-centered once and avoids duplicates.
+        
+        Parameters:
+        -----------
         frame: np.ndarray
-            The frame in which the AprilTags are to be detected
+            The frame in which the AprilTags are to be detected.
         
         Returns:
         --------
-        List
-            A list of detected AprilTags in the frame
-        """     
-        # Detect tags on the frame
-        # frame = self.fix_frame(frame)
+        list
+            A list of detected AprilTags in the frame, with all detections adjusted
+            to their original positions within the frame, without duplicates.
+        """
+        # Initial detection on the full frame
+        tags = self.detector.detect(frame) #, estimate_tag_pose=True, 
+                                    #camera_params=[self.fx, self.fy, self.cx, self.cy], 
+                                    #tag_size=0.05)  # Assuming 5cm tag size
 
-        tags = self.detector.detect(frame, tag_size=0.05) #, estimate_tag_pose=True, camera_params=[self.fx, self.fy, self.cx, self.cy], tag_size=0.05) # 5cm
+        detected_tags = []  # This will hold tags with original coordinates
+        unique_tag_ids = set()  # Set to track unique tags in detected_tags
         for tag in tags:
-            if tag.tag_id not in self.tag_ids:            
+            if tag.tag_id not in self.tag_ids:  
+                # Append to the tags and tag_ids arrays if not already present
                 self.tags = np.append(self.tags, tag)
                 self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
-        self.check_for_changes(tags)
-        return self.tags
-    
+            
+            # Check if this tag has already been used as a re-centered detection
+            if tag.tag_id in self.processed_tags:
+                continue  # Skip if we've already re-centered on this tag
+            
+            # Mark the tag as processed to prevent re-centering on it again
+            self.processed_tags.add(tag.tag_id)
+            
+            # Record the original center of the tag
+            original_center_x, original_center_y = int(tag.center[0]), int(tag.center[1])
+            
+            # Define region around the tag (centered ±100 pixels)
+            px_pm = 150  # Pixels per margin
+            x_start = max(original_center_x - px_pm, 0)
+            x_end = min(original_center_x + px_pm, frame.shape[1])
+            y_start = max(original_center_y - px_pm, 0)
+            y_end = min(original_center_y + px_pm, frame.shape[0])
+            
+            # Crop frame to this region
+            cropped_frame = frame[y_start:y_end, x_start:x_end]
+
+            # Perform a second detection within the cropped frame
+            refined_tags = self.detector.detect(cropped_frame) #, estimate_tag_pose=True,
+                                                # camera_params=[self.fx, self.fy, self.cx, self.cy],
+                                                # tag_size=0.05)                
+            # Adjust each detected tag in the cropped region to original frame coordinates
+            for refined_tag in refined_tags:
+                # Adjust center coordinates to match original frame
+                refined_tag_center_x = refined_tag.center[0] + x_start
+                refined_tag_center_y = refined_tag.center[1] + y_start
+                refined_tag.center = (refined_tag_center_x, refined_tag_center_y)
+                refined_tag.corners[:,0] += x_start
+                refined_tag.corners[:,1] += y_start
+
+                if refined_tag.tag_id not in self.tag_ids:  
+                    # Append to the tags and tag_ids arrays if not already present
+                    self.tags = np.append(self.tags, refined_tag)
+                    self.tag_ids = np.append(self.tag_ids, int(refined_tag.tag_id))
+                
+                # Only add unique tags to detected_tags
+                if refined_tag.tag_id not in unique_tag_ids:
+                    unique_tag_ids.add(refined_tag.tag_id)
+                    detected_tags.append(refined_tag)
+        self.check_for_changes(detected_tags)
+        self.processed_tags.clear()  # Clear the set of processed tags
+
+    def detect_recursive(self, frame: np.ndarray, 
+               cutout_coord: np.ndarray,
+               depth: int = 0, 
+               max_depth: int = 3, 
+               x_offset: int = 0, 
+               y_offset: int = 0, 
+               px_pm: int = 150,
+               ) -> list:
+        
+        new_frame = frame.copy()
+        cutout_coord = cutout_coord.astype(np.int32)
+        new_frame = new_frame[cutout_coord[1]:cutout_coord[3], cutout_coord[0]:cutout_coord[2]]
+        tags = self.detector.detect(new_frame)
+
+        if depth < max_depth:
+            for tag in tags:
+                # correct the tag coordiantes with the offset
+                tag.center = (tag.center[0] + x_offset, tag.center[1] + y_offset)
+                tag.corners[:,0] += x_offset
+                tag.corners[:,1] += y_offset
+
+                # now we need to add the tag to the tags and tag_ids arrays if it is not already present
+                if tag.tag_id not in self.tag_ids:
+                    self.tags = np.append(self.tags, tag)
+                    self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
+                
+                # check if the tag has already been processed
+                if tag.tag_id in self.processed_tags:
+                    continue
+                self.processed_tags.add(tag.tag_id)
+                self.detected_tags.append(tag)
+
+                # create cutout with px_pm around the tag center
+                x_start = max(tag.center[0] - px_pm, 0)
+                x_end = min(tag.center[0] + px_pm, frame.shape[1])
+                y_start = max(tag.center[1] - px_pm, 0)
+                y_end = min(tag.center[1] + px_pm, frame.shape[0])
+                # now redefine the offset values to account for the new cutout
+                new_x_offset = x_start
+                new_y_offset = y_start
+                # call the detect function recursively
+                self.detect(self.fix_frame(frame, blur=True), np.array([x_start, y_start, x_end, y_end]), depth=depth+1, max_depth=max_depth, x_offset=new_x_offset, y_offset=new_y_offset, px_pm=px_pm)
+
+
     def check_for_changes(self, tags: list) -> None:
         """
         Check if the camera has moved and the chute tags have changed position. If so, reset the tags and tag_ids arrays.
@@ -361,67 +534,13 @@ class AprilDetector:
             t1 = tags[mask[0]]
             t2 = self.tags[i]
             # calculate absolute distance between the two tags
-            accumulated_error += np.linalg.norm(t1.center - t2.center)
+            accumulated_error += np.linalg.norm(np.array(t1.center) - np.array(t2.center))
 
         # If the camera moves and the chute tags change position, reset the tags
         if accumulated_error/len(self.tag_ids) > 0.1:
             self.tags = []
             self.tag_ids = []
 
-    def inverse_linear_interpolation(self, x_values: list, y_values: list, y: float) -> int | None:
-        """
-        Perform inverse linear interpolation to find the interpolated x position for a given y value.
-        
-        Params:
-        -------
-        x_values: List
-            List of known x positions (must be sorted in ascending order)
-        y_values: List
-            List of corresponding y values at each x position
-        y: float
-            The y value where the inverse interpolation is to be performed
-
-        Returns:
-        --------
-        int | None
-            Interpolated x position for the value y
-        """
-        # Ensure that x_values and y_values have the same length
-        if len(x_values) != len(y_values):
-            raise ValueError("x_values and y_values must have the same length")
-
-        # Check if y is outside the known range
-        if y < min(y_values) or y > max(y_values):
-            raise ValueError("y is outside the interpolation range")
-        
-        # Locate the interval [y_i, y_{i+1}] such that y_i <= y <= y_{i+1}
-        for i in range(len(y_values) - 1):
-            if y_values[i] <= y <= y_values[i + 1]:
-                # Perform inverse linear interpolation
-                y_i, y_i1 = y_values[i], y_values[i + 1]
-                x_i, x_i1 = x_values[i], x_values[i + 1]
-                x = (y_i1 - y) / (y_i1 - y_i) * x_i + (y - y_i) / (y_i1 - y_i) * x_i1
-                return int(x)
-
-    def get_angle(self, point1: Tuple, point2: Tuple) -> float:
-        """
-        Get the angle between two points wrt the x-axis.
-
-        Params:
-        -------
-        point1: Tuple
-            The first point
-        point2: Tuple
-            The second point    
-        
-        Returns:
-        --------
-        float
-            The angle between the two points wrt the x-axis in radians
-        """
-        from math import atan2
-        return atan2(point2[1] - point1[1], point2[0] - point1[0])
-    
     def order_corners(self, corners: np.ndarray, center: np.ndarray) -> np.ndarray:
         """
         The purpose of this is to have the corners in the following order:
@@ -505,11 +624,11 @@ class AprilDetector:
         np.ndarray
             The frame with the detected AprilTags drawn on it
         """
-
+        original_image = frame.copy()
         number_tags = []
         chute_tags = []
         if len(tags) == 0:
-            return frame
+            return frame, None
         for t in tags:
             corners = self.order_corners(t.corners, t.center)
             if t.tag_id in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
@@ -529,19 +648,26 @@ class AprilDetector:
                 else:
                     chute_right += [(tag.center[0], tag.center[1], tag.tag_id)]
 
+            x = np.array(chute_left)[:, 0]
+            y = np.array(chute_left)[:, 1]
+            model = LinearRegression()
+            model.fit(x.reshape(-1, 1), y)
+            slope = model.coef_[0]
+
+            perp_slope = -1 / (slope + 1e-6) # Avoid division by zero
+            tag_angle = np.arctan(perp_slope)
+
             # The logic is as follows:
             # 1. For each number tag, find the center of the chute tag that is closest to it on the y-axis in let and right
             # 2. Draw a line going from the right site of the number tag going horizontaly to x being the x value of the right chute tag plus the difference between the x value of the number tag and the x value of the left chute tag
             for tag in number_tags:
                 corners = self.order_corners(tag.corners, tag.center)
                 # we first define the top right and bottom right corners based on the coordinates
-                top_left = corners[0]
                 top_right = corners[1]
                 bottom_right = corners[2]
                 level_center_right = (top_right + bottom_right) / 2
                 # get the angle of the tag wrt the x-axis for rotation purposes
 
-                tag_angle = -self.get_angle(top_left, top_right)
                 # print(tag.tag_id, top_left, top_right, np.rad2deg(tag_angle))
                 min_distance_right = float('inf')
                 min_distance_left = float('inf')
@@ -568,24 +694,27 @@ class AprilDetector:
                     line_begin, line_end = self.rotate_line(line_begin, line_end, -tag_angle)
                     cv2.line(frame, tuple(line_begin), tuple(line_end), (0, 255, 0), 2)
                     cv2.putText(frame, f"{int(tag.tag_id) * 10}%", (int(closest_right_chute[0] + (closest_left_chute[0] - level_center_right[0]))+35, int(level_center_right[1]-5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+
             if make_cutout:
                 # combine the left and right chutes
                 chutes = chute_left + chute_right
                 tag_graph = TagGraphWithPositionsCV(self.tag_connections, chutes)
                 tag_graph.account_for_missing_tags()
                 frame = tag_graph.draw_overlay(frame)
-                
+                cutout = tag_graph.crop_to_size(original_image)
+                return frame, cutout
         except Exception as e:
             print("ERROR", e)
-            
+        return frame, None
 
-        return frame
-
-    def prepare_for_inference(self, frame, results):
-        # rotate and crop the frame to the chute bbox
-        bbox_chute = results[1].flatten().cpu().detach().numpy() # x1, y1, x2, y2, x3, y3, x4, y4
-        # bbox = [bbox_chute[6], bbox_chute[7], bbox_chute[0], bbox_chute[1], bbox_chute[2], bbox_chute[3], bbox_chute[4], bbox_chute[5]]
-        frame_data, bbox_chute = cc.rotate_and_crop_to_bbox(frame, bbox_chute)
+    def prepare_for_inference(self, frame, results=None):
+        if results is not None:
+            # rotate and crop the frame to the chute bbox
+            bbox_chute = results[1].flatten().cpu().detach().numpy() # x1, y1, x2, y2, x3, y3, x4, y4
+            # bbox = [bbox_chute[6], bbox_chute[7], bbox_chute[0], bbox_chute[1], bbox_chute[2], bbox_chute[3], bbox_chute[4], bbox_chute[5]]
+            frame_data, bbox_chute = cc.rotate_and_crop_to_bbox(frame, bbox_chute)
+        else:
+            frame_data = frame
         # get edge features
         edges = cv2.Canny(frame_data, 100, 200)
         edges = edges.reshape(1, edges.shape[0], edges.shape[1])
@@ -640,7 +769,35 @@ class RTSPStream(AprilDetector):
         cap.set(cv2.CAP_PROP_FPS, 25)
         cap.open(f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101")
         return cap
-       
+    
+    @staticmethod
+    def time_function(func, *args, **kwargs):
+        """
+        Wrapper function to time the execution of any function.
+        
+        Parameters:
+        -----------
+        func : function
+            The function to be timed.
+        *args : tuple
+            The positional arguments to pass to the function.
+        **kwargs : dict
+            The keyword arguments to pass to the function.
+        
+        Returns:
+        --------
+        result : any
+            The result of the function call.
+        elapsed_time : float
+            The time taken to execute the function in seconds.
+        """
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        return result, elapsed_time
+
+
     def receive_frame(self, cap: cv2.VideoCapture) -> None:
         """
         Read frames from the video stream and store them in a queue.
@@ -675,43 +832,103 @@ class RTSPStream(AprilDetector):
         None
             Nothing is returned, only the frames are displayed with the detected AprilTags
         """
+        # Define text properties
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        color = (255, 0, 0)  # Blue color for text
+        box_color = (255, 255, 255)  # White color for box
+
         frame_count = 0
         start_time = time.time()
         while True:
             if not self.q.empty():
                 # Get the frame from the queue
                 frame = self.q.get()
+                
                 # Clear the queue to account for any lag and prevent the queue from getting too large
                 self.q.queue.clear()
-                # Fix the frame by undistorting it
-                frame = self.fix_frame(frame)
+                
+                # # Fix the frame by undistorting it
+                # frame = self.fix_frame(frame) # NOTE this cant be used since undistort crops the top and bottom of the chute too much
+                
                 # Detect the AprilTags in the frame every 5 frames
                 if frame_count % 5 == 0:
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    tags = self.detect(self.fix_frame(gray, blur=True))
-                # Perform object detection and level prediction on the frame if with_vit is True 
-                if self.with_vit and self.object_detect:
-                    results = self.OD.score_frame(frame)  # This takes a lot of time if ran on CPU
-                    cutout_image = self.prepare_for_inference(frame, results).to(self.device)
-                    output = self.model(cutout_image)
+                    _, detect_time = self.time_function(self.detect, self.fix_frame(gray, blur=True))
+                texts = [f'AprilTags Time: {detect_time:.2f} s']
+                font_scales = [0.5]
+                font_thicknesss = [1]
+                positions = [(10, 125)]
+
+                # Perform object detection and level prediction on the frame if with_vit is True
+                # Draw the detected AprilTags on the frame
+                frame_drawn, cutout = self.draw(frame, self.tags, self.make_cutout)
+                results = None
+                if self.with_vit and (cutout is not None):
+                    if self.object_detect:
+                        results, OD_time = self.time_function(self.OD.score_frame, frame) # This takes a lot of time if ran on CPU
+                        texts += [f'OD Time: {OD_time:.2f} s']
+                        font_scales += [0.5]
+                        font_thicknesss += [1]
+                        positions += [(10, 150)]
+                    else:
+                        frame = cutout
+                        # # show the cutout in a new window
+                        # cv2.imshow('Cutout', cv2.resize(cutout, (0, 0), fx=0.6, fy=0.6))
+                        # cv2.waitKey(1)
+                    cutout_image, prep_time = self.time_function(self.prepare_for_inference, frame, results)
+                    output, inference_time = self.time_function(self.model, cutout_image.to(self.device)) 
                     # detach the output from the device and get the predicted value
                     output = output.detach().cpu()
                     _, predicted = torch.max(output, 1)
-                    # write the predicted value in the image
-                    cv2.putText(frame, f'Straw Level: {predicted[0]*10:.2f} %', (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
-                    frame = self.plot_boxes(results, frame)
-                # Draw the detected AprilTags on the frame
-                frame = self.draw(frame, tags, self.make_cutout)
+                    if self.object_detect:
+                        frame_drawn = self.plot_boxes(results, frame_drawn)
+                    texts += [f'Straw Level: {predicted[0]*10:.2f} %',
+                              f'Image Prep. Time: {prep_time:.2f} s', 
+                              f'Inference Time: {inference_time:.2f} s']
+                    font_scales += [0.5, 0.5, 0.5]
+                    font_thicknesss += [1, 1, 1]
+                    positions += [(10, 100), (10, 175), (10, 200)]
                 # Resize the frame for display
-                frame = cv2.resize(frame, (0, 0), fx=0.6, fy=0.6)
+                frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6)
+                
                 # Increment frame count
                 frame_count += 1
                 # Calculate FPS
                 elapsed_time = time.time() - start_time
                 fps = frame_count / elapsed_time
-                # Display FPS on the frame
-                cv2.putText(frame, f'FPS: {fps:.2f}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
-                cv2.imshow('Video', frame)
+                # Display the FPS on the frame
+                texts += [f'FPS: {fps:.2f}']
+                font_scales += [1]
+                font_thicknesss += [2]
+                positions += [(10, 50)]
+
+                # Draw the text on the frame
+                for i, (pos, text) in enumerate(zip(positions, texts)):
+                    # Get the text size
+                    font_scale = font_scales[i]
+                    font_thickness = font_thicknesss[i]
+                    (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, font_thickness)
+                    
+                    # Calculate the box coordinates
+                    box_coords = ((pos[0], pos[1] - text_height - baseline), (pos[0] + text_width, pos[1] + baseline))
+                    
+                    # Draw the white box
+                    cv2.rectangle(frame_drawn, box_coords[0], box_coords[1], box_color, cv2.FILLED)
+                    
+                    # Draw the text over the box
+                    cv2.putText(frame_drawn, text, pos, font, font_scale, color, font_thickness, cv2.LINE_AA)
+                
+                # Display the frame
+                cv2.imshow('Video', frame_drawn)
+
+                # flush everything from memory to prevent memory leak
+                frame = None
+                gray = None
+                results = None
+                cutout_image = None
+                output = None
+                torch.cuda.empty_cache()
+
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
         cap.release()
@@ -746,9 +963,30 @@ class RTSPStream(AprilDetector):
             # resize frame half the size
             frame = cv2.resize(frame, (0, 0), fx=0.3, fy=0.3)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            tags = self.detect(gray)
+            # get the four corner corrdinates of the frame
+            cutout_coord = np.array([0, 0, frame.shape[1], frame.shape[0]])
+            tags = self.detect(gray, cutout_coord)
             if self.window:
                 frame = self.draw(frame, tags)
                 cv2.imshow('frame', frame)
                 cv2.waitKey(0)
             return tags
+
+
+if __name__ == "__main__":
+    from pupil_apriltags import Detector
+    import json
+    with open("fiducial_marker/april_config.json", "r") as file:
+        config = json.load(file)
+    detector = Detector(
+        families=config["dict_type"],
+        nthreads=config["nthreads"],
+        quad_decimate=config["quad_decimate"],
+        quad_sigma=config["quad_sigma"],
+        refine_edges=config["refine_edges"],
+        decode_sharpening=config["decode_sharpening"],
+        debug=config["debug"]
+    )
+    RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', rtsp=True, make_cutout=True, 
+            object_detect=False, od_model_name="runs/obb/yolo11s-obb-adamw-50e/weights/best.pt", yolo_threshold=0.2, 
+            with_vit=True)()
