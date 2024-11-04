@@ -286,7 +286,7 @@ if __name__ == '__main__':
         case 'cnn':
             model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw)
         case 'convnextv2':
-            model = timm.create_model('convnextv2_atto', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+            model = timm.create_model('convnext_small.in12k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
         case 'vit':
             model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
         case 'eva02':

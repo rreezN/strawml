@@ -1,23 +1,121 @@
 # TODO
-## Model Experiments
-- [ ] Various pre-trained architectures (from TIMM & papers with code)
-  - [ ] Vision transformer
-  - [ ] CNN (ConvNeXt)
-  - [ ] https://huggingface.co/spaces/timm/leaderboard
-- [ ] Hyperparameter optimisation
-- [ ] Data augmentation experiments
-- [ ] Class amount experiments (5%, 10%)
-- [ ] Regression vs Classification
-- [ ] Include heatmap
-  - [ ] Heatmap only
+
+## Model Experiments (in order)
+### Architecture experiments
+These experiments should be done as barebones as possible. No additional fancy features. No data augmentation. No edges, heatmaps. No LR schedulers, bare minimum LR tuning, ADAM optimizer. The goal is to figure out which overall architecture will best satisfy our needs within both accuracy and inference time.
+
+Also figure out what is the model param size we are aiming for?
+#### No pre-training 
+MODEL - top1 acc - img_size - param_count
+- [ ] CNN (own) - ?? - ANY - ??
+- [ ] ConvNeXt - 86.2% - 384 - 50.22
+- [ ] Eva02 - 88.7% - 448 - 87.12
+- [ ] CAFormer - 87.5% - 384 - 56.20
+- [ ] ViT - 86.6% - 384 - 60.60
+#### Pre-trained
+- [ ] ConvNeXt
+- [ ] Eva02
+- [ ] CAFormer
+- [ ] ViT
+
+### Minor Architecture Experiments
+The goal of these experiments is to test adjustments in architecture after selecting the overall architecture.
+
+#### Sigmoid vs Clamp
+- [ ] Sigmoid
+- [ ] Clamp
+  
+#### TIMM regressor architecture (feature_regressor)
+- [ ] Number of layers
+- [ ] Number of neurons
+- [ ] BatchNorm, etc..
+
+#### Regressor vs Classifier
+- [ ] Regressor
+- [ ] Classifier
+- [ ] Classifier w. weighted CE
+
+#### Class amount
+- [ ] 5%
+- [ ] 10%
+
+### Training Experiments
+These experiments will alter the training by introducing different optimisers, learning rate schedulers and so on.
+
+#### Optimisers
+- [ ] Research SOTA optimisers
+- [ ] Adam
+- [ ] AdamW
+- [ ] SGD
+- [ ] ....
+
+#### Learning Rate Schedulers
+- [ ] Research SOTA LR schedulers
+- [ ] Step Decay
+- [ ] Exponential Decay
+- [ ] Cosine Annealing
+- [ ] Cyclic
+- [ ] MultiStep
+- [ ] Plateau
+- [ ] Linear
+- [ ] OneCycle
+- [ ] CosineAnnealingWarmRestarts
+
+### Regularisation Experiments
+After having selected a model and training procedure, we will try to experiment with data augmentation and manual features. Each step will have to be tested isolated from each other, to see its impact on the model.
+
+#### Model Changes
+- [ ] Dropout
+- [ ] AveragePool instead of FCN at the end (feature_regressor)
+- [ ] Image size
+- [ ] Smaller batch size sometimes increases regularisation
+- [ ] Try a larger model (sometimes can be good even for validation)
+
+#### Dataset Size
+- [ ] 25% of training data
+- [ ] 50% of training data
+- [ ] 75% of training data
+- [ ] 100% of training data
+
+#### Manual Features
+- [ ] RGB (standard images)
+- [ ] Greyscale only
 - [ ] Include edges
-  - [ ] Edges only
-- [ ] Greyscale (1 input layer)
-- [ ] Data amount experiments (only include 10% of training data, 25%, 50% etc.)
+- [ ] Include heatmaps
+- [ ] Only edges
+- [ ] Only heatmaps
+
+#### Data Augmentation
+- [ ] RGBShift
+- [ ] HueSaturationValue
+- [ ] ChannelShuffle
+- [ ] CLAHE
+- [ ] RandomContrast
+- [ ] RandomGamma
+- [ ] RandomBrightness
+- [ ] Blur
+- [ ] MedianBlur
+- [ ] JpegCompression
+- [ ] Noise ? - careful can cause some features to go kaboom
+
+
+### Hyperparameter Tuning
+Finally, once the desired augmentations and features have been selected, we will tune the hyperparameters of the model using Bayesian Optimisation, in order to achieve as good results as possible.
+
+#### Parameters and their ranges:
+- Learning Rate: 0.01 - 0.0000001
+- ...
+- ....
+
+### Squeezing out the juice (if time)
+- [ ] Ensembles - usually 2% gain
+  - [ ] Would probably need to look into some sort of distilling to hit inference time targets https://arxiv.org/abs/1503.02531
+- [ ] Leave it training (for very very long - multiple days)
+
 
 ## Model implementations
 - [X] Feature extraction from pretrained to use in continuous version
-- [ ] Setup predict_model to work with pretrained regressions
+- [X] Setup predict_model to work with pretrained regressions
 - [X] Cross-validation
 - [ ] More features ?
 
