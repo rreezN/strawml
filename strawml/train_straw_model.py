@@ -65,6 +65,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             if feature_regressor is not None:
                 output = feature_regressor(output)
                 output = output.squeeze()
+            if args.cont:
+                output = torch.clamp(output, 0, 1)
             
             
             loss = loss_fn(output, fullness)
@@ -127,6 +129,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if feature_regressor is not None:
                     output = feature_regressor(output)
                     output = output.squeeze()
+                if args.cont:
+                    output = torch.clamp(output, 0, 1)
                 
                 val_loss = loss_fn(output, fullness)
                 val_lossses.append(val_loss.item())
