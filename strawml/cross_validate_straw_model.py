@@ -45,7 +45,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
     epoch_train_accuracies = []
     epoch_val_accuracies = []
     
-    plot_examples_every = 25 # Plot an example every 25% of the length of the training data
+    plot_examples_every = 50 # Plot an example every X% of the length of the training data
     
     for epoch in range(args.epochs):
         train_iterator = tqdm(train_loader, unit="batch", position=0, leave=False)
@@ -105,8 +105,10 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
 
             if not args.no_wandb:
                 # Save an example every 10% of the length of the training data
-                training_info = {'data_type': 'train', 'current_iteration': current_iteration, 'epoch': epoch+1}
-                if current_iteration % int(len(train_loader)/plot_examples_every) == 0:
+                training_info = {'data_type': 'train', 'current_iteration': current_iteration, 'epoch': epoch+1, 'fold': fold+1}
+                divisor = int(len(train_loader)/plot_examples_every)
+                divisor = 1 if divisor == 0 else divisor
+                if current_iteration % divisor == 0:
                     if args.cont:
                         plot_example(training_info, frame_data, output, fullness)
                     else:
@@ -149,6 +151,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             val_losses = []
             val_accuracies = []
             current_iteration = 0
+            batch_times = []
             for (frame_data, target) in val_iterator:
                 current_iteration += 1
                 # TRY: using only the edge image
@@ -174,6 +177,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 # if args.cont:
                 #     output = torch.clamp(output, 0, 1)
                 
+                batch_time = timeit.default_timer() - start_time
+                batch_time = batch_time/frame_data.shape[0]
+                batch_times.append(batch_time)
                 
                 val_loss = loss_fn(output, fullness)
                 val_losses.append(val_loss.item())
@@ -189,22 +195,22 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
 
                 if not args.no_wandb:
                     # Save an example every 10% of the length of the training data
-                    val_info = {'data_type': 'val', 'current_iteration': current_iteration, 'epoch': epoch+1}
-                    if current_iteration % int(len(val_loader)/plot_examples_every) == 0:
+                    val_info = {'data_type': 'val', 'current_iteration': current_iteration, 'epoch': epoch+1, 'fold': fold+1}
+                    divisor = int(len(train_loader)/plot_examples_every)
+                    divisor = 1 if divisor == 0 else divisor
+                    if current_iteration % divisor == 0:
                         if args.cont:
                             plot_example(val_info, frame_data, output, fullness)
                         else:
                             plot_example(val_info, frame_data, predicted, target_fullness)
                 
                 
-            end_time = timeit.default_timer()
-            elapsed_time = end_time - start_time
-            average_time = elapsed_time / len(val_loader)
+            average_time = np.mean(batch_times)
             LOG_DICT[f'f{fold+1}_inference_time'] = average_time
             
             # Save the best model
             if args.cont:
-                print(f'Epoch: {epoch+1}, Average Inference Time: {average_time:.2f} seconds, Total Inference Time: {elapsed_time:.2f} seconds. (Batch Size: {args.batch_size}) Validation Loss: {np.mean(val_losses):.6f}, Last predictions -- Fullness: {torch.mean(fullness).item():.2f}, Prediction: {torch.mean(output).item():.2f}')
+                print(f'Epoch: {epoch+1}, Average Inference Time: {average_time:.2f} seconds, Total Inference Time: {np.sum(batch_times):.2f} seconds. (Batch Size: {args.batch_size}) Validation Loss: {np.mean(val_losses):.6f}, Last predictions -- Fullness: {torch.mean(fullness).item():.2f}, Prediction: {torch.mean(output).item():.2f}')
                 if np.mean(val_losses) < best_accuracy:
                     best_accuracy = np.mean(val_losses)
                     print(f'New best loss: {best_accuracy}')
@@ -233,7 +239,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             else:
                 correct = correct.detach().cpu()
                 accuracy = 100 * correct /total
-                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.2f} seconds, Total Inference Time: {elapsed_time:.2f} seconds. (Batch Size: {args.batch_size})')
+                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.2f} seconds, Total Inference Time: {sum(batch_times):.2f} seconds. (Batch Size: {args.batch_size})')
 
                 if not args.no_wandb:
                     LOG_DICT[f'f{fold+1}_val_accuracy'] = accuracy
@@ -318,6 +324,7 @@ def plot_example(info, frame_data, prediction, target):
     means = train_set.train_mean
     stds = train_set.train_std
     frame_data = frame_data * stds + means
+    frame_data = np.clip(frame_data, 0, 1)
     
     if args.cont:
         prediction = round(prediction*100)
@@ -328,12 +335,13 @@ def plot_example(info, frame_data, prediction, target):
         target = target * increment
     
     plt.imshow(frame_data)
-    plt.title(f'{info['data_type']} Epoch: {info['epoch']} it: {info['current_iteration']} Prediction: {prediction} Target: {target}')
+    plt.title(f'{info["data_type"]} Epoch: {info["epoch"]} it: {info["current_iteration"]} Prediction: {prediction} Target: {target}')
     
     # plt.show()
     
     if not args.no_wandb:
-        wandb.log({f'{info['data_type']}_example_frame': wandb.Image(plt)})
+        wandb.log({f'f{info["fold"]}_{info["data_type"]}_example_frame': wandb.Image(plt)})
+    
         
     plt.close()
 
@@ -373,6 +381,8 @@ def initialize_wandb(args: argparse.Namespace) -> None:
         LOG_DICT[f'f{fold+1}_best_val_accuracy'] = None
         LOG_DICT[f'f{fold+1}_epoch'] = None
         LOG_DICT[f'f{fold+1}_inference_time'] = None
+        # LOG_DICT[f'f{fold+1}_train_example_frame'] = None
+        # LOG_DICT[f'f{fold+1}_val_example_frame'] = None
         
         wandb.define_metric(f'f{fold+1}_train_loss', step_metric='custom_step')
         wandb.define_metric(f'f{fold+1}_val_loss', step_metric='custom_step')
@@ -382,6 +392,8 @@ def initialize_wandb(args: argparse.Namespace) -> None:
         wandb.define_metric(f'f{fold+1}_best_val_accuracy', step_metric='custom_step')
         wandb.define_metric(f'f{fold+1}_epoch', step_metric='custom_step')
         wandb.define_metric(f'f{fold+1}_inference_time', step_metric='custom_step')
+        wandb.define_metric(f'f{fold+1}_train_data_type_example_frame', step_metric='custom_step')
+        wandb.define_metric(f'f{fold+1}_val_data_type_example_frame', step_metric='custom_step')
 
 def get_args():
     """Get the arguments for the training script.
@@ -453,6 +465,8 @@ if __name__ == '__main__':
             LOG_DICT[f'f{fold}_best_val_accuracy'] = None
             LOG_DICT[f'f{fold}_epoch'] = None
             LOG_DICT[f'f{fold}_inference_time'] = None
+            # LOG_DICT[f'f{fold}_train_data_type_example_frame'] = None
+            # LOG_DICT[f'f{fold}_val_data_type_example_frame'] = None
         
         print(f'Training fold {fold+1}/{args.folds}')
         train_loader = DataLoader(train_set, batch_size=args.batch_size, sampler=SubsetRandomSampler(train_idx))

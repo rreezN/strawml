@@ -9,6 +9,7 @@ import timm
 import wandb
 import os
 import matplotlib.pyplot as plt
+import numpy as np
 
 import data.dataloader as dl
 import strawml.models.straw_classifier.cnn_classifier as cnn
@@ -34,7 +35,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
         loss_fn = torch.nn.functional.cross_entropy
         best_accuracy = 0.0
     
-    plot_examples_every = 25 # Save an example every 25% of the length of the training data
+    plot_examples_every = 50 # Save an example every X% of the length of the training data
     for epoch in range(args.epochs):
         train_iterator = tqdm(train_loader, unit="batch", position=0, leave=False)
         train_iterator.set_description(f'Training Epoch {epoch+1}/{args.epochs}')
@@ -95,7 +96,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             if not args.no_wandb:
                 # Save an example every 10% of the length of the training data
                 training_info = {'data_type': 'train', 'current_iteration': current_iteration, 'epoch': epoch+1}
-                if current_iteration % int(len(train_loader)/plot_examples_every) == 0:
+                divisor = int(len(train_loader)/plot_examples_every)
+                divisor = 1 if divisor == 0 else divisor
+                if current_iteration % divisor == 0:
                     if args.cont:
                         plot_example(training_info, frame_data, output, fullness)
                     else:
@@ -121,6 +124,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             
             val_lossses = []
             current_iteration = 0
+            batch_times = []
             for (frame_data, target) in val_iterator:
                 current_iteration += 1
                 # TRY: using only the edge image
@@ -132,6 +136,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if torch.cuda.is_available():
                     frame_data = frame_data.cuda()
                     fullness = fullness.cuda()
+                
                 
                 # Forward pass
                 if args.cont and args.model != 'cnn':
@@ -145,6 +150,10 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     output = output.squeeze()
                 # if args.cont:
                 #     output = torch.clamp(output, 0, 1)
+                
+                batch_time = timeit.default_timer() - start_time
+                batch_time = batch_time/frame_data.shape[0]
+                batch_times.append(batch_time)
                 
                 val_loss = loss_fn(output, fullness)
                 val_lossses.append(val_loss.item())
@@ -160,15 +169,15 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if not args.no_wandb:
                     # Save an example every 10% of the length of the training data
                     val_info = {'data_type': 'val', 'current_iteration': current_iteration, 'epoch': epoch+1}
-                    if current_iteration % int(len(val_loader)/plot_examples_every) == 0:
+                    divisor = int(len(train_loader)/plot_examples_every)
+                    divisor = 1 if divisor == 0 else divisor
+                    if current_iteration % divisor == 0:
                         if args.cont:
                             plot_example(val_info, frame_data, output, fullness)
                         else:
                             plot_example(val_info, frame_data, predicted, target_fullness)
                 
-            end_time = timeit.default_timer()
-            elapsed_time = end_time - start_time
-            average_time = elapsed_time / len(val_loader)
+            average_time = sum(batch_times) / len(batch_times)
             
             if args.cont:
                 print(f'Epoch: {epoch+1}, Average Inference Time: {average_time:.6f} Validation Loss: {sum(val_lossses)/len(val_lossses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')
@@ -199,7 +208,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             else:
                 accuracy = 100 * correct /total
                 correct = correct.detach().cpu()
-                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {elapsed_time:.2f} seconds. (Batch Size: {args.batch_size})')
+                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {sum(batch_times):.2f} seconds. (Batch Size: {args.batch_size})')
                 if not args.no_wandb:
                     wandb.log(step=epoch+1, 
                               data={'train_accuracy': sum(epoch_accuracies)/len(epoch_accuracies), 
@@ -244,6 +253,7 @@ def plot_example(info, frame_data, prediction, target):
     means = train_set.train_mean
     stds = train_set.train_std
     frame_data = frame_data * stds + means
+    frame_data = np.clip(frame_data, 0, 1)
     
     if args.cont:
         prediction = round(prediction*100)
@@ -254,12 +264,12 @@ def plot_example(info, frame_data, prediction, target):
         target = target * increment
     
     plt.imshow(frame_data)
-    plt.title(f'{info['data_type']} Epoch: {info['epoch']} it: {info['current_iteration']} Prediction: {prediction} Target: {target}')
+    plt.title(f'{info["data_type"]} Epoch: {info["epoch"]} it: {info["current_iteration"]} Prediction: {prediction} Target: {target}')
     
     # plt.show()
     
     if not args.no_wandb:
-        wandb.log({f'{info['data_type']}_example_frame': wandb.Image(plt)})
+        wandb.log({f'{info["data_type"]}_example_frame': wandb.Image(plt)})
         
     plt.close()
     
