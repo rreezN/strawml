@@ -34,7 +34,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
         loss_fn = torch.nn.functional.cross_entropy
         best_accuracy = 0.0
     
-    
+    plot_examples_every = 25 # Save an example every 25% of the length of the training data
     for epoch in range(args.epochs):
         train_iterator = tqdm(train_loader, unit="batch", position=0, leave=False)
         train_iterator.set_description(f'Training Epoch {epoch+1}/{args.epochs}')
@@ -94,11 +94,12 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             
             if not args.no_wandb:
                 # Save an example every 10% of the length of the training data
-                if current_iteration % int(len(train_loader)/10) == 0:
+                training_info = {'data_type': 'train', 'current_iteration': current_iteration, 'epoch': epoch+1}
+                if current_iteration % int(len(train_loader)/plot_examples_every) == 0:
                     if args.cont:
-                        plot_example(f'Train Epoch: {epoch+1} it: {current_iteration}', frame_data, output, fullness)
+                        plot_example(training_info, frame_data, output, fullness)
                     else:
-                        plot_example(f'Train Epoch: {epoch+1} it: {current_iteration}', frame_data, predicted, target_fullness)
+                        plot_example(training_info, frame_data, predicted, target_fullness)
 
         if args.cont:
             print(f'Epoch: {epoch+1}, Training Loss: {sum(epoch_losses)/len(epoch_losses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')                
@@ -158,11 +159,12 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 
                 if not args.no_wandb:
                     # Save an example every 10% of the length of the training data
-                    if current_iteration % int(len(val_loader)/10) == 0:
+                    val_info = {'data_type': 'val', 'current_iteration': current_iteration, 'epoch': epoch+1}
+                    if current_iteration % int(len(val_loader)/plot_examples_every) == 0:
                         if args.cont:
-                            plot_example(f'Val Epoch: {epoch+1} it: {current_iteration}', frame_data, output, fullness)
+                            plot_example(val_info, frame_data, output, fullness)
                         else:
-                            plot_example(f'Val Epoch: {epoch+1} it: {current_iteration}', frame_data, predicted, target_fullness)
+                            plot_example(val_info, frame_data, predicted, target_fullness)
                 
             end_time = timeit.default_timer()
             elapsed_time = end_time - start_time
@@ -224,7 +226,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
     if not args.no_wandb: wandb.finish()
 
 
-def plot_example(data_type, frame_data, prediction, target):
+def plot_example(info, frame_data, prediction, target):
     """Plot an example frame with the prediction.
     """
     if len(frame_data.shape) == 4:
@@ -252,12 +254,12 @@ def plot_example(data_type, frame_data, prediction, target):
         target = target * increment
     
     plt.imshow(frame_data)
-    plt.title(f'{data_type} Prediction: {prediction} Target: {target}')
+    plt.title(f'{info['data_type']} Epoch: {info['epoch']} it: {info['current_iteration']} Prediction: {prediction} Target: {target}')
     
     # plt.show()
     
     if not args.no_wandb:
-        wandb.log({f'{data_type}_example_frame': wandb.Image(plt)})
+        wandb.log({f'{info['data_type']}_example_frame': wandb.Image(plt)})
         
     plt.close()
     
