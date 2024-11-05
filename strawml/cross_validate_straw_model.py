@@ -53,7 +53,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             feature_regressor.train()
         train_accuracies = []
         train_losses = []
+        current_iteration = 0
         for (frame_data, target) in train_iterator:
+            current_iteration += 1
             # TRY: using only the edge image
             # frame_data = frame_data[:, 3, :, :]
             # frame_data = frame_data.unsqueeze(1)
@@ -78,7 +80,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             if args.cont:
                 if len(output.shape) > 1:
                     output = output.flatten()
-                output = torch.clamp(output, 0, 1)
+                # output = torch.clamp(output, 0, 1)
             
             loss = loss_fn(output, fullness)
             train_losses.append(loss.item())
@@ -99,6 +101,14 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
         
                 train_iterator.set_postfix(loss=loss.item(), accuracy=sum(train_accuracies)/len(train_accuracies))
 
+            if not args.no_wandb:
+                # Save an example every 10% of the length of the training data
+                if current_iteration % int(len(train_loader)/10) == 0:
+                    if args.cont:
+                        plot_example(f'Train Epoch: {epoch+1} it: {current_iteration}', frame_data, output, fullness)
+                    else:
+                        plot_example(f'Train Epoch: {epoch+1} it: {current_iteration}', frame_data, predicted, target_fullness)
+            
         mean_train_loss = np.mean(train_losses)
         epoch_train_losses.append(mean_train_loss)
         if not args.cont:
@@ -135,7 +145,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             
             val_losses = []
             val_accuracies = []
+            current_iteration = 0
             for (frame_data, target) in val_iterator:
+                current_iteration += 1
                 # TRY: using only the edge image
                 # frame_data = frame_data[:, 3, :, :]
                 # frame_data = frame_data.unsqueeze(1)
@@ -156,8 +168,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if feature_regressor is not None:
                     output = feature_regressor(output)
                     output = output.squeeze()
-                if args.cont:
-                    output = torch.clamp(output, 0, 1)
+                # if args.cont:
+                #     output = torch.clamp(output, 0, 1)
                 
                 
                 val_loss = loss_fn(output, fullness)
@@ -171,7 +183,16 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     correct += sum(predicted == target_fullness)
                     accuracy = 100 * correct / args.batch_size
                     val_accuracies.append(accuracy.item())
-            
+
+                if not args.no_wandb:
+                    # Save an example every 10% of the length of the training data
+                    if current_iteration % int(len(val_loader)/10) == 0:
+                        if args.cont:
+                            plot_example(f'Val Epoch: {epoch+1} it: {current_iteration}', frame_data, output, fullness)
+                        else:
+                            plot_example(f'Val Epoch: {epoch+1} it: {current_iteration}', frame_data, predicted, target_fullness)
+                
+                
             end_time = timeit.default_timer()
             elapsed_time = end_time - start_time
             average_time = elapsed_time / len(val_loader)
@@ -274,7 +295,44 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
     
     return epoch_train_losses, epoch_val_losses, epoch_train_accuracies, epoch_val_accuracies, best_accuracy
     
+
+def plot_example(data_type, frame_data, prediction, target):
+    """Plot an example frame with the prediction.
+    """
+    if len(frame_data.shape) == 4:
+        frame_data = frame_data[0]
+    if len(prediction) > 1:
+        prediction = prediction[0].detach().cpu().numpy()
+    if len(target) > 1:
+        target = target[0].detach().cpu().numpy()
+    if frame_data.shape[0] > 3:
+        frame_data = frame_data[:3]
     
+    frame_data = frame_data.permute(1, 2, 0)
+    frame_data = frame_data.detach().cpu().numpy()
+    
+    means = train_set.train_mean
+    stds = train_set.train_std
+    frame_data = frame_data * stds + means
+    
+    if args.cont:
+        prediction = round(prediction*100)
+        target = round(target*100)
+    else:
+        increment = increment = 100 / (train_set.num_classes_straw - 1)
+        prediction = prediction * increment
+        target = target * increment
+    
+    plt.imshow(frame_data)
+    plt.title(f'{data_type} Prediction: {prediction} Target: {target}')
+    
+    # plt.show()
+    
+    if not args.no_wandb:
+        wandb.log({f'{data_type}_example_frame': wandb.Image(plt)})
+        
+    plt.close()
+
 
 def initialize_wandb(args: argparse.Namespace) -> None:
     """Initialize the Weights and Biases logging.

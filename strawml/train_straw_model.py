@@ -8,6 +8,7 @@ import timeit
 import timm
 import wandb
 import os
+import matplotlib.pyplot as plt
 
 import data.dataloader as dl
 import strawml.models.straw_classifier.cnn_classifier as cnn
@@ -42,7 +43,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             feature_regressor.train()
         epoch_accuracies = []
         epoch_losses = []
+        current_iteration = 0
         for (frame_data, target) in train_iterator:
+            current_iteration += 1
             # TRY: using only the edge image
             # frame_data = frame_data[:, 3, :, :]
             # frame_data = frame_data.unsqueeze(1)
@@ -67,8 +70,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             if args.cont:
                 if len(output.shape) > 1:
                     output = output.flatten()
-                output = torch.clamp(output, 0, 1)
-            
+                # output = torch.clamp(output, 0, 1)
             
             loss = loss_fn(output, fullness)
             
@@ -89,9 +91,17 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 epoch_accuracies.append(accuracy.item())
         
                 train_iterator.set_postfix(loss=loss.item(), accuracy=sum(epoch_accuracies)/len(epoch_accuracies))
+            
+            if not args.no_wandb:
+                # Save an example every 10% of the length of the training data
+                if current_iteration % int(len(train_loader)/10) == 0:
+                    if args.cont:
+                        plot_example(f'Train Epoch: {epoch+1} it: {current_iteration}', frame_data, output, fullness)
+                    else:
+                        plot_example(f'Train Epoch: {epoch+1} it: {current_iteration}', frame_data, predicted, target_fullness)
 
         if args.cont:
-            print(f'Epoch: {epoch+1}, Training Loss: {sum(epoch_losses)/len(epoch_losses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')
+            print(f'Epoch: {epoch+1}, Training Loss: {sum(epoch_losses)/len(epoch_losses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')                
         else:
             print(f'Epoch: {epoch+1}, Training Accuracy: {sum(epoch_accuracies)/len(epoch_accuracies):.2f}%')
         
@@ -109,7 +119,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             start_time = timeit.default_timer()
             
             val_lossses = []
+            current_iteration = 0
             for (frame_data, target) in val_iterator:
+                current_iteration += 1
                 # TRY: using only the edge image
                 # frame_data = frame_data[:, 3, :, :]
                 # frame_data = frame_data.unsqueeze(1)
@@ -130,8 +142,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if feature_regressor is not None:
                     output = feature_regressor(output)
                     output = output.squeeze()
-                if args.cont:
-                    output = torch.clamp(output, 0, 1)
+                # if args.cont:
+                #     output = torch.clamp(output, 0, 1)
                 
                 val_loss = loss_fn(output, fullness)
                 val_lossses.append(val_loss.item())
@@ -142,7 +154,16 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     total += args.batch_size
                     _, target_fullness = torch.max(fullness, 1)
                     correct += sum(predicted == target_fullness)
-            
+
+                
+                if not args.no_wandb:
+                    # Save an example every 10% of the length of the training data
+                    if current_iteration % int(len(val_loader)/10) == 0:
+                        if args.cont:
+                            plot_example(f'Val Epoch: {epoch+1} it: {current_iteration}', frame_data, output, fullness)
+                        else:
+                            plot_example(f'Val Epoch: {epoch+1} it: {current_iteration}', frame_data, predicted, target_fullness)
+                
             end_time = timeit.default_timer()
             elapsed_time = end_time - start_time
             average_time = elapsed_time / len(val_loader)
@@ -202,6 +223,45 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
     
     if not args.no_wandb: wandb.finish()
 
+
+def plot_example(data_type, frame_data, prediction, target):
+    """Plot an example frame with the prediction.
+    """
+    if len(frame_data.shape) == 4:
+        frame_data = frame_data[0]
+    if len(prediction) > 1:
+        prediction = prediction[0].detach().cpu().numpy()
+    if len(target) > 1:
+        target = target[0].detach().cpu().numpy()
+    if frame_data.shape[0] > 3:
+        frame_data = frame_data[:3]
+    
+    frame_data = frame_data.permute(1, 2, 0)
+    frame_data = frame_data.detach().cpu().numpy()
+    
+    means = train_set.train_mean
+    stds = train_set.train_std
+    frame_data = frame_data * stds + means
+    
+    if args.cont:
+        prediction = round(prediction*100)
+        target = round(target*100)
+    else:
+        increment = increment = 100 / (train_set.num_classes_straw - 1)
+        prediction = prediction * increment
+        target = target * increment
+    
+    plt.imshow(frame_data)
+    plt.title(f'{data_type} Prediction: {prediction} Target: {target}')
+    
+    # plt.show()
+    
+    if not args.no_wandb:
+        wandb.log({f'{data_type}_example_frame': wandb.Image(plt)})
+        
+    plt.close()
+    
+
 def initialize_wandb(args: argparse.Namespace) -> None:
     """Initialize the Weights and Biases logging.
     """
@@ -231,7 +291,6 @@ def get_args():
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
     parser.add_argument('--epochs', type=int, default=25, help='Number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.00001, help='Learning rate for training')
-    parser.add_argument('--model_path', type=str, default='models/pretrained/convnextv2_atto_1k_224_ema.pth', help='Path to load the model from')
     parser.add_argument('--save_path', type=str, default='models/', help='Path to save the model to')
     parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
@@ -260,10 +319,10 @@ if __name__ == '__main__':
     
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
-                         num_classes_straw=args.num_classes_straw, continuous=args.cont, data_subsample=args.data_subsample)
+                         num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample)
     test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                         random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
-                        num_classes_straw=args.num_classes_straw, continuous=args.cont, data_subsample=args.data_subsample)
+                        num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample)
     
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False)

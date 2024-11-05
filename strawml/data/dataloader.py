@@ -235,9 +235,9 @@ class Chute(torch.utils.data.Dataset):
         Returns:
         float: The fullness value. 
         """
-        # TODO: Update this function to handle multiple number of classes (see convert_fullness_to_class)
         idx = np.argmax(label)
-        fullness = (idx * 0.5) / 10
+        increment = 100 / (self.num_classes_straw - 1)
+        fullness = idx * increment
         
         return fullness
 
