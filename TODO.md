@@ -18,10 +18,19 @@ MODEL - top1 acc - img_size - param_count
 - [ ] CAFormer
 - [ ] ViT
 
+### Image size experiments
+Some models (ConvNeXt for example) are fully convolutional, and thus don't depend on image size. Others can manually specify input sizes for. Might be a good idea to test, especially with non-square images.
+
+- [ ] [ConvNeXt](https://github.com/huggingface/pytorch-image-models/discussions/2269) (should be able to use any size image)
+- [ ] [ViT](https://github.com/huggingface/pytorch-image-models/discussions/2104) (can use non-square images, but must be multiple of patch size) (training time does not scale well with larger images - might need to look into compiling torch with flash attention)
+
+Other models should also be possible..
+
 ### Minor Architecture Experiments
 The goal of these experiments is to test adjustments in architecture after selecting the overall architecture.
 
 #### Sigmoid vs Clamp
+- [ ] Nothing
 - [ ] Sigmoid
 - [ ] Clamp
   
@@ -29,6 +38,7 @@ The goal of these experiments is to test adjustments in architecture after selec
 - [ ] Number of layers
 - [ ] Number of neurons
 - [ ] BatchNorm, etc..
+- [ ] Average pool instead of FCN
 
 #### Regressor vs Classifier
 - [ ] Regressor
