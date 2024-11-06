@@ -35,7 +35,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
         loss_fn = torch.nn.functional.cross_entropy
         best_accuracy = 0.0
     
-    plot_examples_every = 50 # Save an example every X% of the length of the training data
+    plot_examples_every = 0.5 # Save an example every X% of the length of the training data
     for epoch in range(args.epochs):
         train_iterator = tqdm(train_loader, unit="batch", position=0, leave=False)
         train_iterator.set_description(f'Training Epoch {epoch+1}/{args.epochs}')
@@ -96,7 +96,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             if not args.no_wandb:
                 # Save an example every 10% of the length of the training data
                 training_info = {'data_type': 'train', 'current_iteration': current_iteration, 'epoch': epoch+1}
-                divisor = int(len(train_loader)/plot_examples_every)
+                divisor = int(len(train_loader) * plot_examples_every)
                 divisor = 1 if divisor == 0 else divisor
                 if current_iteration % divisor == 0:
                     if args.cont:
@@ -169,7 +169,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if not args.no_wandb:
                     # Save an example every 10% of the length of the training data
                     val_info = {'data_type': 'val', 'current_iteration': current_iteration, 'epoch': epoch+1}
-                    divisor = int(len(train_loader)/plot_examples_every)
+                    divisor = int(len(train_loader) * plot_examples_every)
                     divisor = 1 if divisor == 0 else divisor
                     if current_iteration % divisor == 0:
                         if args.cont:
@@ -256,8 +256,8 @@ def plot_example(info, frame_data, prediction, target):
     frame_data = np.clip(frame_data, 0, 1)
     
     if args.cont:
-        prediction = round(prediction*100)
-        target = round(target*100)
+        prediction = np.round(prediction*100)
+        target = np.round(target*100)
     else:
         increment = increment = 100 / (train_set.num_classes_straw - 1)
         prediction = prediction * increment
