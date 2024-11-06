@@ -196,7 +196,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if not args.no_wandb:
                     # Save an example every 10% of the length of the training data
                     val_info = {'data_type': 'val', 'current_iteration': current_iteration, 'epoch': epoch+1, 'fold': fold+1}
-                    divisor = int(len(train_loader) * plot_examples_every)
+                    divisor = int(len(val_loader) * plot_examples_every)
                     divisor = 1 if divisor == 0 else divisor
                     if current_iteration % divisor == 0:
                         if args.cont:
@@ -312,14 +312,16 @@ def plot_example(info, frame_data, prediction, target):
     if len(frame_data.shape) == 4:
         frame_data = frame_data[0]
     if len(prediction) > 1:
-        prediction = prediction[0].detach().cpu().numpy()
+        prediction = prediction[0]
     if len(target) > 1:
-        target = target[0].detach().cpu().numpy()
+        target = target[0]
     if frame_data.shape[0] > 3:
         frame_data = frame_data[:3]
     
     frame_data = frame_data.permute(1, 2, 0)
     frame_data = frame_data.detach().cpu().numpy()
+    prediction = prediction.detach().cpu().numpy()
+    target = target.detach().cpu().numpy()
     
     means = train_set.train_mean
     stds = train_set.train_std
@@ -327,8 +329,8 @@ def plot_example(info, frame_data, prediction, target):
     frame_data = np.clip(frame_data, 0, 1)
     
     if args.cont:
-        prediction = np.round(prediction*100)
-        target = np.round(target*100)
+        prediction = int(prediction*100)
+        target = int(target*100)
     else:
         increment = increment = 100 / (train_set.num_classes_straw - 1)
         prediction = prediction * increment
