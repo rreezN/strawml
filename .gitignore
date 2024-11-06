@@ -12,6 +12,9 @@ fiducial_marker/calibration.npz
 
 reports/
 
+*.err
+*.out
+
 
 # models
 models/*
