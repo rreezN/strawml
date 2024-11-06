@@ -327,8 +327,8 @@ def plot_example(info, frame_data, prediction, target):
     frame_data = np.clip(frame_data, 0, 1)
     
     if args.cont:
-        prediction = round(prediction*100)
-        target = round(target*100)
+        prediction = np.round(prediction*100)
+        target = np.round(target*100)
     else:
         increment = increment = 100 / (train_set.num_classes_straw - 1)
         prediction = prediction * increment
