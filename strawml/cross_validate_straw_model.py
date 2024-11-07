@@ -145,14 +145,13 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             val_iterator = tqdm(val_loader, unit="batch", position=0, leave=False)
             val_iterator.set_description(f'Fold {fold+1}/{args.folds} Validating Epoch {epoch+1}/{args.epochs}')
             
-            # Time the inference time
-            start_time = timeit.default_timer()
             
             val_losses = []
             val_accuracies = []
             current_iteration = 0
             batch_times = []
             for (frame_data, target) in val_iterator:
+                
                 current_iteration += 1
                 # TRY: using only the edge image
                 # frame_data = frame_data[:, 3, :, :]
@@ -163,6 +162,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if torch.cuda.is_available():
                     frame_data = frame_data.cuda()
                     fullness = fullness.cuda()
+                    
+                # Time the inference time
+                start_time = timeit.default_timer()
                 
                 # Forward pass
                 if args.cont and args.model != 'cnn':
@@ -206,11 +208,12 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 
                 
             average_time = np.mean(batch_times)
-            LOG_DICT[f'f{fold+1}_inference_time'] = average_time
+            if not args.no_wandb:
+                LOG_DICT[f'f{fold+1}_inference_time'] = average_time
             
             # Save the best model
             if args.cont:
-                print(f'Epoch: {epoch+1}, Average Inference Time: {average_time:.2f} seconds, Total Inference Time: {np.sum(batch_times):.2f} seconds. (Batch Size: {args.batch_size}) Validation Loss: {np.mean(val_losses):.6f}, Last predictions -- Fullness: {torch.mean(fullness).item():.2f}, Prediction: {torch.mean(output).item():.2f}')
+                print(f'Epoch: {epoch+1}, Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {np.sum(batch_times):.6f} seconds. (Batch Size: {args.batch_size}) Validation Loss: {np.mean(val_losses):.6f}, Last predictions -- Fullness: {torch.mean(fullness).item():.2f}, Prediction: {torch.mean(output).item():.2f}')
                 if np.mean(val_losses) < best_accuracy:
                     best_accuracy = np.mean(val_losses)
                     print(f'New best loss: {best_accuracy}')
@@ -239,7 +242,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             else:
                 correct = correct.detach().cpu()
                 accuracy = 100 * correct /total
-                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.2f} seconds, Total Inference Time: {sum(batch_times):.2f} seconds. (Batch Size: {args.batch_size})')
+                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {sum(batch_times):.6f} seconds. (Batch Size: {args.batch_size})')
 
                 if not args.no_wandb:
                     LOG_DICT[f'f{fold+1}_val_accuracy'] = accuracy

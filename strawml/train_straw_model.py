@@ -119,8 +119,6 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             val_iterator = tqdm(val_loader, unit="batch", position=0, leave=False)
             val_iterator.set_description(f'Validating Epoch {epoch+1}/{args.epochs}')
             
-            # Time the inference time
-            start_time = timeit.default_timer()
             
             val_lossses = []
             current_iteration = 0
@@ -137,6 +135,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     frame_data = frame_data.cuda()
                     fullness = fullness.cuda()
                 
+                # Time the inference time
+                start_time = timeit.default_timer()
                 
                 # Forward pass
                 if args.cont and args.model != 'cnn':
@@ -208,7 +208,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             else:
                 accuracy = 100 * correct /total
                 correct = correct.detach().cpu()
-                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {sum(batch_times):.2f} seconds. (Batch Size: {args.batch_size})')
+                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {sum(batch_times):.6f} seconds. (Batch Size: {args.batch_size})')
                 if not args.no_wandb:
                     wandb.log(step=epoch+1, 
                               data={'train_accuracy': sum(epoch_accuracies)/len(epoch_accuracies), 
