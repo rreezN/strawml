@@ -430,12 +430,10 @@ if __name__ == '__main__':
             image_size = args.image_size
         case 'convnextv2':
             image_size = (224, 224)
-        case 'vit':
+        case 'vit' | 'caformer':
             image_size = (384, 384)
         case 'eva02':
             image_size = (448, 448)
-        case 'caformer':
-            image_size = (384, 384)
     
     kf = KFold(n_splits=args.folds, shuffle=True, random_state=args.seed)
     
@@ -500,8 +498,8 @@ if __name__ == '__main__':
                 model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
         
         if args.cont and args.model != 'cnn':
-            feature_shape = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1])).shape
-            feature_size = feature_shape[1] * feature_shape[2]
+            features = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
+            feature_size = torch.flatten(features, 1).shape[1]
             feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
         else:
             feature_regressor = None
