@@ -434,6 +434,8 @@ if __name__ == '__main__':
             image_size = (384, 384)
         case 'eva02':
             image_size = (448, 448)
+        case 'caformer':
+            image_size = (384, 384)
     
     kf = KFold(n_splits=args.folds, shuffle=True, random_state=args.seed)
     
@@ -495,7 +497,7 @@ if __name__ == '__main__':
             case 'eva02':
                 model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
             case 'caformer':
-                model = timm.create_model('caformer_m36,.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+                model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
         
         if args.cont and args.model != 'cnn':
             feature_shape = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1])).shape
@@ -542,7 +544,7 @@ if __name__ == '__main__':
         
     plt.plot(x, np.mean(fold_train_losses, axis=0), c='b', label='Train Loss', linestyle='--')
     plt.plot(x, np.mean(fold_val_losses, axis=0), c='r', label='Val Loss')
-    plt.ylim(0, min(7, np.max(fold_val_losses), np.max(fold_val_losses))+0.2)
+    plt.ylim(0, min(7, np.max(fold_val_losses), np.max(fold_val_losses))+0.01)
     plt.title('Loss per epoch')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
