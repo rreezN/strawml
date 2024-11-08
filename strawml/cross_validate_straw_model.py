@@ -83,9 +83,6 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             if feature_regressor is not None:
                 output = output.flatten(1)
                 output = feature_regressor(output)
-            if args.cont:
-                if len(output.shape) > 2:
-                    output = torch.flatten(output, 1)
                 # output = torch.clamp(output, 0, 1)
             
             loss = loss_fn(output, fullness)
@@ -181,9 +178,6 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if feature_regressor is not None:
                     output = output.flatten(1)
                     output = feature_regressor(output)
-                if args.cont:
-                    if len(output.shape) > 2:
-                        output = torch.flatten(output, 1)
                     # output = torch.clamp(output, 0, 1)
                 
                 batch_time = timeit.default_timer() - start_time
