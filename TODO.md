@@ -57,7 +57,10 @@ These experiments will alter the training by introducing different optimisers, l
 - [ ] Adam
 - [ ] AdamW
 - [ ] SGD
-- [ ] ....
+
+THESE ARE NEW AND SOTA (and it might be possible to combine them, but that would probably constitute a research paper of its own):
+- [ ] [SOAP](https://arxiv.org/abs/2409.11321)
+- [ ] [ADOPT](https://x.com/ishohei220/status/1854051859385978979)
 
 #### Learning Rate Schedulers
 - [ ] Research SOTA LR schedulers
