@@ -176,12 +176,15 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     output = features
                 else:
                     output = model(frame_data)
-                if args.cont: output = output.squeeze()
+                # print("features shape:", features.shape)
+                # print("output shape (post squeeze, before feature_regressor):", output.shape)
                 if feature_regressor is not None:
+                    output = output.flatten(1)
                     output = feature_regressor(output)
-                    output = output.squeeze()
-                # if args.cont:
-                #     output = torch.clamp(output, 0, 1)
+                if args.cont:
+                    if len(output.shape) > 2:
+                        output = torch.flatten(output, 1)
+                    # output = torch.clamp(output, 0, 1)
                 
                 batch_time = timeit.default_timer() - start_time
                 batch_time = batch_time/frame_data.shape[0]
