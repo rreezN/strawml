@@ -70,18 +70,22 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             
             optimizer.zero_grad()
             
+            # print("frame_data shape:", frame_data.shape)
+            
             # Forward pass
             if args.cont and args.model != 'cnn':
                 features = model.forward_features(frame_data)
                 output = features
             else:
                 output = model(frame_data)
-            if args.cont and len(output.shape) > 3: output = output.squeeze()
+            # print("features shape:", features.shape)
+            # print("output shape (post squeeze, before feature_regressor):", output.shape)
             if feature_regressor is not None:
+                output = output.flatten(1)
                 output = feature_regressor(output)
             if args.cont:
-                if len(output.shape) > 1:
-                    output = output.flatten()
+                if len(output.shape) > 2:
+                    output = torch.flatten(output, 1)
                 # output = torch.clamp(output, 0, 1)
             
             loss = loss_fn(output, fullness)
