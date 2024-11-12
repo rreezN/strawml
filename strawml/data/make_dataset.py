@@ -697,7 +697,7 @@ def make_sensor_data(hdf5_file_path: str, sensor_file_path: str) -> None:
         
         # annotate the sensor data to the frame
         fullness = sensor_data[i]/100
-        annotation_group.create_dataset('fullness', data=fullness)
+        annotation_group.create_dataset('sensor_fullness', data=fullness)
         
         pbar.update(1)
     
@@ -717,9 +717,9 @@ def validate_sensor_data(hdf5_file: str = 'data/processed/sensor_data/sensor_dat
         print(f"Frame: {frame}")
         image = decode_binary_image(hf[frame]['image'][...])
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        fullness = hf[frame]['annotations']['fullness'][...]
+        fullness = hf[frame]['annotations']['sensor_fullness'][...]
         plt.imshow(image)
-        plt.title(f"Fullness: {fullness}")
+        plt.title(f"{frame} Fullness: {fullness}")
         plt.show()
 
 
