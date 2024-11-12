@@ -12,7 +12,6 @@ sweep_configuration = {
         "batch_size": {"values": [16, 32, 64]},
         "lr": {"max": 0.1, "min": 0.0001},
         "imgsz": {"values": [256, 512, 640]},
-        "optimizer": {"values": ["SGD", "Adam", "AdamW", "ADOPT"]},
     },
 }
 
@@ -42,7 +41,7 @@ def train_sweep():
             epochs=50,
             batch=config.batch_size,
             lr0=config.lr,
-            optimizer=config.optimizer,
+            optimizer="AdamW",
             device="cuda",
             augment=True,
         )
