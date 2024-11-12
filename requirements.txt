@@ -11,6 +11,7 @@ wandb
 scikit-image
 timm
 scikit-image
+openpyxl
 
 --extra-index-url https://download.pytorch.org/whl/cu118
 torch 
