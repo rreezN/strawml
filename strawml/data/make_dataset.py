@@ -639,12 +639,8 @@ def make_sensor_data(hdf5_file_path: str, sensor_file_path: str) -> None:
     if not os.path.exists(sensor_file_path):
         raise FileNotFoundError(f"The file {sensor_file_path} does not exist.")
     
-    save_path = 'data/processed/sensor_data'
+    save_path = 'data/raw/sensor'
     if not os.path.exists(save_path):
-        os.makedirs(save_path)
-    else:
-        # remove the folder and create a new one
-        shutil.rmtree(save_path)
         os.makedirs(save_path)
     
     # Load the sensor data from the sensor file
@@ -664,7 +660,7 @@ def make_sensor_data(hdf5_file_path: str, sensor_file_path: str) -> None:
     # if len(sensor_data) != len(frame_names):
     #     raise ValueError(f"The number of frames in the HDF5 file ({len(frame_names)}) does not match the number of sensor data entries ({len(sensor_data)}).")
     
-    sensor_hdf5_file = 'data/processed/sensor_data/sensor_data.hdf5'
+    sensor_hdf5_file = 'data/raw/sensor/sensor_data.hdf5'
     # create a new hdf5 file to store the images and annotations from sensor data
     if os.path.exists(sensor_hdf5_file):
         os.remove(sensor_hdf5_file)
@@ -698,6 +694,8 @@ def make_sensor_data(hdf5_file_path: str, sensor_file_path: str) -> None:
         # annotate the sensor data to the frame
         fullness = sensor_data[i]/100
         annotation_group.create_dataset('sensor_fullness', data=fullness)
+        
+        # print(f"{new_hf[frame].keys(), new_hf[frame]['annotations']['sensor_fullness'][...]}")
         
         pbar.update(1)
     
