@@ -3,6 +3,7 @@ import os
 import cv2
 import h5py
 import numpy as np
+import pandas as pd
 from tqdm import tqdm 
 import datetime
 import time
@@ -628,7 +629,100 @@ def prepare_data_for_timm(hdf5_file: str, sizes: list[float] = [0.8,0.1,0.1]) ->
                     os.makedirs(f'{save_path}/{key}/{label}')
                 cv2.imwrite(f'{save_path}/{key}/{label}/{frame}.jpg', image)
                 pbar.update(1)
+
+
+def make_sensor_data(hdf5_file_path: str, sensor_file_path: str) -> None:
+    # First ensure the file exists
+    if not os.path.exists(hdf5_file_path):
+        raise FileNotFoundError(f"The file {hdf5_file_path} does not exist.")
+
+    if not os.path.exists(sensor_file_path):
+        raise FileNotFoundError(f"The file {sensor_file_path} does not exist.")
     
+    save_path = 'data/processed/sensor_data'
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    else:
+        # remove the folder and create a new one
+        shutil.rmtree(save_path)
+        os.makedirs(save_path)
+    
+    # Load the sensor data from the sensor file
+    sensor_df = pd.read_excel(sensor_file_path)
+    
+    # Remove the first three rows and first column
+    sensor_df = sensor_df.iloc[3:, 1:]
+    
+    timestamp_col = sensor_df.columns[0]
+    sensor_col = sensor_df.columns[1]
+    sensor_data = sensor_df[sensor_col].values
+    time_stamp = sensor_df[timestamp_col].values
+    
+    # convert the time stamp to a datetime object
+    time_stamp = pd.to_datetime(time_stamp)
+    
+    # if len(sensor_data) != len(frame_names):
+    #     raise ValueError(f"The number of frames in the HDF5 file ({len(frame_names)}) does not match the number of sensor data entries ({len(sensor_data)}).")
+    
+    sensor_hdf5_file = 'data/processed/sensor_data/sensor_data.hdf5'
+    # create a new hdf5 file to store the images and annotations from sensor data
+    if os.path.exists(sensor_hdf5_file):
+        os.remove(sensor_hdf5_file)
+    
+    new_hf = h5py.File(sensor_hdf5_file, 'a') # Open the HDF5 file in write mode
+    old_hf = h5py.File(hdf5_file_path, 'r') # Open the original HDF5 file in read mode
+    
+    # Copy the attributes from the original HDF5 file to the new HDF5 file
+    new_hf.attrs['dataset_name'] = old_hf.attrs['dataset_name']
+    new_hf.attrs['description'] = old_hf.attrs['description']
+    new_hf.attrs['date_created'] = np.bytes_(str(datetime.datetime.now()))
+    
+    # Sort the frame_names by the frame number
+    frame_names = list(old_hf.keys())
+    frame_names = sorted(frame_names, key=lambda x: int(x.split('_')[1]))
+    
+    pbar = tqdm(total = min(len(sensor_data), len(old_hf.keys())), desc="Adding sensor data to the HDF5 file", position=0)
+    for i, frame in enumerate(frame_names):
+        if i >= len(sensor_data):
+            break
+        pbar.set_description(f"Adding sensor data to the HDF5 file: {frame}")
+        group = new_hf.create_group(frame)
+        # Copy the original image and image_diff to the new HDF5 file
+        old_hf.copy(old_hf[frame]['image'], group)
+        old_hf.copy(old_hf[frame]['image_diff'], group) 
+        group.attrs['video ID'] = old_hf[frame].attrs['video ID']
+        
+        # Create a new group for the annotations
+        annotation_group = group.create_group('annotations')
+        
+        # annotate the sensor data to the frame
+        fullness = sensor_data[i]/100
+        annotation_group.create_dataset('fullness', data=fullness)
+        
+        pbar.update(1)
+    
+    old_hf.close()  # close the original hdf5 file
+    new_hf.close()  # close the hdf5 file
+    
+
+def validate_sensor_data(hdf5_file: str = 'data/processed/sensor_data/sensor_data.hdf5') -> None:
+    import matplotlib.pyplot as plt
+    hf = h5py.File(hdf5_file, 'r')
+    
+    # Sort the frame_names by the frame number
+    frame_names = list(hf.keys())
+    frame_names = sorted(frame_names, key=lambda x: int(x.split('_')[1]))
+    
+    for frame in frame_names:
+        print(f"Frame: {frame}")
+        image = decode_binary_image(hf[frame]['image'][...])
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        fullness = hf[frame]['annotations']['fullness'][...]
+        plt.imshow(image)
+        plt.title(f"Fullness: {fullness}")
+        plt.show()
+
+
 
 def main(args: Namespace) -> None:
     """
@@ -659,14 +753,19 @@ def main(args: Namespace) -> None:
         place_digits_on_chute_images()
     elif args.mode == 'timm':
         prepare_data_for_timm(args.hdf5_file)
+    elif args.mode == 'sensor':
+        make_sensor_data(args.hdf5_file, args.sensor_file)
+    elif args.mode == 'validate_sensor':
+        validate_sensor_data(args.hdf5_file)
 
 def get_args() -> Namespace:
     # Create the parser
     parser = ArgumentParser()
     # Add arguments to the parser
-    parser.add_argument('mode', type=str, choices=['extract', 'validate', 'tree', 'h5_to_yolo', 'place_digits', 'timm'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
+    parser.add_argument('mode', type=str, choices=['extract', 'validate', 'tree', 'h5_to_yolo', 'place_digits', 'timm', 'sensor', 'validate_sensor'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
     parser.add_argument('--video_folder', type=str, default='data/raw/videos', help='The folder containing the videos.')
     parser.add_argument('--hdf5_file', type=str, default='data/raw/images/images.hdf5', help='The hdf5 file to save the images to.')
+    parser.add_argument('--sensor_file', type=str, default='data/raw/sensor/studentexport.xlsx', help='The sensor data file to save the sensor data to.')
     parser.add_argument('--save_individual_images', type=bool, default=False, help='Whether to save the individual images to the temp_images folder.')
     parser.add_argument('--overwrite_seconds', type=int, default=3, help='The number of seconds to wait before overwriting the hdf5 file.')
     parser.add_argument('--description', type=str, default='Dataset created for a master\'s project at Meliora Bio.', help='The description of the dataset.')
