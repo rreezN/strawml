@@ -10,6 +10,11 @@ fiducial_marker/aruco_tags
 fiducial_marker/c_aruco
 fiducial_marker/calibration.npz
 
+reports/
+
+*.err
+*.out
+
 
 # models
 models/*

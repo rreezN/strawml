@@ -8,6 +8,8 @@ import timeit
 import timm
 import wandb
 import os
+import matplotlib.pyplot as plt
+import numpy as np
 
 import data.dataloader as dl
 import strawml.models.straw_classifier.cnn_classifier as cnn
@@ -33,7 +35,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
         loss_fn = torch.nn.functional.cross_entropy
         best_accuracy = 0.0
     
-    
+    plot_examples_every = 0.5 # Save an example every X% of the length of the training data
     for epoch in range(args.epochs):
         train_iterator = tqdm(train_loader, unit="batch", position=0, leave=False)
         train_iterator.set_description(f'Training Epoch {epoch+1}/{args.epochs}')
@@ -42,7 +44,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             feature_regressor.train()
         epoch_accuracies = []
         epoch_losses = []
+        current_iteration = 0
         for (frame_data, target) in train_iterator:
+            current_iteration += 1
             # TRY: using only the edge image
             # frame_data = frame_data[:, 3, :, :]
             # frame_data = frame_data.unsqueeze(1)
@@ -61,14 +65,12 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 output = features
             else:
                 output = model(frame_data)
-            if args.cont and len(output.shape) > 3: output = output.squeeze()
+            # print("features shape:", features.shape)
+            # print("output shape (post squeeze, before feature_regressor):", output.shape)
             if feature_regressor is not None:
+                output = output.flatten(1)
                 output = feature_regressor(output)
-            if args.cont:
-                if len(output.shape) > 1:
-                    output = output.flatten()
-                output = torch.clamp(output, 0, 1)
-            
+                # output = torch.clamp(output, 0, 1)
             
             loss = loss_fn(output, fullness)
             
@@ -89,9 +91,20 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 epoch_accuracies.append(accuracy.item())
         
                 train_iterator.set_postfix(loss=loss.item(), accuracy=sum(epoch_accuracies)/len(epoch_accuracies))
+            
+            if not args.no_wandb:
+                # Save an example every 10% of the length of the training data
+                training_info = {'data_type': 'train', 'current_iteration': current_iteration, 'epoch': epoch+1}
+                divisor = int(len(train_loader) * plot_examples_every)
+                divisor = 1 if divisor == 0 else divisor
+                if current_iteration % divisor == 0:
+                    if args.cont:
+                        plot_example(training_info, frame_data, output, fullness)
+                    else:
+                        plot_example(training_info, frame_data, predicted, target_fullness)
 
         if args.cont:
-            print(f'Epoch: {epoch+1}, Training Loss: {sum(epoch_losses)/len(epoch_losses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')
+            print(f'Epoch: {epoch+1}, Training Loss: {sum(epoch_losses)/len(epoch_losses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')                
         else:
             print(f'Epoch: {epoch+1}, Training Accuracy: {sum(epoch_accuracies)/len(epoch_accuracies):.2f}%')
         
@@ -105,11 +118,12 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             val_iterator = tqdm(val_loader, unit="batch", position=0, leave=False)
             val_iterator.set_description(f'Validating Epoch {epoch+1}/{args.epochs}')
             
-            # Time the inference time
-            start_time = timeit.default_timer()
             
             val_lossses = []
+            current_iteration = 0
+            batch_times = []
             for (frame_data, target) in val_iterator:
+                current_iteration += 1
                 # TRY: using only the edge image
                 # frame_data = frame_data[:, 3, :, :]
                 # frame_data = frame_data.unsqueeze(1)
@@ -120,18 +134,25 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     frame_data = frame_data.cuda()
                     fullness = fullness.cuda()
                 
+                # Time the inference time
+                start_time = timeit.default_timer()
+                
                 # Forward pass
                 if args.cont and args.model != 'cnn':
                     features = model.forward_features(frame_data)
                     output = features
                 else:
                     output = model(frame_data)
-                if args.cont: output = output.squeeze()
+                # print("features shape:", features.shape)
+                # print("output shape (post squeeze, before feature_regressor):", output.shape)
                 if feature_regressor is not None:
+                    output = output.flatten(1)
                     output = feature_regressor(output)
-                    output = output.squeeze()
-                if args.cont:
-                    output = torch.clamp(output, 0, 1)
+                    # output = torch.clamp(output, 0, 1)
+                
+                batch_time = timeit.default_timer() - start_time
+                batch_time = batch_time/frame_data.shape[0]
+                batch_times.append(batch_time)
                 
                 val_loss = loss_fn(output, fullness)
                 val_lossses.append(val_loss.item())
@@ -142,10 +163,20 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     total += args.batch_size
                     _, target_fullness = torch.max(fullness, 1)
                     correct += sum(predicted == target_fullness)
-            
-            end_time = timeit.default_timer()
-            elapsed_time = end_time - start_time
-            average_time = elapsed_time / len(val_loader)
+
+                
+                if not args.no_wandb:
+                    # Save an example every 10% of the length of the training data
+                    val_info = {'data_type': 'val', 'current_iteration': current_iteration, 'epoch': epoch+1}
+                    divisor = int(len(train_loader) * plot_examples_every)
+                    divisor = 1 if divisor == 0 else divisor
+                    if current_iteration % divisor == 0:
+                        if args.cont:
+                            plot_example(val_info, frame_data, output, fullness)
+                        else:
+                            plot_example(val_info, frame_data, predicted, target_fullness)
+                
+            average_time = sum(batch_times) / len(batch_times)
             
             if args.cont:
                 print(f'Epoch: {epoch+1}, Average Inference Time: {average_time:.6f} Validation Loss: {sum(val_lossses)/len(val_lossses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')
@@ -176,7 +207,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             else:
                 accuracy = 100 * correct /total
                 correct = correct.detach().cpu()
-                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {elapsed_time:.2f} seconds. (Batch Size: {args.batch_size})')
+                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {sum(batch_times):.6f} seconds. (Batch Size: {args.batch_size})')
                 if not args.no_wandb:
                     wandb.log(step=epoch+1, 
                               data={'train_accuracy': sum(epoch_accuracies)/len(epoch_accuracies), 
@@ -201,6 +232,46 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             
     
     if not args.no_wandb: wandb.finish()
+
+
+def plot_example(info, frame_data, prediction, target):
+    """Plot an example frame with the prediction.
+    """
+    if len(frame_data.shape) == 4:
+        frame_data = frame_data[0]
+    if len(prediction) > 1:
+        prediction = prediction[0].detach().cpu().numpy()
+    if len(target) > 1:
+        target = target[0].detach().cpu().numpy()
+    if frame_data.shape[0] > 3:
+        frame_data = frame_data[:3]
+    
+    frame_data = frame_data.permute(1, 2, 0)
+    frame_data = frame_data.detach().cpu().numpy()
+    
+    means = train_set.train_mean
+    stds = train_set.train_std
+    frame_data = frame_data * stds + means
+    frame_data = np.clip(frame_data, 0, 1)
+    
+    if args.cont:
+        prediction = np.round(prediction*100)
+        target = np.round(target*100)
+    else:
+        increment = increment = 100 / (train_set.num_classes_straw - 1)
+        prediction = prediction * increment
+        target = target * increment
+    
+    plt.imshow(frame_data)
+    plt.title(f'{info["data_type"]} Epoch: {info["epoch"]} it: {info["current_iteration"]} Prediction: {prediction} Target: {target}')
+    
+    # plt.show()
+    
+    if not args.no_wandb:
+        wandb.log({f'{info["data_type"]}_example_frame': wandb.Image(plt)})
+        
+    plt.close()
+    
 
 def initialize_wandb(args: argparse.Namespace) -> None:
     """Initialize the Weights and Biases logging.
@@ -231,7 +302,6 @@ def get_args():
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
     parser.add_argument('--epochs', type=int, default=25, help='Number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.00001, help='Learning rate for training')
-    parser.add_argument('--model_path', type=str, default='models/pretrained/convnextv2_atto_1k_224_ema.pth', help='Path to load the model from')
     parser.add_argument('--save_path', type=str, default='models/', help='Path to save the model to')
     parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
@@ -253,17 +323,17 @@ if __name__ == '__main__':
             image_size = args.image_size
         case 'convnextv2':
             image_size = (224, 224)
-        case 'vit':
+        case 'vit' | 'caformer':
             image_size = (384, 384)
         case 'eva02':
             image_size = (448, 448)
     
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
-                         num_classes_straw=args.num_classes_straw, continuous=args.cont, data_subsample=args.data_subsample)
+                         num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample)
     test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                         random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
-                        num_classes_straw=args.num_classes_straw, continuous=args.cont, data_subsample=args.data_subsample)
+                        num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample)
     
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False)
@@ -295,8 +365,8 @@ if __name__ == '__main__':
                 model = timm.create_model('caformer_m36,.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
     
     if args.cont and args.model != 'cnn':
-        feature_shape = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1])).shape
-        feature_size = feature_shape[1] * feature_shape[2]
+        features = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
+        feature_size = torch.flatten(features, 1).shape[1]
         feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
     else:
         feature_regressor = None

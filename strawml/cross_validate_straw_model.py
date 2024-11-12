@@ -45,6 +45,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
     epoch_train_accuracies = []
     epoch_val_accuracies = []
     
+    plot_examples_every = 0.5 # Plot an example every X% of the length of the training data
+    
     for epoch in range(args.epochs):
         train_iterator = tqdm(train_loader, unit="batch", position=0, leave=False)
         train_iterator.set_description(f'Fold {fold+1}/{args.folds} Training Epoch {epoch+1}/{args.epochs}')
@@ -53,7 +55,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             feature_regressor.train()
         train_accuracies = []
         train_losses = []
+        current_iteration = 0
         for (frame_data, target) in train_iterator:
+            current_iteration += 1
             # TRY: using only the edge image
             # frame_data = frame_data[:, 3, :, :]
             # frame_data = frame_data.unsqueeze(1)
@@ -66,19 +70,20 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             
             optimizer.zero_grad()
             
+            # print("frame_data shape:", frame_data.shape)
+            
             # Forward pass
             if args.cont and args.model != 'cnn':
                 features = model.forward_features(frame_data)
                 output = features
             else:
                 output = model(frame_data)
-            if args.cont and len(output.shape) > 3: output = output.squeeze()
+            # print("features shape:", features.shape)
+            # print("output shape (post squeeze, before feature_regressor):", output.shape)
             if feature_regressor is not None:
+                output = output.flatten(1)
                 output = feature_regressor(output)
-            if args.cont:
-                if len(output.shape) > 1:
-                    output = output.flatten()
-                output = torch.clamp(output, 0, 1)
+                # output = torch.clamp(output, 0, 1)
             
             loss = loss_fn(output, fullness)
             train_losses.append(loss.item())
@@ -99,6 +104,17 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
         
                 train_iterator.set_postfix(loss=loss.item(), accuracy=sum(train_accuracies)/len(train_accuracies))
 
+            if not args.no_wandb:
+                # Save an example every 10% of the length of the training data
+                training_info = {'data_type': 'train', 'current_iteration': current_iteration, 'epoch': epoch+1, 'fold': fold+1}
+                divisor = int(len(train_loader) * plot_examples_every)
+                divisor = 1 if divisor == 0 else divisor
+                if current_iteration % divisor == 0:
+                    if args.cont:
+                        plot_example(training_info, frame_data, output, fullness)
+                    else:
+                        plot_example(training_info, frame_data, predicted, target_fullness)
+            
         mean_train_loss = np.mean(train_losses)
         epoch_train_losses.append(mean_train_loss)
         if not args.cont:
@@ -130,12 +146,14 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             val_iterator = tqdm(val_loader, unit="batch", position=0, leave=False)
             val_iterator.set_description(f'Fold {fold+1}/{args.folds} Validating Epoch {epoch+1}/{args.epochs}')
             
-            # Time the inference time
-            start_time = timeit.default_timer()
             
             val_losses = []
             val_accuracies = []
+            current_iteration = 0
+            batch_times = []
             for (frame_data, target) in val_iterator:
+                
+                current_iteration += 1
                 # TRY: using only the edge image
                 # frame_data = frame_data[:, 3, :, :]
                 # frame_data = frame_data.unsqueeze(1)
@@ -145,6 +163,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if torch.cuda.is_available():
                     frame_data = frame_data.cuda()
                     fullness = fullness.cuda()
+                    
+                # Time the inference time
+                start_time = timeit.default_timer()
                 
                 # Forward pass
                 if args.cont and args.model != 'cnn':
@@ -152,13 +173,16 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     output = features
                 else:
                     output = model(frame_data)
-                if args.cont: output = output.squeeze()
+                # print("features shape:", features.shape)
+                # print("output shape (post squeeze, before feature_regressor):", output.shape)
                 if feature_regressor is not None:
+                    output = output.flatten(1)
                     output = feature_regressor(output)
-                    output = output.squeeze()
-                if args.cont:
-                    output = torch.clamp(output, 0, 1)
+                    # output = torch.clamp(output, 0, 1)
                 
+                batch_time = timeit.default_timer() - start_time
+                batch_time = batch_time/frame_data.shape[0]
+                batch_times.append(batch_time)
                 
                 val_loss = loss_fn(output, fullness)
                 val_losses.append(val_loss.item())
@@ -171,15 +195,26 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     correct += sum(predicted == target_fullness)
                     accuracy = 100 * correct / args.batch_size
                     val_accuracies.append(accuracy.item())
-            
-            end_time = timeit.default_timer()
-            elapsed_time = end_time - start_time
-            average_time = elapsed_time / len(val_loader)
-            LOG_DICT[f'f{fold+1}_inference_time'] = average_time
+
+                if not args.no_wandb:
+                    # Save an example every 10% of the length of the training data
+                    val_info = {'data_type': 'val', 'current_iteration': current_iteration, 'epoch': epoch+1, 'fold': fold+1}
+                    divisor = int(len(val_loader) * plot_examples_every)
+                    divisor = 1 if divisor == 0 else divisor
+                    if current_iteration % divisor == 0:
+                        if args.cont:
+                            plot_example(val_info, frame_data, output, fullness)
+                        else:
+                            plot_example(val_info, frame_data, predicted, target_fullness)
+                
+                
+            average_time = np.mean(batch_times)
+            if not args.no_wandb:
+                LOG_DICT[f'f{fold+1}_inference_time'] = average_time
             
             # Save the best model
             if args.cont:
-                print(f'Epoch: {epoch+1}, Average Inference Time: {average_time:.2f} seconds, Total Inference Time: {elapsed_time:.2f} seconds. (Batch Size: {args.batch_size}) Validation Loss: {np.mean(val_losses):.6f}, Last predictions -- Fullness: {torch.mean(fullness).item():.2f}, Prediction: {torch.mean(output).item():.2f}')
+                print(f'Epoch: {epoch+1}, Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {np.sum(batch_times):.6f} seconds. (Batch Size: {args.batch_size}) Validation Loss: {np.mean(val_losses):.6f}, Last predictions -- Fullness: {torch.mean(fullness).item():.2f}, Prediction: {torch.mean(output).item():.2f}')
                 if np.mean(val_losses) < best_accuracy:
                     best_accuracy = np.mean(val_losses)
                     print(f'New best loss: {best_accuracy}')
@@ -208,7 +243,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             else:
                 correct = correct.detach().cpu()
                 accuracy = 100 * correct /total
-                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.2f} seconds, Total Inference Time: {elapsed_time:.2f} seconds. (Batch Size: {args.batch_size})')
+                print(f'Epoch: {epoch+1}, Validation Accuracy: {accuracy:.2f}%. Average Inference Time: {average_time:.6f} seconds, Total Inference Time: {sum(batch_times):.6f} seconds. (Batch Size: {args.batch_size})')
 
                 if not args.no_wandb:
                     LOG_DICT[f'f{fold+1}_val_accuracy'] = accuracy
@@ -274,7 +309,48 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
     
     return epoch_train_losses, epoch_val_losses, epoch_train_accuracies, epoch_val_accuracies, best_accuracy
     
+
+def plot_example(info, frame_data, prediction, target):
+    """Plot an example frame with the prediction.
+    """
+    if len(frame_data.shape) == 4:
+        frame_data = frame_data[0]
+    if len(prediction) > 1:
+        prediction = prediction[0]
+    if len(target) > 1:
+        target = target[0]
+    if frame_data.shape[0] > 3:
+        frame_data = frame_data[:3]
     
+    frame_data = frame_data.permute(1, 2, 0)
+    frame_data = frame_data.detach().cpu().numpy()
+    prediction = prediction.detach().cpu().numpy()
+    target = target.detach().cpu().numpy()
+    
+    means = train_set.train_mean
+    stds = train_set.train_std
+    frame_data = frame_data * stds + means
+    frame_data = np.clip(frame_data, 0, 1)
+    
+    if args.cont:
+        prediction = int(prediction*100)
+        target = int(target*100)
+    else:
+        increment = increment = 100 / (train_set.num_classes_straw - 1)
+        prediction = prediction * increment
+        target = target * increment
+    
+    plt.imshow(frame_data)
+    plt.title(f'{info["data_type"]} Epoch: {info["epoch"]} it: {info["current_iteration"]} Prediction: {prediction} Target: {target}')
+    
+    # plt.show()
+    
+    if not args.no_wandb:
+        wandb.log({f'f{info["fold"]}_{info["data_type"]}_example_frame': wandb.Image(plt)})
+    
+        
+    plt.close()
+
 
 def initialize_wandb(args: argparse.Namespace) -> None:
     """Initialize the Weights and Biases logging.
@@ -311,6 +387,8 @@ def initialize_wandb(args: argparse.Namespace) -> None:
         LOG_DICT[f'f{fold+1}_best_val_accuracy'] = None
         LOG_DICT[f'f{fold+1}_epoch'] = None
         LOG_DICT[f'f{fold+1}_inference_time'] = None
+        # LOG_DICT[f'f{fold+1}_train_example_frame'] = None
+        # LOG_DICT[f'f{fold+1}_val_example_frame'] = None
         
         wandb.define_metric(f'f{fold+1}_train_loss', step_metric='custom_step')
         wandb.define_metric(f'f{fold+1}_val_loss', step_metric='custom_step')
@@ -320,6 +398,8 @@ def initialize_wandb(args: argparse.Namespace) -> None:
         wandb.define_metric(f'f{fold+1}_best_val_accuracy', step_metric='custom_step')
         wandb.define_metric(f'f{fold+1}_epoch', step_metric='custom_step')
         wandb.define_metric(f'f{fold+1}_inference_time', step_metric='custom_step')
+        wandb.define_metric(f'f{fold+1}_train_data_type_example_frame', step_metric='custom_step')
+        wandb.define_metric(f'f{fold+1}_val_data_type_example_frame', step_metric='custom_step')
 
 def get_args():
     """Get the arguments for the training script.
@@ -354,7 +434,7 @@ if __name__ == '__main__':
             image_size = args.image_size
         case 'convnextv2':
             image_size = (224, 224)
-        case 'vit':
+        case 'vit' | 'caformer':
             image_size = (384, 384)
         case 'eva02':
             image_size = (448, 448)
@@ -391,6 +471,8 @@ if __name__ == '__main__':
             LOG_DICT[f'f{fold}_best_val_accuracy'] = None
             LOG_DICT[f'f{fold}_epoch'] = None
             LOG_DICT[f'f{fold}_inference_time'] = None
+            # LOG_DICT[f'f{fold}_train_data_type_example_frame'] = None
+            # LOG_DICT[f'f{fold}_val_data_type_example_frame'] = None
         
         print(f'Training fold {fold+1}/{args.folds}')
         train_loader = DataLoader(train_set, batch_size=args.batch_size, sampler=SubsetRandomSampler(train_idx))
@@ -417,11 +499,11 @@ if __name__ == '__main__':
             case 'eva02':
                 model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
             case 'caformer':
-                model = timm.create_model('caformer_m36,.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+                model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
         
         if args.cont and args.model != 'cnn':
-            feature_shape = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1])).shape
-            feature_size = feature_shape[1] * feature_shape[2]
+            features = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
+            feature_size = torch.flatten(features, 1).shape[1]
             feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
         else:
             feature_regressor = None
@@ -464,7 +546,7 @@ if __name__ == '__main__':
         
     plt.plot(x, np.mean(fold_train_losses, axis=0), c='b', label='Train Loss', linestyle='--')
     plt.plot(x, np.mean(fold_val_losses, axis=0), c='r', label='Val Loss')
-    plt.ylim(0, min(7, np.max(fold_val_losses), np.max(fold_val_losses))+0.2)
+    plt.ylim(0, min(7, np.max(fold_val_losses), np.max(fold_val_losses))+0.01)
     plt.title('Loss per epoch')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')

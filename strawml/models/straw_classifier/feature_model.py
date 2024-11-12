@@ -35,12 +35,10 @@ class FeatureRegressor(torch.nn.Module):
             Output tensor with shape [N,1]
         
         """
-        # if len(x.shape) > 2:
         x = torch.flatten(x, 1)
-        # elif len(x.shape) == 1:
-            # x = torch.flatten(x)
         x = self.r(self.fc1(x))
         x = self.fc2(x)
+        x = torch.flatten(x)
         return x
         
 
