@@ -529,7 +529,8 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'num_classes_straw': args.num_classes_straw,
             'continuous': args.cont,
             'folds': args.folds,
-            'data_subsample': args.data_subsample
+            'data_subsample': args.data_subsample,
+            'augment_probability': args.augment_probability
         })
     
     global LOG_DICT
