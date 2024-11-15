@@ -52,19 +52,18 @@ def predict_model(args, model: torch.nn.Module, dataloader: DataLoader, feature_
                     output = features
                 else:
                     output = model(frame_data)
-                if args.cont: output = output.squeeze()
+                # print("features shape:", features.shape)
+                # print("output shape (post squeeze, before feature_regressor):", output.shape)
                 if feature_regressor is not None:
+                    output = output.flatten(1)
                     output = feature_regressor(output)
-                    output = output.squeeze()
-
-                if args.cont:
-                    output = torch.clamp(output, 0, 1)
-                    # output = torch.sigmoid(output)
+                    # output = torch.clamp(output, 0, 1)
                 
             loss = loss_fn(output, fullness)
             losses = np.append(losses, loss.item())
             
             if not args.cont:
+                output = torch.nn.functional.softmax(output, dim=1)
                 _, predicted = torch.max(output, 1)
                 _, target_fullness = torch.max(fullness, 1)
                 correct = sum(predicted == target_fullness)
@@ -195,14 +194,12 @@ def get_args() -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(description='Train the CNN classifier model.')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
-    parser.add_argument('--epochs', type=int, default=25, help='Number of epochs to train for')
-    parser.add_argument('--lr', type=float, default=0.00001, help='Learning rate for training')
-    parser.add_argument('--model_path', type=str, default='models/vit_classifier_best.pth', help='Path to load the model from')
-    parser.add_argument('--data_path', type=str, default='data/interim/chute_detection.hdf5', help='Path to the training data')
+    parser.add_argument('--model_path', type=str, default='models/vit_regressor', help='Path to load the model from')
+    parser.add_argument('--data_path', type=str, default='data/interim/sensors.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
     parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
-    parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnextv2', 'vit', 'eva02'])
+    parser.add_argument('--model', type=str, default='vit', help='Model to use for predicting', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
     parser.add_argument('--image_size', type=tuple, default=(1370, 204), help='Image size for the model (only for CNN)')
     parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
     parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class (only for CNN model currently)')
@@ -217,7 +214,7 @@ if __name__ == '__main__':
             image_size = args.image_size
         case 'convnextv2':
             image_size = (224, 224)
-        case 'vit':
+        case 'vit' | 'caformer':
             image_size = (384, 384)
         case 'eva02':
             image_size = (448, 448)
@@ -246,19 +243,21 @@ if __name__ == '__main__':
             model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
         case 'eva02':
             model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
+        case 'caformer':
+            model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
     
 
     if args.cont and args.model != 'cnn':
-        feature_shape = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1])).shape
-        feature_size = feature_shape[1] * feature_shape[2]
+        features = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
+        feature_size = torch.flatten(features, 1).shape[1]
         feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
         
-        model.load_state_dict(torch.load(f'{args.model_path}/{args.model}_feature_extractor_best.pth'))
-        feature_regressor.load_state_dict(torch.load(f'{args.model_path}/{args.model}_regressor_best.pth'))
+        model.load_state_dict(torch.load(f'{args.model_path}/{args.model}_feature_extractor_best.pth', weights_only=True))
+        feature_regressor.load_state_dict(torch.load(f'{args.model_path}/{args.model}_regressor_best.pth', weights_only=True))
         
     else:
         feature_regressor = None
-        model.load_state_dict(torch.load(args.model_path))
+        model.load_state_dict(torch.load(args.model_path, weights_only=True))
     
     outputs, fullnesses, accuracies, losses = predict_model(args, model, test_loader, feature_regressor=feature_regressor)
     

@@ -97,6 +97,9 @@ After having selected a model and training procedure, we will try to experiment 
 - [ ] Include heatmaps
 - [ ] Only edges
 - [ ] Only heatmaps
+- [ ] Fourier transform
+- [ ] Scale-space transform
+- [ ] Wavelet transform
 
 #### Data Augmentation
 - [ ] RGBShift
