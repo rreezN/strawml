@@ -15,7 +15,7 @@ from strawml.models.straw_classifier import chute_cropper as cc
 class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True, inc_edges: bool = False,
                  random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21,
-                 continuous: bool = False, subsample: float = 1.0) -> torch.utils.data.Dataset:
+                 continuous: bool = False, subsample: float = 1.0, augment_probability: float = 0.5) -> torch.utils.data.Dataset:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
@@ -27,6 +27,7 @@ class Chute(torch.utils.data.Dataset):
         self.num_classes_straw = num_classes_straw
         self.continuous = continuous
         self.subsample = subsample
+        self.augment_probability = augment_probability
         
         # Load the data file
         self.frames = h5py.File(self.data_path, 'a')
@@ -128,10 +129,11 @@ class Chute(torch.utils.data.Dataset):
         if self.data_purpose == "straw":
             # if self.indices[idx] in self.bad_frames:
             #     print(f"Bad frame detected: {self.indices[idx]}")
-            frame_data, bbox_chute = cc.rotate_and_crop_to_bbox(frame_data, bbox_chute)
+            frame_data, bbox_chute_rotated = cc.rotate_and_crop_to_bbox(frame_data, bbox_chute)
             if self.inc_heatmap:
                 heatmap, _ = cc.rotate_and_crop_to_bbox(heatmap, bbox_chute)
 
+            bbox_chute = bbox_chute_rotated
             # print("1.5 Rotation and cropping to bbox")
             # self.plot_data(frame_data=(frame_data, heatmap), labels = [bbox_chute])
 
@@ -139,17 +141,48 @@ class Chute(torch.utils.data.Dataset):
             # print(f"\nEmpty frame: {self.indices[idx]}")
             self.empty_frames.append(self.indices[idx])
             return torch.Tensor([0]), torch.Tensor([0])
-        if self.inc_edges:
-            edges = self.get_edge_features(frame_data)
         
-        if self.inc_heatmap: frame_data = (frame_data, heatmap)
+        
+        # if self.inc_edges:
+        #     edges = self.get_edge_features(frame_data)
+        
         # Transform to tensor images
         if self.inc_heatmap:
-            img = self.transform(frame_data[0])
-            heatmap = self.transform(frame_data[1])
+            img = self.transform(frame_data)
+            heatmap = self.transform(heatmap)
             frame_data = (img, heatmap)
         else:
             frame_data = self.transform(frame_data)
+        
+        # Augment the data
+        if self.data_type == 'train' and self.data_purpose == "straw":
+            if np.random.rand() < self.augment_probability:
+                transform_list = [
+                                  transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.5, hue=0.05), 
+                                  transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.JPEG(quality=(1, 100)), transforms.ToDtype(torch.float32, scale=True)]),
+                                  transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 5.0)),
+                                  transforms.GaussianNoise(mean=0.0, sigma=0.1),
+                                  transforms.RandomEqualize(p=1.0),
+                                  transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.RandomPosterize(bits=np.random.randint(3, 5), p=1.0), transforms.ToDtype(torch.float32, scale=True)]),
+                                  transforms.RandomAdjustSharpness(p=1.0, sharpness_factor=np.random.uniform(1.0, 2.0)),
+                                  ]
+
+                augmentation = transforms.RandomChoice(transform_list)
+                if self.inc_heatmap:
+                    img = augmentation(frame_data[0])
+                    # heatmap = augmentation(frame_data[1])
+                    frame_data = (img, frame_data[1])
+                else:
+                    frame_data = augmentation(frame_data)
+
+        if self.inc_edges:
+            if self.inc_heatmap:
+                edges = self.get_edge_features(((frame_data[0].permute(1,2,0)*255).to(torch.uint8)).detach().numpy())
+            else:
+                edges = self.get_edge_features(((frame_data.permute(1,2,0)*255).to(torch.uint8)).detach().numpy())
+                
+        
+        
         
         # print("2. Transform")
         # self.plot_data(frame_data=frame_data, labels = [bbox_chute])
@@ -221,7 +254,7 @@ class Chute(torch.utils.data.Dataset):
         possible_fullness = np.arange(0, 1, increment)
         fullness_converted = self.get_closest_value(fullness, possible_fullness)
         
-        idx = int(fullness_converted/increment)
+        idx = int(round(fullness_converted/increment))
         label = [0] * self.num_classes_straw
         label[idx] = 1
         
@@ -348,7 +381,6 @@ class Chute(torch.utils.data.Dataset):
             return running_mean, running_std, running_min, running_max, running_mean_hm, running_std_hm, running_min_hm, running_max_hm
         else:
             return running_mean, running_std, running_min, running_max
-        
 
     def plot_data(self, frame_idx: int = 0, frame_data=None, labels=None):
         """Plots the data and labels for the first frame in the dataset."""
@@ -358,22 +390,25 @@ class Chute(torch.utils.data.Dataset):
         
         if self.inc_heatmap:
             image = frame_data[:3, :, :]
-            heatmap = frame_data[3:, :, :]
+        else:
+            image = frame_data
+        img_unnormalize = transforms.Normalize(mean = [-m/s for m, s in zip(self.train_mean, self.train_std)],
+                                                        std = [1/s for s in self.train_std])
+        image = img_unnormalize(image)
+        image = image.squeeze().permute(1, 2, 0)
+        image = image.detach().numpy()
+        if self.inc_heatmap:
+            heatmap = frame_data[3:6, :, :]
             
             if type(image) in [torch.Tensor, tv_tensors._image.Image]:
                 if len(image.shape) == 4: 
                     image = image.squeeze()
                     heatmap = heatmap.squeeze()
-                if torch.min(image) < 0:
-                    img_unnormalize = transforms.Normalize(mean = [-m/s for m, s in zip(self.train_mean, self.train_std)],
-                                                        std = [1/s for s in self.train_std])
                     hm_unnormalize = transforms.Normalize(mean = [-m/s for m, s in zip(self.train_hm_mean, self.train_hm_std)],
                                                         std = [1/s for s in self.train_hm_std])
-                    image = img_unnormalize(image)
+                    
                     heatmap = hm_unnormalize(heatmap)
-                image = image.permute(1, 2, 0)
                 heatmap = heatmap.permute(1, 2, 0)
-                image = image.detach().numpy()
                 heatmap = heatmap.detach().numpy()
 
                 
@@ -391,29 +426,27 @@ class Chute(torch.utils.data.Dataset):
             else:
                 plt.suptitle("Chute Dataset")
         else:
-            image = frame_data
-            
             # Display the image
-            plt.imshow(image.squeeze().permute(1, 2, 0))
+            plt.imshow(image)
             if self.data_purpose == "straw":
-                plt.title("Straw Dataset, Fullness: " + str(np.round(100*self.convert_class_to_fullness(labels).item())) +"%")
+                plt.title(f"Straw Dataset, Fullness: {int(round(labels.item()*100))}%")
             else:
                 plt.title("Chute Dataset")
             plt.axis('off')
             
         
-        if labels is not None:
-            # Display the bounding boxes
-            if self.data_purpose == "straw":
-                bbox = labels
-            else:
-                bbox = labels[0]
+        # if labels is not None:
+        #     # Display the bounding boxes
+        #     if self.data_purpose == "straw":
+        #         bbox = labels
+        #     else:
+        #         bbox = labels[0]
             
-            import matplotlib.patches as patches
-            # delete gradient information
-            # bbox = bbox.detach().numpy()
-            rect = patches.Polygon([[bbox[0], bbox[1]], [bbox[2], bbox[3]], [bbox[4], bbox[5]], [bbox[6], bbox[7]]], edgecolor='g', facecolor='none')
-            ax[0].add_patch(rect)
+        #     import matplotlib.patches as patches
+        #     # delete gradient information
+        #     # bbox = bbox.detach().numpy()
+        #     rect = patches.Polygon([[bbox[0], bbox[1]], [bbox[2], bbox[3]], [bbox[4], bbox[5]], [bbox[6], bbox[7]]], edgecolor='g', facecolor='none')
+        #     ax[0].add_patch(rect)
         
         plt.show()
         
@@ -448,7 +481,6 @@ class Chute(torch.utils.data.Dataset):
         edges = cv2.Canny(frame_data, 100, 200)
         edges = edges.reshape(1, edges.shape[0], edges.shape[1])
         edges = torch.from_numpy(edges)/255
-        # TODO: Figure out normalization, might need to do a calculate statistics on the edge images as well, mean is probably 0.0x and std is probably ~1
         return edges
     
     def print_arguments(self):
@@ -461,62 +493,128 @@ class Chute(torch.utils.data.Dataset):
                     Number of straw classes:  {self.num_classes_straw}\n \
                         ')
 
+def plot_multiple_images(dataloader: Chute, num_images: int = 10, mode: str = 'rgb'):
+    """Plots multiple images from the dataloader.
+
+    Parameters:
+    num_images (int): The number of images to plot.
+    dataloader (Chute): The dataloader to use.
+    """
+    
+    # Get num_images from the dataloader
+    images_to_plot = np.random.choice(range(len(dataloader)), num_images)
+    
+    # Automatically arrange images in a grid based on num_images
+    num_rows = num_images//2
+    num_images_per_row = num_images//num_rows
+    
+    # Make the plot
+    fig, ax = plt.subplots(num_images_per_row, num_rows, figsize=(15, 15))
+    ax = ax.flatten()
+    # cmap = None
+    for i in range(num_images):
+        frame_data, labels = dataloader.__getitem__(images_to_plot[i])
+        if mode == 'rgb':
+            image = frame_data
+        
+            img_unnormalize = transforms.Normalize(mean = [-m/s for m, s in zip(dataloader.train_mean, dataloader.train_std)],
+                                                            std = [1/s for s in dataloader.train_std])
+            image = img_unnormalize(image[:3])
+            image = image.squeeze().permute(1, 2, 0)
+            image = image.detach().numpy()
+            image = np.clip(image, 0, 1)
+        elif mode == 'edges':
+            edge_channel = 3
+            if dataloader.inc_heatmap:
+                edge_channel += 3
+            image = frame_data[edge_channel, :, :]
+            image = image.squeeze()
+            image = image.detach().numpy()
+            cmap = 'gray'
+        elif mode == 'heatmap':
+            image = frame_data[3:6, :, :]
+            
+            img_unnormalize = transforms.Normalize(mean = [-m/s for m, s in zip(dataloader.train_hm_mean, dataloader.train_hm_std)],
+                                                            std = [1/s for s in dataloader.train_hm_std])
+            image = img_unnormalize(image)
+            image = image.squeeze().permute(1, 2, 0)
+            image = image.detach().numpy()
+            image = np.clip(image, 0, 1)
+        
+        # Display the image
+        ax[i].imshow(image)
+        ax[i].set_title(f"Frame: {images_to_plot[i]} | Fullness: {int(round(labels.item()*100))}%")
+        ax[i].set_axis_off()
+    
+    plt.suptitle("Straw Dataset")
+    plt.tight_layout()
+    plt.show()
+    
+
 if __name__ == '__main__':
     import time
     from torch.utils.data import DataLoader
 
-    print("---- CHUTE DETECTION DATASET ----")
-    # train_set = Chute(data_type='train', inc_heatmap=False, inc_edges=True, force_update_statistics=False, data_path = 'data/interim/chute_detection.hdf5', image_size=(384, 384))
-    train_set = Chute(data_path = 'data/processed/augmented/chute_detection.hdf5', data_type='train', inc_heatmap=False, inc_edges=False,
-                         random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
-                         num_classes_straw=11, continuous=False)
-    print("Measuring time taken to load a batch")
-    train_loader = DataLoader(train_set, batch_size=1, shuffle=True, num_workers=0)
+    # print("---- CHUTE DETECTION DATASET ----")
+    # # train_set = Chute(data_type='train', inc_heatmap=False, inc_edges=True, force_update_statistics=False, data_path = 'data/interim/chute_detection.hdf5', image_size=(384, 384))
+    # train_set = Chute(data_path = 'data/processed/augmented/chute_detection.hdf5', data_type='train', inc_heatmap=False, inc_edges=False,
+    #                      random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
+    #                      num_classes_straw=11, continuous=False)
+    # print("Measuring time taken to load a batch")
+    # train_loader = DataLoader(train_set, batch_size=1, shuffle=True, num_workers=0)
 
-    start = time.time()
-    i = 0
-    durations = []
-    pbar = tqdm(train_loader, unit="batch", position=0, leave=False)
-    for data, target in train_loader:
-        end = time.time()
-        # asses the shape of the data and target
-        duration = end-start
-        durations += [duration]
-        pbar.set_description(f'Batch {i+1}/{len(train_loader)} Avg. duration: {np.mean(durations):.2f}s')
-        pbar.update(1)
-        i+= 1
-        start = time.time()
+    # start = time.time()
+    # i = 0
+    # durations = []
+    # pbar = tqdm(train_loader, unit="batch", position=0, leave=False)
+    # for data, target in train_loader:
+    #     end = time.time()
+    #     # asses the shape of the data and target
+    #     duration = end-start
+    #     durations += [duration]
+    #     pbar.set_description(f'Batch {i+1}/{len(train_loader)} Avg. duration: {np.mean(durations):.2f}s')
+    #     pbar.update(1)
+    #     i+= 1
+    #     start = time.time()
         
         
-        # # Display last image, bboxes and labels
-        # images = data
+    #     # # Display last image, bboxes and labels
+    #     # images = data
         
-        # frame = images[:,0,:, :]
-        # heatmap = images[:, 1, :, :]
-        # bbox_chute = target[0]
-        # # bbox_straw = target[1]
-        # obstructed = target[1]
-        # fullness = target[2]
+    #     # frame = images[:,0,:, :]
+    #     # heatmap = images[:, 1, :, :]
+    #     # bbox_chute = target[0]
+    #     # # bbox_straw = target[1]
+    #     # obstructed = target[1]
+    #     # fullness = target[2]
         
-        # Skip timing dataloader
-        # if i > 0:
-        #     break
+    #     # Skip timing dataloader
+    #     # if i > 0:
+    #     #     break
     
-    print(f'\nTotal time taken: {np.sum(durations):.2f}')
-    print(f'Max duration: {np.max(durations):.2f} at index {np.argmax(durations)}')
-    print(f'Min duration: {np.min(durations):.2f} at index {np.argmin(durations)}')
-    print(f'Mean duration: {np.mean(durations):.2f}')
-    # Print example statistics of the last batch
-    print(f'Last data shape: {data[0].shape}')
+    # print(f'\nTotal time taken: {np.sum(durations):.2f}')
+    # print(f'Max duration: {np.max(durations):.2f} at index {np.argmax(durations)}')
+    # print(f'Min duration: {np.min(durations):.2f} at index {np.argmin(durations)}')
+    # print(f'Mean duration: {np.mean(durations):.2f}')
+    # # Print example statistics of the last batch
+    # print(f'Last data shape: {data[0].shape}')
     
-    print(train_set.empty_frames)
+    # print(train_set.empty_frames)
     
     # train_set.plot_data(frame_idx=9)
     
     print("---- STRAW DETECTION DATASET ----")
-    # train_set = Chute(data_type='train', inc_heatmap=False, inc_edges=True, force_update_statistics=False, data_purpose="straw", image_size=(1370//2, 204//2))
+    train_set = Chute(data_path='data/interim/chute_detection.hdf5', data_type='train', inc_heatmap=True, inc_edges=True,
+                         random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
+                         num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=1.0)
     
-    # train_set.plot_data(frame_idx=0)
+    np.random.seed(42)
+    for i in range(10):
+        plot_multiple_images(train_set, num_images=10, mode='rgb')
+    
+    # for i in range(len(train_set)):
+    #     data, target = train_set[i]
+    #     train_set.plot_data(frame_data=data, labels=target)
     
     
     
