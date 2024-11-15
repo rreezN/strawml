@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
 from scipy.stats import linregress
+import os
 
 import data.dataloader as dl
 import strawml.models.straw_classifier.cnn_classifier as cnn
@@ -110,7 +111,8 @@ def plot_cont_predictions(outputs, fullnesses):
     plt.ylabel('Fullness')
     plt.title(f'{model_name} Predicted vs True Fullness, MSE: {MSE:.3f}, MAE: {MAE:.3f}, RMSE: {RMSE:.3f}, PRMSE: {PRMSE:.3f}, accuracy: {accuracy*100:.1f}%')
     plt.tight_layout()
-    plt.savefig('reports/figures/straw_analysis/model_results/cont_predictions.png', dpi=300)
+    os.makedirs(f'reports/figures/model_results/{args.model}_regressor/', exist_ok=True)
+    plt.savefig(f'reports/figures/model_results/{args.model}_regressor/cont_predictions.png', dpi=300)
     plt.show()
     
     
@@ -128,7 +130,7 @@ def plot_cont_predictions(outputs, fullnesses):
     plt.title(f'{model_name} Predicted vs True Fullness')
     plt.legend()
     plt.tight_layout()
-    plt.savefig('reports/figures/straw_analysis/model_results/cont_predictions_scatter.png', dpi=300)
+    plt.savefig(f'reports/figures/model_results/{args.model}_regressor/cont_predictions_scatter.png', dpi=300)
     plt.show()
 
 
@@ -194,12 +196,12 @@ def get_args() -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(description='Train the CNN classifier model.')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
-    parser.add_argument('--model_path', type=str, default='models/vit_regressor', help='Path to load the model from')
-    parser.add_argument('--data_path', type=str, default='data/interim/sensors.hdf5', help='Path to the training data')
+    parser.add_argument('--model_path', type=str, default='models/', help='Path to load the model from')
+    parser.add_argument('--data_path', type=str, default='data/processed/sensors.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
     parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
-    parser.add_argument('--model', type=str, default='vit', help='Model to use for predicting', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
+    parser.add_argument('--model', type=str, default='caformer', help='Model to use for predicting', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
     parser.add_argument('--image_size', type=tuple, default=(1370, 204), help='Image size for the model (only for CNN)')
     parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
     parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class (only for CNN model currently)')
@@ -219,9 +221,18 @@ if __name__ == '__main__':
         case 'eva02':
             image_size = (448, 448)
     
-    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, image_size=image_size,
+    temp_set = dl.Chute(data_path='data/interim/chute_detection.hdf5', data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, image_size=image_size,
                         random_state=args.seed, force_update_statistics=False, data_purpose='straw',
                         num_classes_straw=args.num_classes_straw, continuous=args.cont)
+    mean, std = temp_set.train_mean, temp_set.train_std
+    if args.inc_heatmap:
+        hm_mean, hm_std = temp_set.train_hm_mean, temp_set.train_hm_std
+    
+    statistics = (mean, std) if not args.inc_heatmap else (mean, std, hm_mean, hm_std)
+    
+    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, image_size=image_size,
+                        random_state=args.seed, force_update_statistics=False, data_purpose='straw',
+                        num_classes_straw=args.num_classes_straw, continuous=args.cont, override_statistics=statistics)
     
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
     
@@ -247,17 +258,19 @@ if __name__ == '__main__':
             model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
     
 
+    model_type = 'regressor' if args.cont else 'classifier'
+    model_path = f'{args.model_path}{args.model}_{model_type}/'
     if args.cont and args.model != 'cnn':
         features = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
         feature_size = torch.flatten(features, 1).shape[1]
         feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
         
-        model.load_state_dict(torch.load(f'{args.model_path}/{args.model}_feature_extractor_best.pth', weights_only=True))
-        feature_regressor.load_state_dict(torch.load(f'{args.model_path}/{args.model}_regressor_best.pth', weights_only=True))
+        model.load_state_dict(torch.load(f'{model_path}/{args.model}_feature_extractor_best.pth', weights_only=True))
+        feature_regressor.load_state_dict(torch.load(f'{model_path}/{args.model}_regressor_best.pth', weights_only=True))
         
     else:
         feature_regressor = None
-        model.load_state_dict(torch.load(args.model_path, weights_only=True))
+        model.load_state_dict(torch.load(f'{model_path}/{args.model}_classifier_best', weights_only=True))
     
     outputs, fullnesses, accuracies, losses = predict_model(args, model, test_loader, feature_regressor=feature_regressor)
     

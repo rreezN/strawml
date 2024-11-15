@@ -15,7 +15,7 @@ from strawml.models.straw_classifier import chute_cropper as cc
 class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True, inc_edges: bool = False,
                  random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21,
-                 continuous: bool = False, subsample: float = 1.0, augment_probability: float = 0.5) -> torch.utils.data.Dataset:
+                 continuous: bool = False, subsample: float = 1.0, augment_probability: float = 0.5, override_statistics: tuple = ()) -> torch.utils.data.Dataset:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
@@ -28,6 +28,13 @@ class Chute(torch.utils.data.Dataset):
         self.continuous = continuous
         self.subsample = subsample
         self.augment_probability = augment_probability
+        
+        if len(override_statistics) > 0:
+            self.train_mean, self.train_std = override_statistics
+            if self.inc_heatmap:
+                self.train_hm_mean, self.train_hm_std = override_statistics[2:]
+        
+            
         
         # Load the data file
         self.frames = h5py.File(self.data_path, 'a')
@@ -71,16 +78,21 @@ class Chute(torch.utils.data.Dataset):
         self.transform = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]) # transforms.Resize((224, 224)) 
 
         # Store the mean and std of the training data for normalization
-        if self.inc_heatmap:
-            self.train_mean, self.train_std, self.train_min, self.train_max, self.train_hm_mean, self.train_hm_std, self.train_hm_min, self.train_hm_max = self.extract_means_and_stds(force_update_statistics)
+        if len(override_statistics) == 0:
+            if self.inc_heatmap:
+                self.train_mean, self.train_std, self.train_min, self.train_max, self.train_hm_mean, self.train_hm_std, self.train_hm_min, self.train_hm_max = self.extract_means_and_stds(force_update_statistics)
+            else:
+                self.train_mean, self.train_std, self.train_min, self.train_max = self.extract_means_and_stds(force_update_statistics)
         else:
-            self.train_mean, self.train_std, self.train_min, self.train_max = self.extract_means_and_stds(force_update_statistics)
+            print("Statistics overridden with external statistics:")
+            print(f'Mean: {self.train_mean}, Std: {self.train_std}')
+            if self.inc_heatmap:
+                print(f'Mean HM: {self.train_hm_mean}, Std HM: {self.train_hm_std}')
         # Store the mean and std of the training data for normalization       
         self.print_arguments()
         
-        self.empty_frames = []
-        self.bad_frames = ['frame_489', 'frame_379', 'frame_375', 'frame_370', 'frame_392', 'frame_478', 'frame_371', 'frame_436', 'frame_457', 'frame_456', 'frame_492', 'frame_496', 'frame_450', 'frame_459', 'frame_432', 'frame_451', 'frame_486', 'frame_396', 'frame_382', 'frame_441', 'frame_439', 'frame_470', 'frame_390', 'frame_369', 'frame_367', 'frame_453', 'frame_383', 'frame_395', 'frame_493', 'frame_385', 'frame_487', 'frame_366', 'frame_452', 'frame_466', 'frame_377', 'frame_442', 'frame_393', 'frame_431', 'frame_471', 'frame_426', 'frame_462', 'frame_435', 'frame_394', 'frame_446', 'frame_481', 'frame_438', 'frame_495', 'frame_454', 'frame_482', 'frame_388', 'frame_474', 'frame_427', 'frame_464', 'frame_475', 'frame_376', 'frame_399', 'frame_473', 'frame_468', 'frame_449', 'frame_460', 'frame_491', 'frame_444', 'frame_430', 'frame_397', 'frame_429', 'frame_389', 'frame_386', 'frame_465', 'frame_428', 'frame_494', 'frame_368', 'frame_463', 'frame_479', 'frame_476', 'frame_387', 'frame_490', 'frame_472', 'frame_372', 'frame_483', 'frame_448', 'frame_374', 'frame_373', 'frame_391', 'frame_437', 'frame_469']
-
+        
+        
     def __len__(self):
         return len(self.indices)
     
@@ -137,10 +149,6 @@ class Chute(torch.utils.data.Dataset):
             # print("1.5 Rotation and cropping to bbox")
             # self.plot_data(frame_data=(frame_data, heatmap), labels = [bbox_chute])
 
-        if frame_data.shape == (2, 0, 3):
-            # print(f"\nEmpty frame: {self.indices[idx]}")
-            self.empty_frames.append(self.indices[idx])
-            return torch.Tensor([0]), torch.Tensor([0])
         
         
         # if self.inc_edges:
@@ -598,8 +606,6 @@ if __name__ == '__main__':
     # print(f'Mean duration: {np.mean(durations):.2f}')
     # # Print example statistics of the last batch
     # print(f'Last data shape: {data[0].shape}')
-    
-    # print(train_set.empty_frames)
     
     # train_set.plot_data(frame_idx=9)
     

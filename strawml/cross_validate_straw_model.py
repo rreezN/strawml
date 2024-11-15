@@ -604,12 +604,19 @@ if __name__ == '__main__':
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
                          num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=args.augment_probability)
+    
+    mean, std = train_set.train_mean, train_set.train_std
+    if args.ic_heatmap:
+        mean_hm = train_set.train_hm_mean
+        std_hm = train_set.train_hm_std
+    
+    statistics = (mean, std) if not args.inc_heatmap else (mean, std, mean_hm, std_hm)
     # test_set = dl.Chute(data_path=args.data_path, data_type='val', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
     #                     random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont)
     sensor_set = dl.Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                           random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=args.data_subsample,
-                          augment_probability=0, num_classes_straw=args.num_classes_straw)
+                          augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics)
     
     fold_train_losses = []
     fold_val_losses = []
