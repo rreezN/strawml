@@ -10,6 +10,7 @@ import shutil
 from skimage import transform
 from tqdm import tqdm
 import json
+from torchvision.transforms import v2 as transforms
 
 from make_dataset import decode_binary_image
 from strawml.data.image_utils import rotate_point, rotate_bbox, clip_bbox_to_image, rotate_image_and_bbox
@@ -306,11 +307,11 @@ def crop_image_and_bbox(image: np.ndarray,
     
     return cropped_image, cropped_image_diff, cropped_bbox
 
-def color_image(image: np.ndarray,
+def gamma_adjust(image: np.ndarray,
                 image_diff: np.ndarray,
                 bbox: np.ndarray,
                 gamma: float,
-                gaussian_noise: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+                ):
     """
     Alters the color composition of the image and image_diff using the given parameters.
     Done to account for different lighting conditions in the dataset.
@@ -338,12 +339,137 @@ def color_image(image: np.ndarray,
     from skimage import exposure
     # Apply gamma correction and add Gaussian noise to the image
     image = exposure.adjust_gamma(image, gamma)
-    image = cv2.add(image, np.random.normal(0, gaussian_noise, image.shape).astype(np.uint8))
 
     # Apply gamma correction and add Gaussian noise to the image difference
     image_diff = exposure.adjust_gamma(image_diff, gamma)
-    image_diff = cv2.add(image_diff, np.random.normal(0, gaussian_noise, image_diff.shape).astype(np.uint8))
 
+    return image, image_diff, bbox
+
+def gaussian_noise(image: np.ndarray, 
+                   image_diff: np.ndarray, 
+                   bbox: np.ndarray, 
+                   mean: float, 
+                   std: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Add Gaussian noise to the image and image_diff.
+
+    ...
+
+    Parameters
+    ----------
+    image : np.ndarray
+        The original image.
+    image_diff : np.ndarray
+        The image difference.
+    bbox : np.ndarray
+        Bounding box coordinates in the format [x1, y1, x2, y2, ...].
+    mean : float
+        The mean of the Gaussian noise.
+    std : float
+        The standard deviation of the Gaussian noise.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray]
+        A tuple containing the noisy image, noisy image difference, and bounding box.
+    """
+    # Add Gaussian noise to the image and image_diff
+    noisy_image = cv2.add(image, np.random.normal(mean, std, image.shape).astype(np.uint8))
+    noisy_image_diff = cv2.add(image_diff, np.random.normal(mean, std, image_diff.shape).astype(np.uint8))
+
+    return noisy_image, noisy_image_diff, bbox
+
+def color_jitter(image: np.ndarray,
+                 image_diff: np.ndarray,
+                bbox: np.ndarray,
+                brightness: float,
+                hue: float,
+                contrast: float,
+                saturation: float,
+                 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+
+    
+    # Create torch transform
+    transform = transforms.ColorJitter(brightness=brightness, hue=hue, contrast=contrast, saturation=saturation)
+    image = transform(image)
+    image_diff = transform(image_diff)
+    
+    return image, image_diff, bbox
+
+def gaussian_blur(image: np.ndarray,
+                    image_diff: np.ndarray,
+                    bbox: np.ndarray,
+                    kernel_size: int,
+                    sigma: float,
+                    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    
+    transform = transforms.GaussianBlur(kernel_size=kernel_size, sigma=sigma)
+    image = transform(image)
+    image_diff = transform(image_diff)
+    
+    return image, image_diff, bbox
+
+def random_invert(image: np.ndarray,
+                    image_diff: np.ndarray,
+                    bbox: np.ndarray,
+                    p: float,
+                    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    transform = transforms.RandomInvert(p=p)
+    image = transform(image)
+    image_diff = transform(image_diff)
+    
+    return image, image_diff, bbox
+
+def jpeg_compression(image: np.ndarray,
+                    image_diff: np.ndarray,
+                    bbox: np.ndarray,
+                    quality: int,
+                    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """compress the image using JPEG compression
+
+    Args:
+        quality (int): The quality of the JPEG compression 0-100 (higher is more compressed)
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray]: _description_
+    """
+    quality = random.randint(100-quality, 100)
+    transform = transforms.JPEG(quality=quality)
+    image = transform(image)
+    image_diff = transform(image_diff)
+
+    return image, image_diff, bbox
+
+def rgbshift(image: np.ndarray,
+             image_diff: np.ndarray,
+             bbox: np.ndarray,
+             r_shift: tuple,
+             g_shift: tuple,
+             b_shift: tuple,
+             ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Shift the RGB channels of the image
+    
+    
+    Args:
+        r_shift (tuple): The shift of the red channel
+        g_shift (tuple): The shift of the green channel
+        b_shift (tuple): The shift of the blue channel
+        
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray]: _description_
+    """
+    r_shift = random.randint(r_shift[0], r_shift[1])
+    g_shift = random.randint(g_shift[0], g_shift[1])
+    b_shift = random.randint(b_shift[0], b_shift[1])
+    
+    image[:,:,0] = np.clip(image[:,:,0] + r_shift, 0, 255)
+    image[:,:,1] = np.clip(image[:,:,1] + g_shift, 0, 255)
+    image[:,:,2] = np.clip(image[:,:,2] + b_shift, 0, 255)
+    
+    image_diff[:,:,0] = np.clip(image_diff[:,:,0] + r_shift, 0, 255)
+    image_diff[:,:,1] = np.clip(image_diff[:,:,1] + g_shift, 0, 255)
+    image_diff[:,:,2] = np.clip(image_diff[:,:,2] + b_shift, 0, 255)
+    
     return image, image_diff, bbox
 
 
@@ -458,21 +584,123 @@ def augment_chute_data(args: argparse.Namespace) -> None:
                     augment_frame_nrs += [frame_nr]
                     frame_nr += 1
 
-                if 'color' in args.type:
+                if 'gamma' in args.type:
                     # TODO: Split color and noise augmentations
                     # print(f"Color, with frame: {frame_nr}")
                     gamma = random.uniform(0.5, 2)
-                    gaussian_noise = random.uniform(0, 1)
-                    colored_image, colored_image_diff, colored_bbox = color_image(image, image_diff, bbox_chute, gamma, gaussian_noise)
+                    colored_image, colored_image_diff, colored_bbox = gamma_adjust(image, image_diff, bbox_chute, gamma)
                     save_frames_to_hdf5(hf_path, frame, frame_nr, colored_image, colored_image_diff, colored_bbox, "color")
                     augment_frame_nrs += [frame_nr]
                     frame_nr += 1
+                    
+                if 'gaussian_noise' in args.type:
+                    # print(f"Gaussian noise, with frame: {frame_nr}")
+                    mean = 0
+                    std = random.uniform(0, 1)
+                    noisy_image, noisy_image_diff, noisy_bbox = gaussian_noise(image, image_diff, bbox_chute, mean, std)
+                    save_frames_to_hdf5(hf_path, frame, frame_nr, noisy_image, noisy_image_diff, noisy_bbox, "gaussian_noise")
+                    augment_frame_nrs += [frame_nr]
+                    frame_nr += 1
+                
         frame_to_augment_dict[frame] = augment_frame_nrs
         pbar.update(1)
     # save the frame to augment dictionary to jsn file
     with open(args.output_dir + "/frame_to_augment.json", "w") as f:
         json.dump(frame_to_augment_dict, f)
+        
+
+def augment_straw_level_data(args: argparse.Namespace) -> None:
+    """
+    Main wrapper function to augment the straw data.
+
+    ...
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        The arguments passed to the script.
+    """
+    # Copy file from args.data to args.output_dir
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+    hf_path = args.output_dir + "/" + 'straw_level.hdf5'   
+    # delete the file if it already exists
+    if os.path.exists(hf_path):
+        os.remove(hf_path)
+    shutil.copy(args.data, args.output_dir)
+    os.rename(args.output_dir + "/" + args.data.split("/")[-1], hf_path)
+    # Open the file
+    hf = h5py.File(hf_path, 'r')   
+    # Based on hf.keys() get the largest number of frames and add 1 to get the next frame number
+    frame_nr = max([int(frame.split('_')[1]) for frame in hf.keys()]) + 1
+    frame_keys = list(hf.keys())
+    hf.close()
+    pbar = tqdm(total=len(frame_keys), desc="Augmenting frames", position=0)
+    frame_to_augment_dict = {}
+    for frame in frame_keys:
+        prob = random.random() 
+        image, image_diff, bbox_chute = load_image(hf_path, frame)
+        if image is None:
+            print(f"Could not load image for frame: {frame}")
+            continue
+        augment_frame_nrs = []
+        if prob <= args.fraction:
+            pbar.set_description_str(f"Frame: {frame}, Probability: {round(prob, 2)}")
+            for _ in range(args.num):
+                if 'gamma' in args.type:
+                    # print(f"Color, with frame: {frame_nr}")
+                    gamma = random.uniform(0.5, 2)
+                    colored_image, colored_image_diff, colored_bbox = gamma_adjust(image, image_diff, bbox_chute, gamma)
+                    save_frames_to_hdf5(hf_path, frame, frame_nr, colored_image, colored_image_diff, colored_bbox, "color")
+                    augment_frame_nrs += [frame_nr]
+                    frame_nr += 1
                     
+                if 'gaussian_noise' in args.type:
+                    # print(f"Gaussian noise, with frame: {frame_nr}")
+                    mean = 0
+                    std = random.uniform(0, 1)
+                    noisy_image, noisy_image_diff, noisy_bbox = gaussian_noise(image, image_diff, bbox_chute, mean, std)
+                    save_frames_to_hdf5(hf_path, frame, frame_nr, noisy_image, noisy_image_diff, noisy_bbox, "gaussian_noise")
+                    augment_frame_nrs += [frame_nr]
+                    frame_nr += 1
+                
+                if 'color_jitter' in args.type:
+                    cj_image, cj_image_diff, cj_bbox = color_jitter(image, image_diff, bbox_chute, 0.5, 0.5, 0.5, 0.5)
+                    save_frames_to_hdf5(hf_path, frame, frame_nr, cj_image, cj_image_diff, cj_bbox, "color_jitter")
+                    augment_frame_nrs += [frame_nr]
+                    frame_nr += 1
+                
+                if 'gaussian_blur' in args.type:
+                    gb_image, gb_image_diff, gb_bbox = gaussian_blur(image, image_diff, bbox_chute, 5, 1)
+                    save_frames_to_hdf5(hf_path, frame, frame_nr, gb_image, gb_image_diff, gb_bbox, "gaussian_blur")
+                    augment_frame_nrs += [frame_nr]
+                    frame_nr += 1
+                    
+                if 'random_invert' in args.type:
+                    ri_image, ri_image_diff, ri_bbox = random_invert(image, image_diff, bbox_chute, 1.0)
+                    save_frames_to_hdf5(hf_path, frame, frame_nr, ri_image, ri_image_diff, ri_bbox, "random_invert")
+                    augment_frame_nrs += [frame_nr]
+                    frame_nr += 1
+                
+                if 'jpeg_compression' in args.type:
+                    jpg_image, jpg_image_diff, jpg_bbox = jpeg_compression(image, image_diff, bbox_chute, 50)
+                    save_frames_to_hdf5(hf_path, frame, frame_nr, jpg_image, jpg_image_diff, jpg_bbox, "jpeg_compression")
+                    augment_frame_nrs += [frame_nr]
+                    frame_nr += 1
+                
+                if 'rgbshift' in args.type:
+                    rgb_image, rgb_image_diff, rgb_bbox = rgbshift(image, image_diff, bbox_chute, (-50, 50), (-50, 50), (-50, 50))
+                    save_frames_to_hdf5(hf_path, frame, frame_nr, rgb_image, rgb_image_diff, rgb_bbox, "rgbshift")
+                    augment_frame_nrs += [frame_nr]
+                    frame_nr += 1
+                
+                
+        frame_to_augment_dict[frame] = augment_frame_nrs
+        pbar.update(1)
+    # save the frame to augment dictionary to jsn file
+    with open(args.output_dir + "/frame_to_augment.json", "w") as f:
+        json.dump(frame_to_augment_dict, f)       
+            
 
 def get_args() -> argparse.Namespace:
     """
@@ -484,14 +712,21 @@ def get_args() -> argparse.Namespace:
         The arguments passed to the script
     """
     parser = argparse.ArgumentParser(description='Augment the chute data.')
+    parser.add_argument('mode', type=str, help='Mode of operation. Options: chute, straw', choices=['chute', 'straw'])
     parser.add_argument('--data', type=str, default='data/interim/chute_detection.hdf5', help='Directory containing the chute data')
     parser.add_argument('--output_dir', type=str, default='data/processed/augmented', help='Directory to save the augmented data')
     parser.add_argument('--num', type=int, default=1, help='Number of augmentations to create per image')
     parser.add_argument('--fraction', type=float, default=0.75, help='Fraction of images to augment')
-    parser.add_argument('--type', type=str, nargs='+', default='rotation translation cropping color', help='Type of augmentation to apply. Options: rotation, translation, cropping')
+    # parser.add_argument('--balance', type=bool, default=False, help='Balance the dataset by augmenting the minority class')
+    parser.add_argument('--type', type=str, nargs='+', default='rotation translation cropping gamma gaussian_noise color_jitter gaussian_blur random_invert jpeg_compression rgbshift', help='Type of augmentation to apply. Options: rotation, translation, cropping, gamma, gaussian_noise, color_jitter, gaussian_blur, random_invert, jpeg_compression, rgbshift')
     return parser.parse_args()
 
 
 if __name__ == '__main__':
     args = get_args()
-    augment_chute_data(args)
+    if args.mode == 'chute':
+        augment_chute_data(args)
+    elif args.mode == 'straw':
+        augment_straw_level_data(args)
+    else:
+        raise ValueError("Invalid mode. Options: chute, straw")

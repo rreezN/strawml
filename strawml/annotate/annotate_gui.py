@@ -10,6 +10,7 @@ import numpy as np
 import datetime
 import h5py
 import os
+from argparse import ArgumentParser
 
 from strawml.data.make_dataset import decode_binary_image
 
@@ -642,12 +643,15 @@ class MainApplication(ttk.Frame):
         
         self.save_file = tk.StringVar()
         self.file_button = ttk.Combobox(self, text="Select File", textvariable=self.save_file)
-        self.file_button['values'] = ['chute_detection.hdf5', 'straw_level.hdf5']
-        self.file_button.set(self.file_button['values'][0])
+        self.file_button['values'] = ['chute_detection.hdf5', 'sensors.hdf5']
+        if "sensor" in self.images_hdf5:
+            self.file_button.set(self.file_button['values'][1])
+        else:
+            self.file_button.set(self.file_button['values'][0])
         
         self.fullness_box = FullnessBox(self)
         self.obstructed_box = ObstructedBox(self)
-        self.image_box = ImageBox(self)
+        self.image_box = ImageBox(self, images_hdf5=self.images_hdf5)
         
         self.help_button = ttk.Button(self, text="Help", command=self.open_help)
         self.reset_button = ttk.Button(self, text="Reset bboxes", command=self.reset)
@@ -846,6 +850,13 @@ class MainApplication(ttk.Frame):
             print("No fullness value to save.")
         annotation_group.create_dataset('obstructed', data=obstructed)
         
+        # print(old_hf[frame].keys())
+        if "annotations" in old_hf[frame].keys():
+            # print(f"{old_hf[frame]['annotations'].keys()}")
+            if "sensor_fullness" in old_hf[frame]["annotations"].keys():
+                # print(f"Copying sensor data for {frame}, {old_hf[frame]['annotations']['sensor_fullness'][...]}")
+                old_hf.copy(old_hf[frame]["annotations"]["sensor_fullness"], annotation_group)
+        
         
         if printing:
             print(f'Saved annotations for frame {frame}')
@@ -891,10 +902,21 @@ class MainApplication(ttk.Frame):
         help_window.resizable(False, False)
         HelpWindow(help_window).pack(side="top", fill="both", expand=True)
     
-    
+
+def get_args():
+    """Parses command line arguments.
+
+    Returns:
+        ArgumentParser: The parsed command line arguments.
+    """
+    parser = ArgumentParser(description="AnnotateGUI")
+    parser.add_argument('--images', type=str, default='data/raw/images/images.hdf5', help="The path to the extracted frames (images.hdf5).")
+    return parser.parse_args()
+
 if __name__ == '__main__':
+    args = get_args()
     root = tk.Tk()
     root.resizable(False, False)
-    MainApplication(root).pack(side="top", fill="both", expand=True)
+    MainApplication(root, images_hdf5=args.images).pack(side="top", fill="both", expand=True)
     root.mainloop()
     

@@ -65,12 +65,11 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 output = features
             else:
                 output = model(frame_data)
-            if args.cont and len(output.shape) > 3: output = output.squeeze()
+            # print("features shape:", features.shape)
+            # print("output shape (post squeeze, before feature_regressor):", output.shape)
             if feature_regressor is not None:
+                output = output.flatten(1)
                 output = feature_regressor(output)
-            if args.cont:
-                if len(output.shape) > 1:
-                    output = output.flatten()
                 # output = torch.clamp(output, 0, 1)
             
             loss = loss_fn(output, fullness)
@@ -144,12 +143,12 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     output = features
                 else:
                     output = model(frame_data)
-                if args.cont: output = output.squeeze()
+                # print("features shape:", features.shape)
+                # print("output shape (post squeeze, before feature_regressor):", output.shape)
                 if feature_regressor is not None:
+                    output = output.flatten(1)
                     output = feature_regressor(output)
-                    output = output.squeeze()
-                # if args.cont:
-                #     output = torch.clamp(output, 0, 1)
+                    # output = torch.clamp(output, 0, 1)
                 
                 batch_time = timeit.default_timer() - start_time
                 batch_time = batch_time/frame_data.shape[0]
@@ -363,7 +362,7 @@ if __name__ == '__main__':
         case 'eva02':
             model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
         case 'caformer':
-                model = timm.create_model('caformer_m36,.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+                model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
     
     if args.cont and args.model != 'cnn':
         features = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))

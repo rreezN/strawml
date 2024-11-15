@@ -16,6 +16,16 @@ from strawml.models.chute_finder.yolo import ObjectDetect
 from sklearn.linear_model import LinearRegression
 
 class TagGraphWithPositionsCV:
+    """
+    A class to represent a graph of connected tags with inferred positions for missing tags. This class is designed to be used
+    in conjunction with the AprilDetector class to detect AprilTags in a real-time video stream. The class provides methods to
+    interpolate the position of a missing tag based on its connected neighbors, account for missing tags, crop the image to the
+    size of the chute system, and draw the detected and inferred tags on the image. 
+
+    NOTE This class is highly customized to detect AprilTags in the chute system af meliora bio, and may not be suitable for other
+    applications without modification as it has hard-coded tag ids and corner tags.
+    """
+
     def __init__(self, connections, detected_tags):
         """
         Class to represent a graph of connected tags with inferred positions for missing tags.
@@ -37,6 +47,24 @@ class TagGraphWithPositionsCV:
         self.corner_tags = set([11, 15, 26, 22])  # Store corner tags
     
     def intersection_point(self, x1, y1, x2, y2, x3, y3):
+        """
+        Finds the intersection between a line created by two points (x1, y1) and (x2, y2) and a 
+        line created by a point (x3, y3) that is perpendicular to the first line.
+
+        Params:
+        -------
+        x1, y1: int, int
+            The x and y coordinates of the first point
+        x2, y2: int, int
+            The x and y coordinates of the second point
+        x3, y3: int, int
+            The x and y coordinates of the third point
+    
+        Returns:
+        --------
+        Tuple
+            The intersection point (x, y)
+        """
         # Calculate the slope of the original line passing through (x1, y1) and (x2, y2)
         if x2 == x1:  # Original line is vertical
             slope_original = None
@@ -72,15 +100,23 @@ class TagGraphWithPositionsCV:
     def interpolate_position(self, tag_id, neighbor_ids, is_corner):
         """
         Interpolate the position of a missing tag based on its connected neighbors.
-        For corners, we prioritize direct neighbors (no averaging all around).
+        For corners, we prioritize direct neighbors (no averaging all around). It also accounts for slanted images.
+
+        Params:
+        -------
+        tag_id: int
+            The tag id of the missing tag
+        neighbor_ids: List
+            The tag ids of the connected neighbors
+        is_corner: bool
+            A boolean flag indicating if the missing tag is a corner tag
+        
+        Returns:
+        --------
+        Tuple
+            The interpolated position (x, y)
         """
         neighbor_positions = [self.detected_tags.get(n) for n in neighbor_ids if n in self.detected_tags]
-        # TODO Account for slanting in the image, e.g. the top right corner should have a 90 degree angle to the top left corner with
-        # the line created by the right site tags.
-        # left_line = [11, 12, 13, 14, 19, 20, 21, 22]
-        # left_line_coordinates = [self.detected_tags[tag] for tag in left_line]
-        
-        # right_line = [15, 16, 17, 18, 23, 24, 25, 26]
         
         if not neighbor_positions:
             return None
@@ -95,8 +131,6 @@ class TagGraphWithPositionsCV:
                                                                self.detected_tags[13][1], 
                                                                self.detected_tags[15][0], 
                                                                self.detected_tags[15][1])
-                    # x_value = self.detected_tags[12][0]
-                    # y_value = self.detected_tags[15][1]
                 except KeyError:
                     return None
             if tag_id == 15:
@@ -107,8 +141,6 @@ class TagGraphWithPositionsCV:
                                                                self.detected_tags[17][1], 
                                                                self.detected_tags[11][0], 
                                                                self.detected_tags[11][1])
-                    # x_value = self.detected_tags[16][0]
-                    # y_value = self.detected_tags[11][1]
                 except KeyError:
                     return None
             if tag_id == 22:
@@ -119,8 +151,6 @@ class TagGraphWithPositionsCV:
                                                                self.detected_tags[21][1], 
                                                                self.detected_tags[26][0], 
                                                                self.detected_tags[26][1])
-                    # x_value = self.detected_tags[26][0]
-                    # y_value = self.detected_tags[23][1]
                 except KeyError:
                     return None
             if tag_id == 26:
@@ -131,8 +161,6 @@ class TagGraphWithPositionsCV:
                                                                self.detected_tags[25][1], 
                                                                self.detected_tags[22][0], 
                                                                self.detected_tags[22][1])
-                    # x_value = self.detected_tags[25][0]
-                    # y_value = self.detected_tags[22][1]
                 except KeyError:
                     return None
             return (int(x_value), int(y_value))
@@ -146,6 +174,11 @@ class TagGraphWithPositionsCV:
     def account_for_missing_tags(self):
         """
         Infer the missing tags by interpolating positions based on neighboring connected tags.
+
+        Returns:
+        --------
+        None
+            The detected tags are updated with the inferred positions
         """
         for tag1, tag2 in self.connections:
             # Infer missing tags using neighboring connections
@@ -166,6 +199,19 @@ class TagGraphWithPositionsCV:
                     self.inferred_tags[tag2] = inferred_position
 
     def crop_to_size(self, image):
+        """
+        Based on the detected tags, crop the image to the size of the chute system.
+
+        Params:
+        -------
+        image: np.ndarray
+            The image to be cropped
+        
+        Returns:
+        --------
+        np.ndarray
+            The cropped image
+        """
         from PIL import Image, ImageDraw
         import numpy as np
         import cv2
@@ -203,6 +249,7 @@ class TagGraphWithPositionsCV:
     def draw_overlay(self, image):
         """
         Draws the detected and inferred tags on the image along with the connections.
+
         """
         for tag1, tag2 in self.connections:
             # Get the positions of the two tags
@@ -860,21 +907,26 @@ class RTSPStream(AprilDetector):
                 positions = [(10, 125)]
 
                 # Perform object detection and level prediction on the frame if with_vit is True
-                # Draw the detected AprilTags on the frame
+                # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
                 frame_drawn, cutout = self.draw(frame, self.tags, self.make_cutout)
+                # We initialise results to None to avoid errors when the model is not used -> only when OD is used do we need
+                # the results to crop the bbox from the frame. However, with the apriltrags from self.draw, we simply make the 
+                # cutout from the frame and do not need the results.
                 results = None
-                if self.with_vit and (cutout is not None):
-                    if self.object_detect:
+
+                if self.with_vit:
+                    if cutout is not None:
+                        frame = cutout
+                        # # show the cutout in a new window
+                        # cv2.imshow('Cutout', cv2.resize(cutout, (0, 0), fx=0.6, fy=0.6))
+                        # cv2.waitKey(1)
+                    elif self.object_detect and (cutout is None):
                         results, OD_time = self.time_function(self.OD.score_frame, frame) # This takes a lot of time if ran on CPU
                         texts += [f'OD Time: {OD_time:.2f} s']
                         font_scales += [0.5]
                         font_thicknesss += [1]
                         positions += [(10, 150)]
-                    else:
-                        frame = cutout
-                        # # show the cutout in a new window
-                        # cv2.imshow('Cutout', cv2.resize(cutout, (0, 0), fx=0.6, fy=0.6))
-                        # cv2.waitKey(1)
+
                     cutout_image, prep_time = self.time_function(self.prepare_for_inference, frame, results)
                     output, inference_time = self.time_function(self.model, cutout_image.to(self.device)) 
                     # detach the output from the device and get the predicted value
