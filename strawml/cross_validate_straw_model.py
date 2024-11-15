@@ -218,24 +218,24 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if np.mean(val_losses) < best_accuracy:
                     best_accuracy = np.mean(val_losses)
                     print(f'New best loss: {best_accuracy}')
-                    # model_folder = f'{args.save_path}{args.model}_regressor/'
-                    # os.makedirs(model_folder, exist_ok=True)
-                    # if args.model != 'cnn':
-                    #     model_name = args.model + f'f{fold+1}' + '_feature_extractor'
-                    #     model_save_path = model_folder + model_name + '_best.pth'
-                    #     regressor_name = args.model  + f'f{fold+1}' +  '_regressor'
-                    #     regressor_save_path = model_folder + regressor_name + '_best.pth'
-                    #     torch.save(model.state_dict(), model_save_path)
-                    #     torch.save(feature_regressor.state_dict(), regressor_save_path)
-                    #     if not args.no_wandb:
-                    #         wandb.save(model_save_path)
-                    #         wandb.save(regressor_save_path)
-                    # else:
-                    #     model_name = f'{args.model}_f{fold+1}_regressor'
-                    #     model_save_path = model_folder + model_name + '_best.pth'
-                    #     torch.save(model.state_dict(), model_save_path)
-                    #     if not args.no_wandb:
-                    #         wandb.save(model_save_path)
+                    
+                    model_folder = f'{args.save_path}{args.model}_regressor/'
+                    os.makedirs(model_folder, exist_ok=True)
+                    if args.model != 'cnn':
+                        model_name = f'{args.model}_feature_extractor'
+                        model_save_path = model_folder + model_name + '_best.pth'
+                        torch.save(model.state_dict(), model_save_path)
+                        regressor_name = f'{args.model}_regressor'
+                        regressor_save_path = model_folder + regressor_name + '_best.pth'
+                        torch.save(feature_regressor.state_dict(), regressor_save_path)
+                    else:
+                        model_name = f'{args.model}_regressor'
+                        model_save_path = model_folder + model_name + '_best.pth'
+                        torch.save(model.state_dict(), model_save_path)
+                    # if not args.no_wandb:
+                    #     wandb.save(model_save_path)
+                    #     wandb.save(regressor_save_path)
+                    
                             
                     if not args.no_wandb:
                         LOG_DICT[f'f{fold+1}_best_val_loss'] = best_accuracy
@@ -252,13 +252,12 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if accuracy > best_accuracy:
                     print(f'New best accuracy: {accuracy:.2f}%')
                     best_accuracy = accuracy
-                    # model_folder = f'{args.save_path}{args.model}_classifier/'
-                    # os.makedirs(model_folder, exist_ok=True)
-                    # model_name = f'{args.model}_f{fold+1}_classifier'
-                    # model_save_path = model_folder + model_name + '_best.pth'
-                    # torch.save(model.state_dict(), model_save_path)
+                    model_folder = f'{args.save_path}{args.model}_classifier/'
+                    os.makedirs(model_folder, exist_ok=True)
+                    model_name = f'{args.model}_classifier'
+                    model_save_path = model_folder + model_name + '_best.pth'
+                    torch.save(model.state_dict(), model_save_path)
                     # if not args.no_wandb:
-                    #     wandb.log(step=epoch+1, data={f'f{fold+1}_best_val_accuracy': best_accuracy})
                     #     wandb.save(model_save_path)
             
             if args.cont:
@@ -308,7 +307,166 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 epoch_val_accuracies.append(accuracy)
     
     return epoch_train_losses, epoch_val_losses, epoch_train_accuracies, epoch_val_accuracies, best_accuracy
+
+def predict_sensor_data(args, model: torch.nn.Module, sensor_loader: DataLoader, feature_regressor: torch.nn.Module = None, in_fold=True):
+    """Predict the output of a model on a dataset.
+    """
     
+    if torch.cuda.is_available():
+        print("Using GPU")
+        model = model.cuda()
+        if feature_regressor is not None:
+            feature_regressor = feature_regressor.cuda()
+    
+    if args.cont:
+        loss_fn = torch.nn.functional.mse_loss
+    else:
+        loss_fn = torch.nn.functional.cross_entropy
+    
+    model.eval()
+    with torch.no_grad():
+        data_iterator = tqdm(sensor_loader, desc="Predicting", unit="batch", position=0, leave=False)
+        data_iterator.set_description(f"Predicting on sensor {sensor_loader.dataset.data_type} data")
+        
+        accuracies = np.array([])
+        losses = np.array([])
+        outputs = np.array([])
+        fullnesses = np.array([])
+        
+        for (frame_data, target) in data_iterator:
+            fullness = target
+            
+            if torch.cuda.is_available():
+                frame_data = frame_data.cuda()
+                fullness = fullness.cuda()
+
+            # Forward pass
+                if args.cont and args.model != 'cnn':
+                    features = model.forward_features(frame_data)
+                    output = features
+                else:
+                    output = model(frame_data)
+                # print("features shape:", features.shape)
+                # print("output shape (post squeeze, before feature_regressor):", output.shape)
+                if feature_regressor is not None:
+                    output = output.flatten(1)
+                    output = feature_regressor(output)
+                    # output = torch.clamp(output, 0, 1)
+                
+            loss = loss_fn(output, fullness)
+            losses = np.append(losses, loss.item())
+            
+            if not args.cont:
+                output = torch.nn.functional.softmax(output, dim=1)
+                _, predicted = torch.max(output, 1)
+                _, target_fullness = torch.max(fullness, 1)
+                correct = sum(predicted == target_fullness)
+                accuracy = 100 * correct / args.batch_size
+                accuracies = np.append(accuracies, accuracy.item())
+                output = predicted
+                fullness = target_fullness
+            else:
+                # Calculate accuracy of the model
+                # Any prediction within x% of the true value is considered correct
+                acceptable = 0.1
+                accuracies = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
+            
+            outputs = np.append(outputs, output.cpu().numpy())
+            fullnesses = np.append(fullnesses, fullness.cpu().numpy())
+        
+        if not args.cont:
+            accuracies = accuracies.mean()
+            
+        if not args.no_wandb:
+            if in_fold:
+                title = f'f{fold+1}'
+            else:
+                title = 'Overall'
+            wandb.log({f'{title} mean sensor prediction loss': losses.mean()})
+            wandb.log({f'{title} mean sensor prediction accuracies': accuracies})
+        
+    
+    return outputs, fullnesses, accuracies, losses
+    
+
+def plot_cont_predictions(outputs, fullnesses, in_fold=True):
+    """Plot the continuous predictions.
+    """
+    
+    outputs = np.array(outputs)
+    fullnesses = np.array(fullnesses)
+    
+    MSE = np.square(np.subtract(outputs, fullnesses)).mean()
+    MAE = np.abs(np.subtract(outputs, fullnesses)).mean()
+    RMSE = np.sqrt(MSE)
+    PRMSE = np.sqrt(np.mean(np.sum(np.square(np.subtract(outputs, fullnesses)))) / np.sum(np.square(fullnesses)))
+    
+    # Calculate accuracy of the model
+    # Any prediction within x% of the true value is considered correct
+    acceptable = 0.1
+    accuracy = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
+    
+    model_name = f'{args.model}_reg' if args.cont else f'{args.model}_cls'
+    
+    plt.figure(figsize=(10, 5))
+    plt.plot(outputs, label='Predicted')
+    plt.plot(fullnesses, label='True')
+    
+    # Plot acceptable range
+    plt.fill_between(np.arange(len(outputs)), fullnesses*(1-acceptable), fullnesses*(1+acceptable), color='gray', alpha=0.5, label=f'threshold={acceptable*100:.0f}%')
+    
+    plt.legend()
+    yticks = np.arange(0, 1.1, 0.1)
+    plt.yticks(yticks)
+    plt.grid()
+    plt.xlabel('Frame')
+    plt.ylabel('Fullness')
+    plt.title(f'{model_name} Predicted vs True Fullness, MSE: {MSE:.3f}, MAE: {MAE:.3f}, RMSE: {RMSE:.3f}, PRMSE: {PRMSE:.3f}, accuracy: {accuracy*100:.1f}%')
+    plt.tight_layout()
+    
+    if not args.no_wandb:
+        if in_fold:
+            title = f'f{fold+1} sensor predictions'
+        else:
+            title = 'Overall sensor predictions'
+        wandb.log({title: wandb.Image(plt)})
+    
+    plt.close() 
+    
+def plot_confusion_matrix(outputs, fullness, num_classes, in_fold=True):
+    """Plot the confusion matrix for the model.
+    """
+    
+    accuracy = np.sum(outputs == fullness) / len(outputs)
+    confusion_matrix = np.zeros((num_classes, num_classes))
+    for i in range(len(outputs)):
+        confusion_matrix[int(fullness[i]), int(outputs[i])] += 1
+    
+    labels = [f'{i*10}%' for i in range(num_classes)]
+    
+    plt.imshow(confusion_matrix, cmap='viridis')
+    plt.colorbar()
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.title(f'{args.model}_cls Confusion Matrix, accuracy: {accuracy*100:.1f}%')
+    # Set xticks and yticks with labels
+    plt.xticks(ticks=np.arange(num_classes), labels=labels, rotation=45)
+    plt.yticks(ticks=np.arange(num_classes), labels=labels)
+    
+    # Plot numbers on each square
+    for i in range(num_classes):
+        for j in range(num_classes):
+            plt.text(j, i, int(confusion_matrix[i, j]), ha='center', va='center', color='black' if confusion_matrix[i, j] > np.max(confusion_matrix)/2 else 'white')
+    plt.tight_layout()
+    
+    if not args.no_wandb:
+        if in_fold:
+            title = f'f{fold+1} sensor predictions'
+        else:
+            title = 'Overall sensor predictions'
+        wandb.log({title: wandb.Image(plt)})
+    
+    plt.close() 
 
 def plot_example(info, frame_data, prediction, target):
     """Plot an example frame with the prediction.
@@ -410,7 +568,7 @@ def get_args():
     parser.add_argument('--lr', type=float, default=0.00001, help='Learning rate for training')
     parser.add_argument('--model_path', type=str, default='models/pretrained/convnextv2_atto_1k_224_ema.pth', help='Path to load the model from')
     parser.add_argument('--save_path', type=str, default='models/', help='Path to save the model to')
-    parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
+    parser.add_argument('--data_path', type=str, default='data/interim/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
     parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
@@ -420,7 +578,8 @@ def get_args():
     parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
     parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class')
     parser.add_argument('--folds', type=int, default=5, help='Number of folds for cross-validation')
-    parser.add_argument('--data_subsample', type=float, default=1.0, help='Amount of the data to subsample for training (1.0 = 100%, 0.5 = 50%)')
+    parser.add_argument('--data_subsample', type=float, default=1, help='Amount of the data to subsample for training (1.0 = 100%, 0.5 = 50%)')
+    parser.add_argument('--augment_probability', type=float, default=0.5, help='Probability of augmenting the data')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -443,10 +602,13 @@ if __name__ == '__main__':
     
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
-                         num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=0.5)
+                         num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=args.augment_probability)
     # test_set = dl.Chute(data_path=args.data_path, data_type='val', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
     #                     random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont)
+    sensor_set = dl.Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
+                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=args.data_subsample,
+                          augment_probability=0, num_classes_straw=args.num_classes_straw)
     
     fold_train_losses = []
     fold_val_losses = []
@@ -476,7 +638,7 @@ if __name__ == '__main__':
         
         print(f'Training fold {fold+1}/{args.folds}')
         train_loader = DataLoader(train_set, batch_size=args.batch_size, sampler=SubsetRandomSampler(train_idx))
-        test_loader = DataLoader(train_set, batch_size=args.batch_size, sampler=SubsetRandomSampler(val_idx))
+        val_loader = DataLoader(train_set, batch_size=args.batch_size, sampler=SubsetRandomSampler(val_idx))
         
         input_channels = 3
         if args.inc_heatmap: input_channels += 3
@@ -502,19 +664,43 @@ if __name__ == '__main__':
                 model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
         
         if args.cont and args.model != 'cnn':
-            features = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
+            in_feats = torch.randn(1, input_channels, image_size[0], image_size[1])
+            # in_feats = in_feats.cuda() if torch.cuda.is_available() else in_feats
+            features = model.forward_features(in_feats)
             feature_size = torch.flatten(features, 1).shape[1]
             feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
         else:
             feature_regressor = None
         
-        train_loss, val_loss, train_accuracy, val_accuracy, best_accuracy = train_model(args, model, train_loader, test_loader, feature_regressor)
+        train_loss, val_loss, train_accuracy, val_accuracy, best_accuracy = train_model(args, model, train_loader, val_loader, feature_regressor)
 
         fold_train_losses.append(train_loss)
         fold_val_losses.append(val_loss)
         fold_train_accuracies.append(train_accuracy)
         fold_val_accuracies.append(val_accuracy)
         best_accuracies.append(best_accuracy)
+        
+        feature_regressor = None
+        if args.cont and args.model != 'cnn':
+            in_feats = torch.randn(1, input_channels, image_size[0], image_size[1])
+            in_feats = in_feats.cuda() if torch.cuda.is_available() else in_feats
+            features = model.forward_features(in_feats)
+            feature_size = torch.flatten(features, 1).shape[1]
+            feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+            
+            model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor_best.pth', weights_only=True))
+            feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor_best.pth', weights_only=True))
+            
+        else:
+            feature_regressor = None
+            model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier_best.pth', weights_only=True))
+        
+        sensor_loader = DataLoader(sensor_set, batch_size=args.batch_size)
+        outputs, fullnesses, accuracies, losses = predict_sensor_data(args, model, sensor_loader, feature_regressor)
+        if args.cont:
+            plot_cont_predictions(outputs, fullnesses, in_fold=True)
+        else:
+            plot_confusion_matrix(outputs, fullnesses, num_classes=args.num_classes_straw, in_fold=True)
         
         # if args.cont:
         #     if np.mean(val_loss) < OVERALL_BEST_ACCURACY:
@@ -523,20 +709,43 @@ if __name__ == '__main__':
         #     if best_accuracy > OVERALL_BEST_ACCURACY:
         #         OVERALL_BEST_ACCURACY = best_accuracy
     
-    mean_best_val_loss = np.mean(fold_val_losses)
-    std_best_val_loss = np.std(fold_val_losses)
+    # mean_best_val_loss = np.mean(fold_val_losses)
+    # std_best_val_loss = np.std(fold_val_losses)
     
-    if not args.cont:
-        mean_best_val_accuracy = np.mean(best_accuracies)
-        std_best_val_accuracy = np.std(best_accuracies)
-        print(f'Mean Best Validation Accuracy: {mean_best_val_accuracy:.2f}% +/- {std_best_val_accuracy:.2f}%')
+    # if not args.cont:
+    #     mean_best_val_accuracy = np.mean(best_accuracies)
+    #     std_best_val_accuracy = np.std(best_accuracies)
+    #     print(f'Mean Best Validation Accuracy: {mean_best_val_accuracy:.2f}% +/- {std_best_val_accuracy:.2f}%')
     
-    print(f'Mean Best Validation Loss: {mean_best_val_loss:.4f} +/- {std_best_val_loss:.4f}')
+    # print(f'Mean Best Validation Loss: {mean_best_val_loss:.4f} +/- {std_best_val_loss:.4f}')
+    
+    feature_regressor = None
+    if args.cont and args.model != 'cnn':
+        in_feats = torch.randn(1, input_channels, image_size[0], image_size[1])
+        in_feats = in_feats.cuda() if torch.cuda.is_available() else in_feats
+        features = model.forward_features(in_feats)
+        feature_size = torch.flatten(features, 1).shape[1]
+        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+        
+        model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor_overall_best.pth', weights_only=True))
+        feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor_overall_best.pth', weights_only=True))
+        
+    else:
+        feature_regressor = None
+        model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier_overall_best.pth', weights_only=True))
+    
+    sensor_loader = DataLoader(sensor_set, batch_size=args.batch_size)
+    outputs, fullnesses, accuracies, losses = predict_sensor_data(args, model, sensor_loader, feature_regressor, in_fold=False)
+    if args.cont:
+        plot_cont_predictions(outputs, fullnesses, in_fold=False)
+    else:
+        plot_confusion_matrix(outputs, fullnesses, num_classes=args.num_classes_straw, in_fold=False)
+
     
     if not args.no_wandb:
-        wandb.log({'mean_best_val_loss': mean_best_val_loss, 'std_best_val_loss': std_best_val_loss})
-        if not args.cont:
-            wandb.log({'mean_best_val_accuracy': mean_best_val_accuracy, 'std_best_val_accuracy': std_best_val_accuracy})
+        wandb.log({'overall_best_acc_or_loss': OVERALL_BEST_ACCURACY})
+        # if not args.cont:
+        #     wandb.log({'mean_best_val_accuracy': mean_best_val_accuracy, 'std_best_val_accuracy': std_best_val_accuracy})
     
     model_folder = f'{args.model}_classifier/' if not args.cont else f'{args.model}_regressor/'
     for i in range(args.folds):
@@ -567,9 +776,9 @@ if __name__ == '__main__':
             plt.plot(x, fold_train_accuracies[i], c='b', linestyle='--', alpha=0.2)
             plt.plot(x, fold_val_accuracies[i], c='r', alpha=0.2)
         
-        plt.plot(x, np.mean(fold_train_accuracies, axis=0), c='b', label='Train Loss', linestyle='--')
-        plt.plot(x, np.mean(fold_val_accuracies, axis=0), c='r', label='Val Loss')
-        plt.ylim(0, 1)
+        plt.plot(x, np.mean(fold_train_accuracies, axis=0), c='b', label='Train Accuracy', linestyle='--')
+        plt.plot(x, np.mean(fold_val_accuracies, axis=0), c='r', label='Val Accuracy')
+        plt.ylim(0, 100)
         plt.title('Accuracy per epoch')
         plt.xlabel('Epoch')
         plt.ylabel('Accuracy')
