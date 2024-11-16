@@ -606,7 +606,7 @@ if __name__ == '__main__':
                          num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=args.augment_probability)
     
     mean, std = train_set.train_mean, train_set.train_std
-    if args.ic_heatmap:
+    if args.inc_heatmap:
         mean_hm = train_set.train_hm_mean
         std_hm = train_set.train_hm_std
     
