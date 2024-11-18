@@ -406,14 +406,13 @@ class AprilDetector:
                 cv2.line(frame, (x4, y4), (x1, y1), (138,43,226), 2)
                 # plot label on the object
                 cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-                # plot a line with angle_rad as the angle of the object
-                angle_sin = np.sin(angle_rad[i].detach().cpu().numpy())
-                angle_cos = np.cos(angle_rad[i].detach().cpu().numpy())
-                # plot the line from the center of the object
-                x_center = (x1 + x2 + x3 + x4) // 4
-                y_center = (y1 + y2 + y3 + y4) // 4
-                cv2.line(frame, (x_center, y_center), (x_center + int(500 * angle_cos), y_center + int(500 * angle_sin)), (0, 0, 255), 2)
-                cv2.line(frame, (x_center, y_center), (x_center - int(500 * angle_cos), y_center - int(500 * angle_sin)), (0, 0, 255), 2)
+                # # plot a line with angle_rad as the angle of the object
+                # angle_sin = np.sin(angle_rad[i].detach().cpu().numpy())
+                # angle_cos = np.cos(angle_rad[i].detach().cpu().numpy())
+                # # plot the line from the center of the object
+                # x_center = (x1 + x2 + x3 + x4) // 4
+                # y_center = (y1 + y2 + y3 + y4) // 4
+                # cv2.line(frame, (x_center, y_center), (x_center + int(500 * angle_cos), y_center + int(500 * angle_sin)), (0, 0, 255), 2)
 
             else:
                 x1, y1, x2, y2 = cord[i].flatten()
@@ -805,7 +804,9 @@ class AprilDetector:
         return frame, None
 
     def prepare_for_inference(self, frame, results=None):
-        if results is not None:
+        if results is None:
+            frame_data = frame
+        else:
             # rotate and crop the frame to the chute bbox
             bbox_chute = results[1][0].flatten().cpu().detach().numpy() # x1, y1, x2, y2, x3, y3, x4, y4
             # check that the bbox has 8 values
@@ -813,8 +814,6 @@ class AprilDetector:
                 frame_data = frame
             else:
                 frame_data, bbox_chute = cc.rotate_and_crop_to_bbox(frame, bbox_chute)
-        else:
-            frame_data = frame
         # get edge features
         if self.edges:
             try:
@@ -864,10 +863,11 @@ class RTSPStream(AprilDetector):
     """
     def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, detect_april=False, with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
+        self.rtsp = rtsp
         if rtsp:
             self.cap = self.create_capture(credentials_path)
         else:
-            self.cap = cv2.VideoCapture(0)
+            self.cap = None
         self.make_cutout = make_cutout
         self.detect_april = detect_april
         self.regressor = regressor
@@ -955,44 +955,38 @@ class RTSPStream(AprilDetector):
             ret, frame = cap.read()
             self.q.put(frame)        
 
-    def display_frame(self, cap: cv2.VideoCapture) -> None:
+    def display_frame(self) -> None:
         """
         Display the frames with the detected AprilTags.
-        
-        Params:
-        -------
-        cap: cv2.VideoCapture
-            The video capture object to receive frames from the RTSP stream
-        
-        Returns:
-        --------
-        None
-            Nothing is returned, only the frames are displayed with the detected AprilTags
         """
         # Define text properties
         font = cv2.FONT_HERSHEY_SIMPLEX
         color = (255, 0, 0)  # Blue color for text
         box_color = (255, 255, 255)  # White color for box
-
+        
+        # Define variables for FPS calculation
         frame_count = 0
         start_time = time.time()
+
         while True:
             if not self.q.empty():
+                frame = self.q.get() # Get the frame from the queue
 
-                # Get the frame from the queue
-                frame = self.q.get()
-                
-                # Clear the queue to account for any lag and prevent the queue from getting too large
-                self.q.queue.clear()
+                if frame is None: # check if the frame is none. If it is, skip the iteration
+                    continue
+
+                if self.rtsp:
+                    self.q.queue.clear() # Clear the queue to account for any lag and prevent the queue from getting too large
                 
                 # # Fix the frame by undistorting it
                 # frame = self.fix_frame(frame) # NOTE this cant be used since undistort crops the top and bottom of the chute too much
                 
                 # Detect the AprilTags in the frame every 5 frames
                 if self.detect_april:
-                    if frame_count % 5 == 0:
+                    if frame_count % 5 == 0: # Due to latency we wish to limit the detection to every 5 frames
                         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                         _, detect_time = self.time_function(self.detect, self.fix_frame(gray, blur=True))
+                    # Save the time taken for detection to the text
                     texts = [f'AprilTags Time: {detect_time:.2f} s']
                     font_scales = [0.5]
                     font_thicknesss = [1]
@@ -1015,6 +1009,9 @@ class RTSPStream(AprilDetector):
                     frame = cutout
                 elif self.object_detect:
                     results, OD_time = self.time_function(self.OD.score_frame, frame) # This takes a lot of time if ran on CPU
+                    # make sure results has at least one bbox
+                    if len(results[0]) == 0:
+                        results = "NA"
                     texts += [f'OD Time: {OD_time:.2f} s']
                     font_scales += [0.5]
                     font_thicknesss += [1]
@@ -1022,6 +1019,139 @@ class RTSPStream(AprilDetector):
                 else:
                     raise ValueError("The cutout image is None and the object detection is not used.")
 
+                if not results == "NA":
+                    if self.with_predictor:
+                        cutout_image, prep_time = self.time_function(self.prepare_for_inference, frame, results)
+                        if cutout_image is not None:
+                            if self.regressor:
+                                if self.predictor_model != 'cnn':
+                                    output, inference_time = self.time_function([self.model, self.regressor_model], cutout_image.to(self.device))
+                                else:
+                                    output, inference_time = self.time_function(self.model, cutout_image.to(self.device))
+                                # detach the output from the device and get the predicted value
+                                output = output.detach().cpu()
+                                straw_level = output[0].item()*100
+                            else:
+                                output, inference_time = self.time_function(self.model, cutout_image.to(self.device)) 
+                                # detach the output from the device and get the predicted value
+                                output = output.detach().cpu()
+                                _, predicted = torch.max(output, 1)
+                                straw_level = predicted[0]*10
+
+                            # Add the time taken for inference to the text
+                            texts += [f'Straw Level: {straw_level:.2f} %', 
+                                    f'Image Prep. Time: {prep_time:.2f} s',
+                                    f'Inference Time: {inference_time:.2f} s']
+                            font_scales += [0.5, 0.5, 0.5]
+                            font_thicknesss += [1, 1, 1]
+                            positions += [(10, 100), (10, 175), (10, 200)]
+
+                    if self.object_detect:
+                        frame_drawn = self.plot_boxes(results, frame_drawn)
+                
+                frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
+
+                frame_count += 1 # Increment frame count
+                
+                # Calculate FPS
+                elapsed_time = time.time() - start_time
+                fps = frame_count / elapsed_time
+                
+                # Display the FPS on the frame
+                texts += [f'FPS: {fps:.2f}']
+                font_scales += [1]
+                font_thicknesss += [2]
+                positions += [(10, 50)]
+
+                # Draw the text on the frame
+                for i, (pos, text) in enumerate(zip(positions, texts)):
+                    # Get the text size
+                    font_scale = font_scales[i]
+                    font_thickness = font_thicknesss[i]
+                    (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, font_thickness)
+                    
+                    box_coords = ((pos[0], pos[1] - text_height - baseline), (pos[0] + text_width, pos[1] + baseline)) # Calculate the box coordinates
+                    cv2.rectangle(frame_drawn, box_coords[0], box_coords[1], box_color, cv2.FILLED) # Draw the white box                    
+                    cv2.putText(frame_drawn, text, pos, font, font_scale, color, font_thickness, cv2.LINE_AA) # Draw the text over the box
+                
+                
+                cv2.imshow('Video', frame_drawn) # Display the frame
+
+                # flush everything from memory to prevent memory leak
+                frame = None
+                gray = None
+                results = None
+                cutout_image = None
+                output = None
+                torch.cuda.empty_cache()
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+        self.cap.release()
+        cv2.destroyAllWindows()
+
+
+    def display_frame_from_videocapture(self) -> None:
+        """
+        Display the frames with the detected AprilTags.
+        """
+        # Define text properties
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        color = (255, 0, 0)  # Blue color for text
+        box_color = (255, 255, 255)  # White color for box
+        
+        # Define variables for FPS calculation
+        frame_count = 0
+        start_time = time.time()
+
+        while True:
+            success, frame = self.cap.read() # Get the frame from the queue
+
+            if not success: # check if the frame is none. If it is, skip the iteration
+                continue
+
+            # # Fix the frame by undistorting it
+            # frame = self.fix_frame(frame) # NOTE this cant be used since undistort crops the top and bottom of the chute too much
+            
+            # Detect the AprilTags in the frame every 5 frames
+            if self.detect_april:
+                if frame_count % 5 == 0: # Due to latency we wish to limit the detection to every 5 frames
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    _, detect_time = self.time_function(self.detect, self.fix_frame(gray, blur=True))
+                # Save the time taken for detection to the text
+                texts = [f'AprilTags Time: {detect_time:.2f} s']
+                font_scales = [0.5]
+                font_thicknesss = [1]
+                positions = [(10, 125)]
+                # Perform object detection and level prediction on the frame if with_predictor is True
+                # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
+                frame_drawn, cutout = self.draw(frame.copy(), self.tags, self.make_cutout)
+            else:
+                frame_drawn = frame
+                cutout = None
+                texts = []
+                font_scales = []
+                font_thicknesss = []
+                positions = []
+            # We initialise results to None to avoid errors when the model is not used -> only when OD is used do we need
+            # the results to crop the bbox from the frame. However, with the apriltrags from self.draw, we simply make the 
+            # cutout from the frame and do not need the results.
+            results = None
+            if cutout is not None:
+                frame = cutout
+            elif self.object_detect:
+                results, OD_time = self.time_function(self.OD.score_frame, frame) # This takes a lot of time if ran on CPU
+                # make sure results has at least one bbox
+                if len(results[0]) == 0:
+                    results = "NA"
+                texts += [f'OD Time: {OD_time:.2f} s']
+                font_scales += [0.5]
+                font_thicknesss += [1]
+                positions += [(10, 150)]
+            else:
+                raise ValueError("The cutout image is None and the object detection is not used.")
+
+            if not results == "NA":
                 if self.with_predictor:
                     cutout_image, prep_time = self.time_function(self.prepare_for_inference, frame, results)
                     if cutout_image is not None:
@@ -1042,60 +1172,57 @@ class RTSPStream(AprilDetector):
 
                         # Add the time taken for inference to the text
                         texts += [f'Straw Level: {straw_level:.2f} %', 
-                                  f'Image Prep. Time: {prep_time:.2f} s',
-                                  f'Inference Time: {inference_time:.2f} s']
+                                f'Image Prep. Time: {prep_time:.2f} s',
+                                f'Inference Time: {inference_time:.2f} s']
                         font_scales += [0.5, 0.5, 0.5]
                         font_thicknesss += [1, 1, 1]
                         positions += [(10, 100), (10, 175), (10, 200)]
 
-                if self.object_detect:
-                    frame_drawn = self.plot_boxes(results, frame_drawn)
-                # Resize the frame for display
-                frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6)
-                # Increment frame count
-                frame_count += 1
-                # Calculate FPS
-                elapsed_time = time.time() - start_time
-                fps = frame_count / elapsed_time
-                # Display the FPS on the frame
-                texts += [f'FPS: {fps:.2f}']
-                font_scales += [1]
-                font_thicknesss += [2]
-                positions += [(10, 50)]
+            if self.object_detect:
+                frame_drawn = self.plot_boxes(results, frame_drawn)
+            
+            frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
 
-                # Draw the text on the frame
-                for i, (pos, text) in enumerate(zip(positions, texts)):
-                    # Get the text size
-                    font_scale = font_scales[i]
-                    font_thickness = font_thicknesss[i]
-                    (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, font_thickness)
-                    
-                    # Calculate the box coordinates
-                    box_coords = ((pos[0], pos[1] - text_height - baseline), (pos[0] + text_width, pos[1] + baseline))
-                    
-                    # Draw the white box
-                    cv2.rectangle(frame_drawn, box_coords[0], box_coords[1], box_color, cv2.FILLED)
-                    
-                    # Draw the text over the box
-                    cv2.putText(frame_drawn, text, pos, font, font_scale, color, font_thickness, cv2.LINE_AA)
+            frame_count += 1 # Increment frame count
+            
+            # Calculate FPS
+            elapsed_time = time.time() - start_time
+            fps = frame_count / elapsed_time
+            
+            # Display the FPS on the frame
+            texts += [f'FPS: {fps:.2f}']
+            font_scales += [1]
+            font_thicknesss += [2]
+            positions += [(10, 50)]
+
+            # Draw the text on the frame
+            for i, (pos, text) in enumerate(zip(positions, texts)):
+                # Get the text size
+                font_scale = font_scales[i]
+                font_thickness = font_thicknesss[i]
+                (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, font_thickness)
                 
-                # Display the frame
-                cv2.imshow('Video', frame_drawn)
+                box_coords = ((pos[0], pos[1] - text_height - baseline), (pos[0] + text_width, pos[1] + baseline)) # Calculate the box coordinates
+                cv2.rectangle(frame_drawn, box_coords[0], box_coords[1], box_color, cv2.FILLED) # Draw the white box                    
+                cv2.putText(frame_drawn, text, pos, font, font_scale, color, font_thickness, cv2.LINE_AA) # Draw the text over the box
+            
+            
+            cv2.imshow('Video', frame_drawn) # Display the frame
 
-                # flush everything from memory to prevent memory leak
-                frame = None
-                gray = None
-                results = None
-                cutout_image = None
-                output = None
-                torch.cuda.empty_cache()
+            # flush everything from memory to prevent memory leak
+            frame = None
+            gray = None
+            results = None
+            cutout_image = None
+            output = None
+            torch.cuda.empty_cache()
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
-        cap.release()
+        self.cap.release()
         cv2.destroyAllWindows()
 
-    def __call__(self, frame: Optional[np.ndarray] = None, cap: Optional[cv2.VideoCapture] = None) -> None | list:
+    def __call__(self, frame: Optional[np.ndarray] = None, cap: Optional[cv2.VideoCapture] = None, video_path: str=None) -> None | list:
         """
         Upon calling the object, if self.window is True and frame is None, the frames are received from the video stream
         and displayed with the detected AprilTags. If frame is not None, the detected AprilTags are drawn on the frame.
@@ -1114,12 +1241,16 @@ class RTSPStream(AprilDetector):
             Nothing is returned, only the frames are displayed with the detected AprilTags
         """
         if frame is None:
-            if cap:
-                self.cap = cap
-            self.thread1 = threading.Thread(target=self.receive_frame, args=(self.cap,))
-            self.thread2 = threading.Thread(target=self.display_frame, args=(self.cap,))
-            self.thread1.start()
-            self.thread2.start()
+            if video_path:
+                self.cap = cv2.VideoCapture(video_path)
+                self.display_frame_from_videocapture()
+            else:
+                if cap is not None:
+                    self.cap = cap
+                self.thread1 = threading.Thread(target=self.receive_frame, args=(self.cap,))
+                self.thread2 = threading.Thread(target=self.display_frame, args=(self.cap,))
+                self.thread1.start()
+                self.thread2.start()
         elif frame is not None:
             # resize frame half the size
             frame = cv2.resize(frame, (0, 0), fx=0.3, fy=0.3)
@@ -1148,7 +1279,11 @@ if __name__ == "__main__":
         decode_sharpening=config["decode_sharpening"],
         debug=config["debug"]
     )
-    RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', rtsp=True, 
+
+    video_path = "data/special/Pin drum Chute 2_HKVision_HKVision_20241102105959_20241102112224_1532587042.mp4"
+
+    RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+               rtsp=False, # Only used when the stream is from an RTSP source
                make_cutout=True, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
-               detect_april=False,
-               with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
+               detect_april=True,
+               with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
