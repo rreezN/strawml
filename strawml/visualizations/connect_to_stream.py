@@ -17,5 +17,5 @@ detector = Detector(
     debug=config["debug"]
 )
 RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', rtsp=True, make_cutout=False, 
-           object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2, 
-           with_vit=True, detect_april=False)()
+           object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
+            with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
