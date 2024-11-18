@@ -132,6 +132,8 @@ class VideoStreamCustom:
         bbox_chute = results[1].flatten().cpu().detach().numpy() # x1, y1, x2, y2, x3, y3, x4, y4
         # bbox = [bbox_chute[6], bbox_chute[7], bbox_chute[0], bbox_chute[1], bbox_chute[2], bbox_chute[3], bbox_chute[4], bbox_chute[5]]
         frame_data, bbox_chute = cc.rotate_and_crop_to_bbox(frame, bbox_chute)
+        if frame_data is None or bbox_chute is None:
+            return None
         # get edge features
         edges = cv2.Canny(frame_data, 100, 200)
         edges = edges.reshape(1, edges.shape[0], edges.shape[1])
@@ -169,10 +171,11 @@ class VideoStreamCustom:
                 # image = cv2.resize(image, (int(image.shape[1]/2), int(image.shape[0]/2)))
                 results = self.OD.score_frame(image)  # This takes a lot of time if ran on CPU
                 cutout_image = self.prepare_for_inference(image, results)
-                output = model(cutout_image)
-                _, predicted = torch.max(output, 1)
-                # write the predicted value in the image
-                cv2.putText(image, f'Straw Level: {predicted[0]*10:.2f} %', (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
+                if cutout_image is not None:
+                    output = model(cutout_image)
+                    _, predicted = torch.max(output, 1)
+                    # write the predicted value in the image
+                    cv2.putText(image, f'Straw Level: {predicted[0]*10:.2f} %', (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
                 image = self.plot_boxes(results, image)
                 image = cv2.resize(image, (int(image.shape[1]/2), int(image.shape[0]/2)))
                 elapsed_time = time.time() - start_time

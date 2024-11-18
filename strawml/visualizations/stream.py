@@ -758,14 +758,20 @@ class AprilDetector:
         if results is not None:
             # rotate and crop the frame to the chute bbox
             bbox_chute = results[1].flatten().cpu().detach().numpy() # x1, y1, x2, y2, x3, y3, x4, y4
-            # bbox = [bbox_chute[6], bbox_chute[7], bbox_chute[0], bbox_chute[1], bbox_chute[2], bbox_chute[3], bbox_chute[4], bbox_chute[5]]
-            frame_data, bbox_chute = cc.rotate_and_crop_to_bbox(frame, bbox_chute)
+            # check that the bbox has 8 values
+            if len(bbox_chute) != 8:
+                frame_data = frame
+            else:
+                frame_data, bbox_chute = cc.rotate_and_crop_to_bbox(frame, bbox_chute)
         else:
             frame_data = frame
         # get edge features
-        edges = cv2.Canny(frame_data, 100, 200)
-        edges = edges.reshape(1, edges.shape[0], edges.shape[1])
-        edges = torch.from_numpy(edges)/255
+        try:
+            edges = cv2.Canny(frame_data, 100, 200)
+            edges = edges.reshape(1, edges.shape[0], edges.shape[1])
+            edges = torch.from_numpy(edges)/255
+        except Exception as e:
+            return None
         # normalise with stats saved
         frame_data = self.transform(torch.from_numpy(frame_data).permute(2, 0, 1).float())
         # stack the images together
@@ -784,13 +790,14 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, with_vit=False) -> None:
+    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, with_vit=False, detect_april=False) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, with_vit=with_vit)
         if rtsp:
             self.cap = self.create_capture(credentials_path)
         else:
             self.cap = cv2.VideoCapture(0)
         self.make_cutout = make_cutout
+        self.detect_april = detect_april
         
     def create_capture(self, credentials_path: str) -> cv2.VideoCapture:
         """
@@ -888,6 +895,7 @@ class RTSPStream(AprilDetector):
         start_time = time.time()
         while True:
             if not self.q.empty():
+
                 # Get the frame from the queue
                 frame = self.q.get()
                 
@@ -898,17 +906,24 @@ class RTSPStream(AprilDetector):
                 # frame = self.fix_frame(frame) # NOTE this cant be used since undistort crops the top and bottom of the chute too much
                 
                 # Detect the AprilTags in the frame every 5 frames
-                if frame_count % 5 == 0:
-                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    _, detect_time = self.time_function(self.detect, self.fix_frame(gray, blur=True))
-                texts = [f'AprilTags Time: {detect_time:.2f} s']
-                font_scales = [0.5]
-                font_thicknesss = [1]
-                positions = [(10, 125)]
-
-                # Perform object detection and level prediction on the frame if with_vit is True
-                # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
-                frame_drawn, cutout = self.draw(frame, self.tags, self.make_cutout)
+                if self.detect_april:
+                    if frame_count % 5 == 0:
+                        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                        _, detect_time = self.time_function(self.detect, self.fix_frame(gray, blur=True))
+                    texts = [f'AprilTags Time: {detect_time:.2f} s']
+                    font_scales = [0.5]
+                    font_thicknesss = [1]
+                    positions = [(10, 125)]
+                    # Perform object detection and level prediction on the frame if with_vit is True
+                    # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
+                    frame_drawn, cutout = self.draw(frame, self.tags, self.make_cutout)
+                else:
+                    frame_drawn = frame
+                    cutout = None
+                    texts = []
+                    font_scales = []
+                    font_thicknesss = []
+                    positions = []
                 # We initialise results to None to avoid errors when the model is not used -> only when OD is used do we need
                 # the results to crop the bbox from the frame. However, with the apriltrags from self.draw, we simply make the 
                 # cutout from the frame and do not need the results.
@@ -928,10 +943,12 @@ class RTSPStream(AprilDetector):
                         positions += [(10, 150)]
 
                     cutout_image, prep_time = self.time_function(self.prepare_for_inference, frame, results)
-                    output, inference_time = self.time_function(self.model, cutout_image.to(self.device)) 
-                    # detach the output from the device and get the predicted value
-                    output = output.detach().cpu()
-                    _, predicted = torch.max(output, 1)
+                    if cutout_image is not None:        
+                        output, inference_time = self.time_function(self.model, cutout_image.to(self.device)) 
+                        # detach the output from the device and get the predicted value
+                        output = output.detach().cpu()
+                        _, predicted = torch.max(output, 1)
+
                     if self.object_detect:
                         frame_drawn = self.plot_boxes(results, frame_drawn)
                     texts += [f'Straw Level: {predicted[0]*10:.2f} %',

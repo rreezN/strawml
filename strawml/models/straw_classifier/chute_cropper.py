@@ -11,18 +11,21 @@ from strawml.data.make_dataset import decode_binary_image
 from strawml.data.image_utils import rotate_image_and_bbox
 
 def rotate_to_bbox(image, bbox) -> tuple:
-    x1, y1, x2, y2, x3, y3, x4, y4 = bbox
+    try:
+        x1, y1, x2, y2, x3, y3, x4, y4 = bbox
 
-    # Calculate the angle of the bounding box
-    angle = np.arctan2(y1 - y4, x1 - x4)
-    angle_degrees = np.rad2deg(angle)
+        # Calculate the angle of the bounding box
+        angle = np.arctan2(y1 - y4, x1 - x4)
+        angle_degrees = np.rad2deg(angle)
 
 
-    # Rotate the image and bounding box
-    rotated_image, _, rotated_bbox = rotate_image_and_bbox(image, image, bbox, angle_degrees=angle_degrees)
-    
-    return rotated_image, rotated_bbox
-
+        # Rotate the image and bounding box
+        rotated_image, _, rotated_bbox = rotate_image_and_bbox(image, image, bbox, angle_degrees=angle_degrees)
+        
+        return rotated_image, rotated_bbox
+    except Exception as e:
+        print(f"Error in rotate_to_bbox: {e}")
+        return None, None
 
 def crop_to_bbox(rotated_image, rotated_bbox) -> tuple:
     cropped_image = rotated_image.copy()
@@ -47,8 +50,9 @@ def crop_to_bbox(rotated_image, rotated_bbox) -> tuple:
 
 def rotate_and_crop_to_bbox(image, bbox) -> tuple:
     rotated_image, rotated_bbox = rotate_to_bbox(image, bbox)
+    if rotated_image is None or rotated_bbox is None:
+        return None, None    
     cropped_image, cropped_bbox = crop_to_bbox(rotated_image, rotated_bbox)
-    
     return cropped_image, cropped_bbox
 
 

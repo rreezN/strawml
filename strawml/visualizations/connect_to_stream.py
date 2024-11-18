@@ -6,6 +6,7 @@ from strawml.visualizations.stream import RTSPStream
 
 with open("fiducial_marker/april_config.json", "r") as file:
     config = json.load(file)
+
 detector = Detector(
     families=config["dict_type"],
     nthreads=config["nthreads"],
@@ -15,6 +16,6 @@ detector = Detector(
     decode_sharpening=config["decode_sharpening"],
     debug=config["debug"]
 )
-RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', rtsp=True, make_cutout=True, 
-           object_detect=True, od_model_name="runs/obb/yolo11s-obb-adamw-50e/weights/best.pt", yolo_threshold=0.2, 
-           with_vit=True)()
+RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', rtsp=True, make_cutout=False, 
+           object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2, 
+           with_vit=True, detect_april=False)()
