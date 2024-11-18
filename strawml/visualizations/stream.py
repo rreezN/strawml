@@ -9,7 +9,7 @@ import threading
 import queue
 import torch
 import timm
-from torchvision import transforms
+from torchvision.transforms import v2 as transforms
 import h5py
 from sklearn.linear_model import LinearRegression
 from strawml.models.straw_classifier import chute_cropper as cc
@@ -310,7 +310,11 @@ class AprilDetector:
         self.model = None
         if with_predictor:
             self.mean, self.std = self.load_normalisation_constants()
-            self.transform = transforms.Normalize(mean=self.mean, std=self.std)
+            self.img_unnormalize = transforms.Normalize(mean = [-m/s for m, s in zip(self.mean, self.std)],
+                                                        std = [1/s for s in self.std])
+            self.transform = transforms.Compose([transforms.ToImage(), 
+                                                 transforms.ToDtype(torch.float32, scale=True),
+                                                 transforms.Normalize(mean=self.mean, std=self.std)])
             num_classes = 1 if regressor else 11
             input_channels = 3
             if edges: input_channels += 1
@@ -355,7 +359,7 @@ class AprilDetector:
     def load_normalisation_constants(self):
         # Loads the normalisation constants from 
         # TODO: Figure out where to save this file
-        with h5py.File("data/interim/chute_detection.hdf5", 'r') as f:
+        with h5py.File("data/processed/augmented/chute_detection.hdf5", 'r') as f:
             mean = f.attrs['mean']
             std = f.attrs['std']
         return mean, std
@@ -381,6 +385,9 @@ class AprilDetector:
         :param frame: Frame which has been scored.
         :return: Frame with bounding boxes and labels ploted on it.
         """
+        # First check if the results are empty
+        if not results:
+            return frame
         if 'obb' in self.model_name:
             labels, cord, labels_conf, angle_rad = results
         else:
@@ -800,7 +807,7 @@ class AprilDetector:
     def prepare_for_inference(self, frame, results=None):
         if results is not None:
             # rotate and crop the frame to the chute bbox
-            bbox_chute = results[1].flatten().cpu().detach().numpy() # x1, y1, x2, y2, x3, y3, x4, y4
+            bbox_chute = results[1][0].flatten().cpu().detach().numpy() # x1, y1, x2, y2, x3, y3, x4, y4
             # check that the bbox has 8 values
             if len(bbox_chute) != 8:
                 frame_data = frame
@@ -814,14 +821,35 @@ class AprilDetector:
                 edges = cv2.Canny(frame_data, 100, 200)
                 edges = edges.reshape(1, edges.shape[0], edges.shape[1])
                 edges = torch.from_numpy(edges)/255
+                # Visualise the image
+                edge_vis = edges.permute(1, 2, 0).numpy()
+                edge_vis = cv2.resize(edge_vis, (0,0), fx=0.6, fy=0.6)
+                cv2.imshow("edges", edge_vis)
+                cv2.waitKey(1)
             except Exception as e:
+                print("Error in edge detection", e)
                 return None
         # normalise with stats saved
         frame_data = self.transform(torch.from_numpy(frame_data).permute(2, 0, 1).float())
+
+        # Visualise the image
+        # vis_frame = self.img_unnormalize(frame_data).permute(1, 2, 0).numpy()
+        vis_frame = cv2.cvtColor(frame_data.permute(1, 2, 0).numpy(), cv2.COLOR_BGR2RGB)
+        vis_frame = cv2.resize(vis_frame, (0,0), fx=0.6, fy=0.6)
+        cv2.imshow("frame", np.clip(vis_frame, 0, 1))
+        cv2.waitKey(1)
+
         # stack the images together
         cutout_image = np.concatenate((frame_data, edges), axis=0)
+
         # reshape to 4, 384, 384
         cutout_image = self.resize(torch.from_numpy(cutout_image))
+
+        # cv2.imshow("resized_frame", cutout_image[:3].permute(1,2,0).numpy())
+        # cv2.waitKey(1)
+        # cv2.imshow("resized_edge", cutout_image[3].numpy())
+        # cv2.waitKey(1)
+        
         cutout_image = cutout_image.unsqueeze(0)
         return cutout_image
 
@@ -983,20 +1011,18 @@ class RTSPStream(AprilDetector):
                 # the results to crop the bbox from the frame. However, with the apriltrags from self.draw, we simply make the 
                 # cutout from the frame and do not need the results.
                 results = None
+                if cutout is not None:
+                    frame = cutout
+                elif self.object_detect:
+                    results, OD_time = self.time_function(self.OD.score_frame, frame) # This takes a lot of time if ran on CPU
+                    texts += [f'OD Time: {OD_time:.2f} s']
+                    font_scales += [0.5]
+                    font_thicknesss += [1]
+                    positions += [(10, 150)]
+                else:
+                    raise ValueError("The cutout image is None and the object detection is not used.")
 
                 if self.with_predictor:
-                    if cutout is not None:
-                        frame = cutout
-                        # # show the cutout in a new window
-                        # cv2.imshow('Cutout', cv2.resize(cutout, (0, 0), fx=0.6, fy=0.6))
-                        # cv2.waitKey(1)
-                    elif self.object_detect and (cutout is None):
-                        results, OD_time = self.time_function(self.OD.score_frame, frame) # This takes a lot of time if ran on CPU
-                        texts += [f'OD Time: {OD_time:.2f} s']
-                        font_scales += [0.5]
-                        font_thicknesss += [1]
-                        positions += [(10, 150)]
-
                     cutout_image, prep_time = self.time_function(self.prepare_for_inference, frame, results)
                     if cutout_image is not None:
                         if self.regressor:
@@ -1014,17 +1040,18 @@ class RTSPStream(AprilDetector):
                             _, predicted = torch.max(output, 1)
                             straw_level = predicted[0]*10
 
-                    if self.object_detect:
-                        frame_drawn = self.plot_boxes(results, frame_drawn)
-                    texts += [f'Straw Level: {straw_level:.2f} %',
-                              f'Image Prep. Time: {prep_time:.2f} s', 
-                              f'Inference Time: {inference_time:.2f} s']
-                    font_scales += [0.5, 0.5, 0.5]
-                    font_thicknesss += [1, 1, 1]
-                    positions += [(10, 100), (10, 175), (10, 200)]
+                        # Add the time taken for inference to the text
+                        texts += [f'Straw Level: {straw_level:.2f} %', 
+                                  f'Image Prep. Time: {prep_time:.2f} s',
+                                  f'Inference Time: {inference_time:.2f} s']
+                        font_scales += [0.5, 0.5, 0.5]
+                        font_thicknesss += [1, 1, 1]
+                        positions += [(10, 100), (10, 175), (10, 200)]
+
+                if self.object_detect:
+                    frame_drawn = self.plot_boxes(results, frame_drawn)
                 # Resize the frame for display
                 frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6)
-                
                 # Increment frame count
                 frame_count += 1
                 # Calculate FPS
@@ -1121,6 +1148,7 @@ if __name__ == "__main__":
         decode_sharpening=config["decode_sharpening"],
         debug=config["debug"]
     )
-    RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', rtsp=True, make_cutout=True, 
-            object_detect=False, od_model_name="runs/obb/yolo11s-obb-adamw-50e/weights/best.pt", yolo_threshold=0.2, 
-            with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
+    RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', rtsp=True, 
+               make_cutout=True, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
+               detect_april=False,
+               with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
