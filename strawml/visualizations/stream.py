@@ -11,9 +11,12 @@ import torch
 import timm
 from torchvision import transforms
 import h5py
+from sklearn.linear_model import LinearRegression
 from strawml.models.straw_classifier import chute_cropper as cc
 from strawml.models.chute_finder.yolo import ObjectDetect
-from sklearn.linear_model import LinearRegression
+import strawml.models.straw_classifier.cnn_classifier as cnn
+import strawml.models.straw_classifier.feature_model as feature_model
+
 
 class TagGraphWithPositionsCV:
     """
@@ -275,7 +278,7 @@ class AprilDetector:
     provides methods to detect AprilTags in a frame, draw the detected tags on the frame, and given a predicted straw level
     value performs inverse linear interpolation to get the corresponding pixel value on the frame.
     """
-    def __init__(self, detector: pupil_apriltags.bindings.Detector, ids: dict, window: bool=False, od_model_name=None, object_detect=True, yolo_threshold=0.5, device="cuda", frame_shape: tuple = (1440, 2560), with_vit: bool =False, vit_load_path: str = "models/vit_classifier_best.pth") -> None:
+    def __init__(self, detector: pupil_apriltags.bindings.Detector, ids: dict, window: bool=False, od_model_name=None, object_detect=True, yolo_threshold=0.5, device="cuda", frame_shape: tuple = (1440, 2560), with_predictor: bool =False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
         self.detector = detector
         self.window = window
         self.ids = ids
@@ -283,6 +286,8 @@ class AprilDetector:
         self.object_detect = object_detect
         self.yolo_threshold = yolo_threshold
         self.device = device
+        self.edges = edges
+        self.heatmap = heatmap
         if self.object_detect:
             self.OD = ObjectDetect(self.model_name, yolo_threshold=yolo_threshold, device=device, verbose=False)
 
@@ -301,18 +306,56 @@ class AprilDetector:
                                 (18, 17), (17, 16), (16, 15), (15, 11)]
         self.processed_tags = set()  # Track tags that have already been re-centered
         self.detected_tags = []  # Store all detected tags during each frame
-        self.with_vit = with_vit
-        if with_vit:
+        self.with_predictor = with_predictor
+        self.model = None
+        if with_predictor:
             self.mean, self.std = self.load_normalisation_constants()
-            self.model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', pretrained=False, in_chans=4, num_classes=11)            
-            self.model.load_state_dict(torch.load(vit_load_path))
-            self.model.to(self.device)
             self.transform = transforms.Normalize(mean=self.mean, std=self.std)
-            self.resize = transforms.Resize((384, 384))
+            num_classes = 1 if regressor else 11
+            input_channels = 3
+            if edges: input_channels += 1
+            if heatmap: input_channels += 3
+            image_size = (384,384)
+            print(f"Loading model {predictor_model} from {model_load_path} and {num_classes} classes")
+            match predictor_model:
+                case 'cnn':
+                    image_size = (384, 384)
+                    self.model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=num_classes)
+                case 'convnextv2':
+                    image_size = (224, 224)
+                    self.model = timm.create_model('convnextv2_atto', pretrained=False, in_chans=input_channels, num_classes=num_classes)
+                case 'vit':
+                    image_size = (384, 384)
+                    self.model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', pretrained=False, in_chans=input_channels, num_classes=num_classes)
+                case 'eva02':
+                    image_size = (448, 448)
+                    self.model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', pretrained=False, in_chans=input_channels, num_classes=num_classes)
+                case 'caformer':
+                    image_size = (384, 384)
+                    self.model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=num_classes, pretrained=False)
+            
+            self.resize = transforms.Resize(image_size)
+            
+            if regressor:
+                if predictor_model != 'cnn':
+                    features = self.model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
+                    feature_size = torch.flatten(features, 1).shape[1]
+                    self.regressor_model = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+                    
+                    self.model.load_state_dict(torch.load(f'{model_load_path}/{predictor_model}_feature_extractor_overall_best.pth', weights_only=True))
+                    self.regressor_model.load_state_dict(torch.load(f'{model_load_path}/{predictor_model}_regressor_overall_best.pth', weights_only=True))
+                    self.regressor_model.to(self.device)
+                else:
+                    self.model.load_state_dict(torch.load(model_load_path, weights_only=True))
+            else:
+                self.regressor_model = None
+                self.model.load_state_dict(torch.load(model_load_path, weights_only=True))
+            self.model.to(self.device)
 
     def load_normalisation_constants(self):
         # Loads the normalisation constants from 
-        with h5py.File("data/processed/augmented/chute_detection.hdf5", 'r') as f:
+        # TODO: Figure out where to save this file
+        with h5py.File("data/interim/chute_detection.hdf5", 'r') as f:
             mean = f.attrs['mean']
             std = f.attrs['std']
         return mean, std
@@ -766,12 +809,13 @@ class AprilDetector:
         else:
             frame_data = frame
         # get edge features
-        try:
-            edges = cv2.Canny(frame_data, 100, 200)
-            edges = edges.reshape(1, edges.shape[0], edges.shape[1])
-            edges = torch.from_numpy(edges)/255
-        except Exception as e:
-            return None
+        if self.edges:
+            try:
+                edges = cv2.Canny(frame_data, 100, 200)
+                edges = edges.reshape(1, edges.shape[0], edges.shape[1])
+                edges = torch.from_numpy(edges)/255
+            except Exception as e:
+                return None
         # normalise with stats saved
         frame_data = self.transform(torch.from_numpy(frame_data).permute(2, 0, 1).float())
         # stack the images together
@@ -790,14 +834,16 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, with_vit=False, detect_april=False) -> None:
-        super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, with_vit=with_vit)
+    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, detect_april=False, with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
+        super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         if rtsp:
             self.cap = self.create_capture(credentials_path)
         else:
             self.cap = cv2.VideoCapture(0)
         self.make_cutout = make_cutout
         self.detect_april = detect_april
+        self.regressor = regressor
+        self.predictor_model = predictor_model
         
     def create_capture(self, credentials_path: str) -> cv2.VideoCapture:
         """
@@ -845,10 +891,19 @@ class RTSPStream(AprilDetector):
         elapsed_time : float
             The time taken to execute the function in seconds.
         """
-        start_time = time.time()
-        result = func(*args, **kwargs)
-        end_time = time.time()
-        elapsed_time = end_time - start_time
+        if isinstance(func, list):
+            start_time = time.time()
+            # TODO: Only works for non-cnn models right now
+            result = func[0].forward_features(*args, **kwargs)
+            # if result.shape[0] == 1: result = result.flatten()
+            # else: result = result.flatten(1)
+            result = func[1](result)
+            elapsed_time = time.time() - start_time
+        else:
+            start_time = time.time()
+            result = func(*args, **kwargs)
+            end_time = time.time()
+            elapsed_time = end_time - start_time
         return result, elapsed_time
 
 
@@ -914,7 +969,7 @@ class RTSPStream(AprilDetector):
                     font_scales = [0.5]
                     font_thicknesss = [1]
                     positions = [(10, 125)]
-                    # Perform object detection and level prediction on the frame if with_vit is True
+                    # Perform object detection and level prediction on the frame if with_predictor is True
                     # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
                     frame_drawn, cutout = self.draw(frame, self.tags, self.make_cutout)
                 else:
@@ -929,7 +984,7 @@ class RTSPStream(AprilDetector):
                 # cutout from the frame and do not need the results.
                 results = None
 
-                if self.with_vit:
+                if self.with_predictor:
                     if cutout is not None:
                         frame = cutout
                         # # show the cutout in a new window
@@ -943,15 +998,25 @@ class RTSPStream(AprilDetector):
                         positions += [(10, 150)]
 
                     cutout_image, prep_time = self.time_function(self.prepare_for_inference, frame, results)
-                    if cutout_image is not None:        
-                        output, inference_time = self.time_function(self.model, cutout_image.to(self.device)) 
-                        # detach the output from the device and get the predicted value
-                        output = output.detach().cpu()
-                        _, predicted = torch.max(output, 1)
+                    if cutout_image is not None:
+                        if self.regressor:
+                            if self.predictor_model != 'cnn':
+                                output, inference_time = self.time_function([self.model, self.regressor_model], cutout_image.to(self.device))
+                            else:
+                                output, inference_time = self.time_function(self.model, cutout_image.to(self.device))
+                            # detach the output from the device and get the predicted value
+                            output = output.detach().cpu()
+                            straw_level = output[0].item()*100
+                        else:
+                            output, inference_time = self.time_function(self.model, cutout_image.to(self.device)) 
+                            # detach the output from the device and get the predicted value
+                            output = output.detach().cpu()
+                            _, predicted = torch.max(output, 1)
+                            straw_level = predicted[0]*10
 
                     if self.object_detect:
                         frame_drawn = self.plot_boxes(results, frame_drawn)
-                    texts += [f'Straw Level: {predicted[0]*10:.2f} %',
+                    texts += [f'Straw Level: {straw_level:.2f} %',
                               f'Image Prep. Time: {prep_time:.2f} s', 
                               f'Inference Time: {inference_time:.2f} s']
                     font_scales += [0.5, 0.5, 0.5]
@@ -1058,4 +1123,4 @@ if __name__ == "__main__":
     )
     RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', rtsp=True, make_cutout=True, 
             object_detect=False, od_model_name="runs/obb/yolo11s-obb-adamw-50e/weights/best.pt", yolo_threshold=0.2, 
-            with_vit=True)()
+            with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()

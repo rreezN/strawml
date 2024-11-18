@@ -255,7 +255,7 @@ if __name__ == '__main__':
         case 'eva02':
             model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
         case 'caformer':
-            model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+            model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=False)
     
 
     model_type = 'regressor' if args.cont else 'classifier'
