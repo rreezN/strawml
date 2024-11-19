@@ -608,7 +608,7 @@ def get_args():
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--no_wandb', action='store_true', help='Do not use Weights and Biases for logging')
     parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
-    parser.add_argument('--image_size', type=list, default=[1370, 204], help='Image size for the model (only for CNN)', nargs=2)
+    parser.add_argument('--image_size', type=int, default=[1370, 204], help='Image size for the model (only for CNN)', nargs=2)
     parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
     parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class')
     parser.add_argument('--folds', type=int, default=5, help='Number of folds for cross-validation')
@@ -706,13 +706,13 @@ if __name__ == '__main__':
             case 'cnn':
                 model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw, use_sigmoid=args.use_sigmoid)
             case 'convnextv2':
-                model = timm.create_model('convnext_small.in12k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
+                model = timm.create_model('convnext_small.in12k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained, img_size=image_size)
             case 'vit':
-                model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
+                model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained, img_size=image_size)
             case 'eva02':
-                model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
+                model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained, img_size=image_size)
             case 'caformer':
-                model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
+                model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained, img_size=image_size)
         
         if args.cont and args.model != 'cnn':
             in_feats = torch.randn(1, input_channels, image_size[0], image_size[1])
