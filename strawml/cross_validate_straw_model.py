@@ -58,9 +58,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             # TODO: Update weights based on data distribution
             ce_weights[0, 1, 2] = 2.0
             ce_weights[-3, -2, -1] = 2.0
-            loss_fn = torch.nn.functional.cross_entropy(weight=torch.Tensor(ce_weights))
-        else:
-            loss_fn = torch.nn.functional.cross_entropy()
+
+        loss_fn = torch.nn.functional.cross_entropy
         best_accuracy = -1.0
     
     epoch_train_losses = []
@@ -109,7 +108,10 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 output = feature_regressor(output)
                 # output = torch.clamp(output, 0, 1)
             
-            loss = loss_fn(output, fullness)
+            if args.use_wce:
+                loss = loss_fn(output, fullness, weight=ce_weights)
+            else:
+                loss = loss_fn(output, fullness)
             train_losses.append(loss.item())
             
             # Backward pass

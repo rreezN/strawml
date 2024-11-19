@@ -53,9 +53,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             # TODO: Update weights based on data distribution
             ce_weights[0, 1, 2] = 2.0
             ce_weights[-3, -2, -1] = 2.0
-            loss_fn = torch.nn.functional.cross_entropy(weight=torch.Tensor(ce_weights))
-        else:
-            loss_fn = torch.nn.functional.cross_entropy()
+        loss_fn = torch.nn.functional.cross_entropy
         best_accuracy = 0.0
     
     plot_examples_every = 0.5 # Save an example every X% of the length of the training data
@@ -96,7 +94,10 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 output = feature_regressor(output)
                 # output = torch.clamp(output, 0, 1)
             
-            loss = loss_fn(output, fullness)
+            if args.use_wce:
+                loss = loss_fn(output, fullness, weight=ce_weights)
+            else:
+                loss = loss_fn(output, fullness)
             
             epoch_losses += [loss.item()]
             
@@ -484,7 +485,7 @@ def get_args():
     parser.add_argument('--epochs', type=int, default=25, help='Number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.00001, help='Learning rate for training')
     parser.add_argument('--save_path', type=str, default='models/', help='Path to save the model to')
-    parser.add_argument('--data_path', type=str, default='data/processed/augmented/chute_detection.hdf5', help='Path to the training data')
+    parser.add_argument('--data_path', type=str, default='data/interim/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
     parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
