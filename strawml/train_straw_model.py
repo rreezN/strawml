@@ -490,7 +490,7 @@ def get_args():
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--no_wandb', action='store_true', help='Do not use Weights and Biases for logging')
     parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
-    parser.add_argument('--image_size', type=tuple, default=(1370, 204), help='Image size for the model (only for CNN)')
+    parser.add_argument('--image_size', type=list, default=[1370, 204], help='Image size for the model (only for CNN)', nargs=2)
     parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
     parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class')
     parser.add_argument('--data_subsample', type=float, default=1.0, help='Amount of the data to subsample for training (1.0 = 100%, 0.5 = 50%)')
@@ -505,6 +505,8 @@ def get_args():
 
 if __name__ == '__main__':
     args = get_args()
+    
+    args.image_size = tuple(args.image_size)
     
     match args.model:
         case 'cnn':
