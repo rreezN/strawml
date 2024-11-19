@@ -636,6 +636,8 @@ if __name__ == '__main__':
         case 'eva02':
             image_size = (448, 448)
     
+    image_size = args.image_size
+    
     kf = KFold(n_splits=args.folds, shuffle=True, random_state=args.seed)
     
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
