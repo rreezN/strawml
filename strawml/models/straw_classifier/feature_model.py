@@ -11,11 +11,12 @@ import strawml.models.straw_classifier.utils as utils
 class FeatureRegressor(torch.nn.Module):
     """ Basic CNN classifier class.
     """
-    def __init__(self, image_size=(448, 448), input_size=1024, output_size=1) -> None:
+    def __init__(self, image_size=(448, 448), input_size=1024, output_size=1, use_sigmoid=False) -> None:
         super(FeatureRegressor, self).__init__()
 
         self.image_size = image_size
         self.output_size = output_size
+        self.use_sigmoid = use_sigmoid
         
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
@@ -24,6 +25,8 @@ class FeatureRegressor(torch.nn.Module):
         
         # Output layer
         self.fc2 = torch.nn.Linear(512, self.output_size, dtype=torch.float)
+        
+        self.sigmoid = torch.nn.Sigmoid()
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of the model.
@@ -39,6 +42,8 @@ class FeatureRegressor(torch.nn.Module):
         x = self.r(self.fc1(x))
         x = self.fc2(x)
         x = torch.flatten(x)
+        if self.use_sigmoid:
+            x = self.sigmoid(x)
         return x
         
 

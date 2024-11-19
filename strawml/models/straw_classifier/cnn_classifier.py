@@ -11,11 +11,12 @@ import strawml.models.straw_classifier.utils as utils
 class CNNClassifier(torch.nn.Module):
     """ Basic CNN classifier class.
     """
-    def __init__(self, image_size=(448, 448), img_mean=[0, 0, 0], img_std=[1, 1, 1], input_channels=3, output_size=21) -> None:
+    def __init__(self, image_size=(448, 448), img_mean=[0, 0, 0], img_std=[1, 1, 1], input_channels=3, output_size=21, use_sigmoid=False) -> None:
         super(CNNClassifier, self).__init__()
 
         self.image_size = image_size
         self.output_size = output_size
+        self.use_sigmoid = use_sigmoid
         
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.mean = torch.Tensor(img_mean).to(self.device)
@@ -34,6 +35,8 @@ class CNNClassifier(torch.nn.Module):
         
         self.norm = utils.LayerNorm(32, eps=1e-6, data_format="channels_first")
         
+        self.sigmoid = torch.nn.Sigmoid()
+        
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of the model.
         
@@ -50,7 +53,8 @@ class CNNClassifier(torch.nn.Module):
         x = torch.flatten(x, 1)
         x = self.r(self.fc1(x))
         x = self.fc2(x)
-        
+        if self.use_sigmoid:
+            x = self.sigmoid(x)
         return x
     
     def get_linear_layer_neurons(self) -> int:

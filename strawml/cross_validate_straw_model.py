@@ -31,13 +31,36 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
         if feature_regressor is not None:
             feature_regressor = feature_regressor.cuda()
     
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    match args.optim:
+        case 'adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+            if feature_regressor is not None:
+                optimizer_feature = torch.optim.Adam(feature_regressor.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        case 'adamw':
+            optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+            if feature_regressor is not None:
+                optimizer_feature = torch.optim.AdamW(feature_regressor.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        case 'sgd':
+            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+            if feature_regressor is not None:
+                optimizer_feature = torch.optim.SGD(feature_regressor.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        case 'soap':
+            raise NotImplementedError
+        case 'adopt':
+            raise NotImplementedError
     
     if args.cont:
         loss_fn = torch.nn.functional.mse_loss
         best_accuracy = np.inf
     else:
-        loss_fn = torch.nn.functional.cross_entropy
+        if args.use_wce:
+            ce_weights = torch.ones(args.num_classes_straw)
+            # TODO: Update weights based on data distribution
+            ce_weights[0, 1, 2] = 2.0
+            ce_weights[-3, -2, -1] = 2.0
+            loss_fn = torch.nn.functional.cross_entropy(weight=torch.Tensor(ce_weights))
+        else:
+            loss_fn = torch.nn.functional.cross_entropy()
         best_accuracy = -1.0
     
     epoch_train_losses = []
@@ -69,6 +92,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 fullness = fullness.cuda()
             
             optimizer.zero_grad()
+            if feature_regressor is not None: optimizer_feature.zero_grad()
             
             # print("frame_data shape:", frame_data.shape)
             
@@ -91,6 +115,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             # Backward pass
             loss.backward()
             optimizer.step()
+            if feature_regressor is not None: optimizer_feature.step()
 
             if args.cont:
                 train_iterator.set_postfix(loss=loss.item(), fullness=torch.mean(fullness).item(), prediction=torch.mean(output).item())
@@ -312,8 +337,8 @@ def predict_sensor_data(args, model: torch.nn.Module, sensor_loader: DataLoader,
     """Predict the output of a model on a dataset.
     """
     
+    print("Predicting Sensor Data")
     if torch.cuda.is_available():
-        print("Using GPU")
         model = model.cuda()
         if feature_regressor is not None:
             feature_regressor = feature_regressor.cuda()
@@ -530,7 +555,13 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'continuous': args.cont,
             'folds': args.folds,
             'data_subsample': args.data_subsample,
-            'augment_probability': args.augment_probability
+            'augment_probability': args.augment_probability,
+            'use_sigmoid': args.use_sigmoid,
+            'use_wce': args.use_wce,
+            'optim': args.optim,
+            'weight_decay': args.weight_decay,
+            'momentum': args.momentum,
+            'pretrained': args.pretrained
         })
     
     global LOG_DICT
@@ -581,6 +612,12 @@ def get_args():
     parser.add_argument('--folds', type=int, default=5, help='Number of folds for cross-validation')
     parser.add_argument('--data_subsample', type=float, default=1, help='Amount of the data to subsample for training (1.0 = 100%, 0.5 = 50%)')
     parser.add_argument('--augment_probability', type=float, default=0.5, help='Probability of augmenting the data')
+    parser.add_argument('--use_sigmoid', action='store_true', help='Use a sigmoid activation function for the output')
+    parser.add_argument('--use_wce', action='store_true', help='Use weighted cross-entropy loss')
+    parser.add_argument('--optim', type=str, default='adam', help='Optimizer to use for training', choices=['adam', 'adamw', 'sgd', 'soap', 'adopt'])
+    parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay for the optimizer')
+    parser.add_argument('--momentum', type=float, default=0.0, help='Momentum for the optimizer')
+    parser.add_argument('--pretrained', action='store_true', help='Use a pretrained model')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -661,22 +698,22 @@ if __name__ == '__main__':
         
         match args.model:
             case 'cnn':
-                model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw)
+                model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw, use_sigmoid=args.use_sigmoid)
             case 'convnextv2':
-                model = timm.create_model('convnext_small.in12k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+                model = timm.create_model('convnext_small.in12k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
             case 'vit':
-                model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+                model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
             case 'eva02':
-                model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+                model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
             case 'caformer':
-                model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=True)
+                model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
         
         if args.cont and args.model != 'cnn':
             in_feats = torch.randn(1, input_channels, image_size[0], image_size[1])
             # in_feats = in_feats.cuda() if torch.cuda.is_available() else in_feats
             features = model.forward_features(in_feats)
             feature_size = torch.flatten(features, 1).shape[1]
-            feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+            feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=args.use_sigmoid)
         else:
             feature_regressor = None
         

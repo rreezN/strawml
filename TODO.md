@@ -1,9 +1,5 @@
 # TODO
 
-- [ ] Add testing best model on sensor test set to cross_validation at end + log to wandb
-- [ ] Investigate if there are any bugs in sensor dataset
-  - [ ] Check distributions etc..
-
 ## Model Experiments (in order)
 ### Architecture experiments
 These experiments should be done as barebones as possible. No additional fancy features. No data augmentation. No edges, heatmaps. No LR schedulers, bare minimum LR tuning, ADAM optimizer. The goal is to figure out which overall architecture will best satisfy our needs within both accuracy and inference time.
