@@ -37,7 +37,7 @@ class Chute(torch.utils.data.Dataset):
             
         
         # Load the data file
-        self.frames = h5py.File(self.data_path, 'a')
+        self.frames = h5py.File(self.data_path, 'r')
         
         # Unfold the data to (segment, second)
         frame_names = list(self.frames.keys())
@@ -61,6 +61,8 @@ class Chute(torch.utils.data.Dataset):
         # Create indices for train, test and validation
         if 'sensor' in self.data_path:
             self.test_indices = frame_names
+            if data_type == 'train':
+                raise ValueError('No training data available for sensor dataset. Use data_type="test"')
         else:
             self.train_indices, self.test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=0.15, random_state=random_state)
             # self.val_indices, self.test_indices, _, _ = train_test_split(self.test_indices, self.test_indices, test_size=0.5, random_state=random_state)
@@ -320,6 +322,9 @@ class Chute(torch.utils.data.Dataset):
         
         import strawml.data.extract_statistics as es
         
+        self.frames.close()
+        self.frames = h5py.File(self.data_path, 'a')
+        
         running_mean = None
         running_min = None
         running_max = None
@@ -381,6 +386,9 @@ class Chute(torch.utils.data.Dataset):
         self.frames.attrs['std'] = running_std
         self.frames.attrs['min'] = running_min
         self.frames.attrs['max'] = running_max
+        
+        self.frames.close()
+        self.frames = h5py.File(self.data_path, 'r')
         
         print("Statistics extracted:")
         if self.inc_heatmap:
