@@ -955,7 +955,7 @@ class RTSPStream(AprilDetector):
             ret, frame = cap.read()
             self.q.put(frame)        
 
-    def display_frame(self) -> None:
+    def display_frame(self, cap) -> None:
         """
         Display the frames with the detected AprilTags.
         """
@@ -979,28 +979,32 @@ class RTSPStream(AprilDetector):
                     self.q.queue.clear() # Clear the queue to account for any lag and prevent the queue from getting too large
                 
                 # # Fix the frame by undistorting it
-                # frame = self.fix_frame(frame) # NOTE this cant be used since undistort crops the top and bottom of the chute too much
-                
+                # frame, undistort_time = self.time_function(self.fix_frame, frame) # NOTE this cant be used since undistort crops the top and bottom of the chute too much
+                # texts = [f"Undistort Time: {undistort_time:.2f} s"]
+                # font_scales = [0.5]
+                # font_thicknesss = [1]
+                # positions = [(10, 125)]
+                texts = []
+                font_scales = []
+                font_thicknesss = []
+                positions = []
+
                 # Detect the AprilTags in the frame every 5 frames
                 if self.detect_april:
                     if frame_count % 5 == 0: # Due to latency we wish to limit the detection to every 5 frames
                         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                         _, detect_time = self.time_function(self.detect, self.fix_frame(gray, blur=True))
                     # Save the time taken for detection to the text
-                    texts = [f'AprilTags Time: {detect_time:.2f} s']
-                    font_scales = [0.5]
-                    font_thicknesss = [1]
-                    positions = [(10, 125)]
+                    texts += [f'AprilTags Time: {detect_time:.2f} s']
+                    font_scales += [0.5]
+                    font_thicknesss += [1]
+                    positions += [(10, 150)]
                     # Perform object detection and level prediction on the frame if with_predictor is True
                     # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
-                    frame_drawn, cutout = self.draw(frame, self.tags, self.make_cutout)
+                    frame_drawn, cutout = self.draw(frame.copy(), self.tags, self.make_cutout)
                 else:
                     frame_drawn = frame
                     cutout = None
-                    texts = []
-                    font_scales = []
-                    font_thicknesss = []
-                    positions = []
                 # We initialise results to None to avoid errors when the model is not used -> only when OD is used do we need
                 # the results to crop the bbox from the frame. However, with the apriltrags from self.draw, we simply make the 
                 # cutout from the frame and do not need the results.
@@ -1009,13 +1013,13 @@ class RTSPStream(AprilDetector):
                     frame = cutout
                 elif self.object_detect:
                     results, OD_time = self.time_function(self.OD.score_frame, frame) # This takes a lot of time if ran on CPU
-                    # make sure results has at least one bbox
                     if len(results[0]) == 0:
                         results = "NA"
+                    # make sure results has at least one bbox
                     texts += [f'OD Time: {OD_time:.2f} s']
                     font_scales += [0.5]
                     font_thicknesss += [1]
-                    positions += [(10, 150)]
+                    positions += [(10, 175)]
                 else:
                     raise ValueError("The cutout image is None and the object detection is not used.")
 
@@ -1044,11 +1048,15 @@ class RTSPStream(AprilDetector):
                                     f'Inference Time: {inference_time:.2f} s']
                             font_scales += [0.5, 0.5, 0.5]
                             font_thicknesss += [1, 1, 1]
-                            positions += [(10, 100), (10, 175), (10, 200)]
+                            positions += [(10, 100), (10, 200), (10, 225)]
 
                     if self.object_detect:
                         frame_drawn = self.plot_boxes(results, frame_drawn)
-                
+                else:
+                    frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
+                    cv2.imshow('Video', frame_drawn) # Display the frame
+                    cv2.waitKey(1)
+                    continue
                 frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
 
                 frame_count += 1 # Increment frame count
@@ -1111,28 +1119,28 @@ class RTSPStream(AprilDetector):
                 continue
 
             # # Fix the frame by undistorting it
-            # frame = self.fix_frame(frame) # NOTE this cant be used since undistort crops the top and bottom of the chute too much
-            
+            frame, undistort_time = self.time_function(self.fix_frame, frame) # NOTE this cant be used since undistort crops the top and bottom of the chute too much
+            texts = [f"Undistort Time: {undistort_time:.2f} s"]
+            font_scales = [0.5]
+            font_thicknesss = [1]
+            positions = [(10, 125)]
             # Detect the AprilTags in the frame every 5 frames
             if self.detect_april:
                 if frame_count % 5 == 0: # Due to latency we wish to limit the detection to every 5 frames
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     _, detect_time = self.time_function(self.detect, self.fix_frame(gray, blur=True))
                 # Save the time taken for detection to the text
-                texts = [f'AprilTags Time: {detect_time:.2f} s']
-                font_scales = [0.5]
-                font_thicknesss = [1]
-                positions = [(10, 125)]
+                texts += [f'AprilTags Time: {detect_time:.2f} s']
+                font_scales += [0.5]
+                font_thicknesss += [1]
+                positions += [(10, 150)]
                 # Perform object detection and level prediction on the frame if with_predictor is True
                 # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
                 frame_drawn, cutout = self.draw(frame.copy(), self.tags, self.make_cutout)
             else:
                 frame_drawn = frame
                 cutout = None
-                texts = []
-                font_scales = []
-                font_thicknesss = []
-                positions = []
+
             # We initialise results to None to avoid errors when the model is not used -> only when OD is used do we need
             # the results to crop the bbox from the frame. However, with the apriltrags from self.draw, we simply make the 
             # cutout from the frame and do not need the results.
@@ -1147,7 +1155,7 @@ class RTSPStream(AprilDetector):
                 texts += [f'OD Time: {OD_time:.2f} s']
                 font_scales += [0.5]
                 font_thicknesss += [1]
-                positions += [(10, 150)]
+                positions += [(10, 175)]
             else:
                 raise ValueError("The cutout image is None and the object detection is not used.")
 
@@ -1176,7 +1184,7 @@ class RTSPStream(AprilDetector):
                                 f'Inference Time: {inference_time:.2f} s']
                         font_scales += [0.5, 0.5, 0.5]
                         font_thicknesss += [1, 1, 1]
-                        positions += [(10, 100), (10, 175), (10, 200)]
+                        positions += [(10, 100), (10, 200), (10, 225)]
 
             if self.object_detect:
                 frame_drawn = self.plot_boxes(results, frame_drawn)
@@ -1280,10 +1288,16 @@ if __name__ == "__main__":
         debug=config["debug"]
     )
 
-    video_path = "data/special/Pin drum Chute 2_HKVision_HKVision_20241102105959_20241102112224_1532587042.mp4"
+    # video_path = "data/special/Pin drum Chute 2_HKVision_HKVision_20241102105959_20241102112224_1532587042.mp4"
 
+    # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    #            rtsp=False, # Only used when the stream is from an RTSP source
+    #            make_cutout=True, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
+    #            detect_april=True,
+    #            with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
+    
     RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-               rtsp=False, # Only used when the stream is from an RTSP source
-               make_cutout=True, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
-               detect_april=True,
-               with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
+            rtsp=True , # Only used when the stream is from an RTSP source
+            make_cutout=False, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
+            detect_april=False,
+            with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
