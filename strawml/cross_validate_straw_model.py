@@ -810,7 +810,7 @@ if __name__ == '__main__':
     #     feature_regressor = None
     #     model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier{id}_overall_best.pth', weights_only=True))
     
-    model_folder = f'{args.save_path}/{args.model}/' + 'regressor/' if args.cont else 'classifier/'
+    model_folder = f'{args.save_path}/{args.model}' + '_regressor/' if args.cont else '_classifier/'
     id = f'_{args.id}' if args.id != '' else ''
     model_suffix = 'feature_extractor' if args.cont else 'classifier'
     model_save_path = f'{model_folder}{args.model}_{model_suffix}{id}'
