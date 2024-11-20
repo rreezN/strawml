@@ -778,7 +778,12 @@ if __name__ == '__main__':
             torch.save(model.state_dict(), f'{model_save_path}_best_sensor.pth')
             if feature_regressor is not None:
                 torch.save(feature_regressor.state_dict(), f'{model_folder}{args.model}_regressor{id}_best_sensor.pth')
-        
+
+            if not args.no_wandb:
+                wandb.save(f'{model_save_path}_best_sensor.pth')
+                if feature_regressor is not None:
+                    wandb.save(f'{model_folder}{args.model}_regressor{id}_best_sensor.pth')
+            
         if args.cont:
             plot_cont_predictions(outputs, fullnesses, in_fold=True)
         else:
