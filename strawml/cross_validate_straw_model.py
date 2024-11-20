@@ -771,7 +771,7 @@ if __name__ == '__main__':
         sensor_accuracy = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
         if sensor_accuracy > BEST_SENSOR_ACCURACY:
             BEST_SENSOR_ACCURACY = sensor_accuracy
-            model_folder = f'{args.save_path}/{args.model}/' + 'regressor/' if args.cont else 'classifier/'
+            model_folder = f'{args.save_path}/{args.model}' + '_regressor/' if args.cont else '_classifier/'
             id = f'_{args.id}' if args.id != '' else ''
             model_suffix = 'feature_extractor' if args.cont else 'classifier'
             model_save_path = f'{model_folder}{args.model}_{model_suffix}{id}'
