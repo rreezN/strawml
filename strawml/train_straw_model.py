@@ -359,7 +359,7 @@ def plot_cont_predictions(outputs, fullnesses):
     plt.plot(fullnesses, label='True')
     
     # Plot acceptable range
-    plt.fill_between(np.arange(len(outputs)), fullnesses*(1-acceptable), fullnesses*(1+acceptable), color='gray', alpha=0.5, label=f'threshold={acceptable*100:.0f}%')
+    plt.fill_between(np.arange(len(outputs)), fullnesses-acceptable, fullnesses+acceptable, color='gray', alpha=0.5, label=f'threshold={acceptable*100:.0f}%')
     
     plt.legend()
     yticks = np.arange(0, 1.1, 0.1)
