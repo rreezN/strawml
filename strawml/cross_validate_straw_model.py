@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import SubsetRandomSampler
 from tqdm import tqdm
+import time
 import timeit
 import timm
 import wandb
@@ -25,6 +26,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
     global OVERALL_BEST_ACCURACY
     global fold
     global LOG_DICT
+    global BEST_FOLD
     
     if torch.cuda.is_available():
         model = model.cuda()
@@ -291,6 +293,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             
             if args.cont:
                 if np.mean(val_losses) < OVERALL_BEST_ACCURACY:
+                    print('----------------------------------------------------')
+                    print(f'New overall best loss: {best_accuracy} from {OVERALL_BEST_ACCURACY}')
+                    BEST_FOLD = fold +1
                     OVERALL_BEST_ACCURACY = np.mean(val_losses)
                     print(f'New overall best loss: {OVERALL_BEST_ACCURACY:.6f}')
                     model_folder = f'{args.save_path}{args.model}_regressor/'
@@ -307,18 +312,24 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                         model_name = f'{args.model}_regressor{id}'
                         model_save_path = model_folder + model_name + '_overall_best.pth'
                         torch.save(model.state_dict(), model_save_path)
+                    print(f'Saving {model_save_path} from fold {fold+1} as the overall best model')
+                    print('----------------------------------------------------')
                     if not args.no_wandb:
                         wandb.save(model_save_path)
                         wandb.save(regressor_save_path)
             else:
                 if best_accuracy > OVERALL_BEST_ACCURACY:
+                    print('----------------------------------------------------')
+                    print(f'New overall best accuracy: {best_accuracy}% up from {OVERALL_BEST_ACCURACY}%')
                     OVERALL_BEST_ACCURACY = best_accuracy
-                    print(f'New overall best accuracy: {OVERALL_BEST_ACCURACY}%')
+                    BEST_FOLD = fold + 1
                     model_folder = f'{args.save_path}{args.model}_classifier/'
                     os.makedirs(model_folder, exist_ok=True)
                     id = f'_{args.id}' if args.id != '' else ''
                     model_name = f'{args.model}_classifier{id}'
                     model_save_path = model_folder + model_name + '_overall_best.pth'
+                    print(f'Saving {model_save_path} from fold {fold+1} as the overall best model')
+                    print('----------------------------------------------------')
                     torch.save(model.state_dict(), model_save_path)
                     if not args.no_wandb:
                         wandb.save(model_save_path)
@@ -424,6 +435,8 @@ def plot_cont_predictions(outputs, fullnesses, in_fold=True):
     """Plot the continuous predictions.
     """
     
+    global BEST_FOLD
+    
     outputs = np.array(outputs)
     fullnesses = np.array(fullnesses)
     
@@ -438,6 +451,7 @@ def plot_cont_predictions(outputs, fullnesses, in_fold=True):
     accuracy = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
     
     model_name = f'{args.model}_reg' if args.cont else f'{args.model}_cls'
+    if not in_fold: model_name = f'{model_name}_f{BEST_FOLD+1}' 
     
     plt.figure(figsize=(10, 5))
     plt.plot(outputs, label='Predicted')
@@ -672,8 +686,12 @@ if __name__ == '__main__':
     fold_train_accuracies = []
     fold_val_accuracies = []
     best_accuracies = []
+    global OVERALL_BEST_ACCURACY
     OVERALL_BEST_ACCURACY = -1.0 if not args.cont else torch.inf
     global LOG_DICT
+    global BEST_FOLD
+    
+    BEST_SENSOR_ACCURACY = -1.0
     
     # WANDB
     if not args.no_wandb:
@@ -737,13 +755,7 @@ if __name__ == '__main__':
         fold_val_accuracies.append(val_accuracy)
         best_accuracies.append(best_accuracy)
         
-        feature_regressor = None
         if args.cont and args.model != 'cnn':
-            in_feats = torch.randn(1, input_channels, image_size[0], image_size[1])
-            in_feats = in_feats.cuda() if torch.cuda.is_available() else in_feats
-            features = model.forward_features(in_feats)
-            feature_size = torch.flatten(features, 1).shape[1]
-            feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
             id = f'_{args.id}' if args.id != '' else ''
             model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor{id}_best.pth', weights_only=True))
             feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor{id}_best.pth', weights_only=True))
@@ -754,6 +766,19 @@ if __name__ == '__main__':
         
         sensor_loader = DataLoader(sensor_set, batch_size=args.batch_size)
         outputs, fullnesses, accuracies, losses = predict_sensor_data(args, model, sensor_loader, feature_regressor)
+        
+        acceptable = 0.1
+        sensor_accuracy = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
+        if sensor_accuracy > BEST_SENSOR_ACCURACY:
+            BEST_SENSOR_ACCURACY = sensor_accuracy
+            model_folder = f'{args.save_path}/{args.model}/' + 'regressor/' if args.cont else 'classifier/'
+            id = f'_{args.id}' if args.id != '' else ''
+            model_suffix = 'feature_extractor' if args.cont else 'classifier'
+            model_save_path = f'{model_folder}{args.model}_{model_suffix}{id}'
+            torch.save(model.state_dict(), f'{model_save_path}_best_sensor.pth')
+            if feature_regressor is not None:
+                torch.save(feature_regressor.state_dict(), f'{model_folder}{args.model}_regressor{id}_best_sensor.pth')
+        
         if args.cont:
             plot_cont_predictions(outputs, fullnesses, in_fold=True)
         else:
@@ -776,21 +801,22 @@ if __name__ == '__main__':
     
     # print(f'Mean Best Validation Loss: {mean_best_val_loss:.4f} +/- {std_best_val_loss:.4f}')
     
-    feature_regressor = None
-    if args.cont and args.model != 'cnn':
-        in_feats = torch.randn(1, input_channels, image_size[0], image_size[1])
-        in_feats = in_feats.cuda() if torch.cuda.is_available() else in_feats
-        features = model.forward_features(in_feats)
-        feature_size = torch.flatten(features, 1).shape[1]
-        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+    # if args.cont and args.model != 'cnn':
+    #     id = f'_{args.id}' if args.id != '' else ''
+    #     model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor{id}_overall_best.pth', weights_only=True))
+    #     feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor{id}_overall_best.pth', weights_only=True))
         
-        id = f'_{args.id}' if args.id != '' else ''
-        model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor{id}_overall_best.pth', weights_only=True))
-        feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor{id}_overall_best.pth', weights_only=True))
-        
-    else:
-        feature_regressor = None
-        model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier{id}_overall_best.pth', weights_only=True))
+    # else:
+    #     feature_regressor = None
+    #     model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier{id}_overall_best.pth', weights_only=True))
+    
+    model_folder = f'{args.save_path}/{args.model}/' + 'regressor/' if args.cont else 'classifier/'
+    id = f'_{args.id}' if args.id != '' else ''
+    model_suffix = 'feature_extractor' if args.cont else 'classifier'
+    model_save_path = f'{model_folder}{args.model}_{model_suffix}{id}'
+    model.load_state_dict(torch.load(f'{model_save_path}_best_sensor.pth', weights_only=True))
+    if feature_regressor is not None:
+        feature_regressor.load_state_dict(torch.load(f'{model_folder}{args.model}_regressor_{id}_best_sensor.pth', weights_only=True))
     
     sensor_loader = DataLoader(sensor_set, batch_size=args.batch_size)
     outputs, fullnesses, accuracies, losses = predict_sensor_data(args, model, sensor_loader, feature_regressor, in_fold=False)
@@ -801,6 +827,7 @@ if __name__ == '__main__':
 
     
     if not args.no_wandb:
+        wandb.log({'best_fold': BEST_FOLD})
         wandb.log({'overall_best_acc_or_loss': OVERALL_BEST_ACCURACY})
         # if not args.cont:
         #     wandb.log({'mean_best_val_accuracy': mean_best_val_accuracy, 'std_best_val_accuracy': std_best_val_accuracy})
@@ -852,3 +879,23 @@ if __name__ == '__main__':
         plt.close()
     
     if not args.no_wandb: wandb.finish()
+    
+    # Delete the models to free up memory
+    print(f'Deleting models with id: {id} in 60 seconds...')
+    time.sleep(60)
+    
+    os.remove(f'{model_save_path}_best_sensor.pth')
+    print(f'Deleted {model_save_path}_best_sensor.pth')
+    os.remove(f'{model_folder}{args.model}_{model_suffix}{id}_best.pth')
+    print(f'Deleted {model_folder}{args.model}_{model_suffix}{id}_best.pth')
+    os.remove(f'{model_folder}{args.model}_{model_suffix}{id}_overall_best.pth')
+    print(f'Deleted {model_folder}{args.model}_{model_suffix}{id}_overall_best.pth')
+    if feature_regressor is not None:
+        os.remove(f'{model_folder}{args.model}_regressor{id}_best_sensor.pth')
+        print(f'Deleted {model_folder}{args.model}_regressor{id}_best_sensor.pth')
+        os.remove(f'{model_folder}{args.model}_regressor{id}_best.pth')
+        print(f'Deleted {model_folder}{args.model}_regressor{id}_best.pth')
+        os.remove(f'{model_folder}{args.model}_regressor{id}_overall_best.pth')
+        print(f'Deleted {model_folder}{args.model}_regressor{id}_overall_best.pth')
+    
+        
