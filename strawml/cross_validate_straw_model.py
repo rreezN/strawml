@@ -249,14 +249,14 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     model_folder = f'{args.save_path}{args.model}_regressor/'
                     os.makedirs(model_folder, exist_ok=True)
                     if args.model != 'cnn':
-                        model_name = f'{args.model}_feature_extractor'
+                        model_name = f'{args.model}_feature_extractor_{args.id}'
                         model_save_path = model_folder + model_name + '_best.pth'
                         torch.save(model.state_dict(), model_save_path)
                         regressor_name = f'{args.model}_regressor'
                         regressor_save_path = model_folder + regressor_name + '_best.pth'
                         torch.save(feature_regressor.state_dict(), regressor_save_path)
                     else:
-                        model_name = f'{args.model}_regressor'
+                        model_name = f'{args.model}_regressor_{args.id}'
                         model_save_path = model_folder + model_name + '_best.pth'
                         torch.save(model.state_dict(), model_save_path)
                     # if not args.no_wandb:
@@ -281,7 +281,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     best_accuracy = accuracy
                     model_folder = f'{args.save_path}{args.model}_classifier/'
                     os.makedirs(model_folder, exist_ok=True)
-                    model_name = f'{args.model}_classifier'
+                    model_name = f'{args.model}_classifier_{args.id}'
                     model_save_path = model_folder + model_name + '_best.pth'
                     torch.save(model.state_dict(), model_save_path)
                     # if not args.no_wandb:
@@ -294,14 +294,14 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     model_folder = f'{args.save_path}{args.model}_regressor/'
                     os.makedirs(model_folder, exist_ok=True)
                     if args.model != 'cnn':
-                        model_name = f'{args.model}_feature_extractor'
+                        model_name = f'{args.model}_feature_extractor_{args.id}'
                         model_save_path = model_folder + model_name + '_overall_best.pth'
                         torch.save(model.state_dict(), model_save_path)
                         regressor_name = f'{args.model}_regressor'
                         regressor_save_path = model_folder + regressor_name + '_overall_best.pth'
                         torch.save(feature_regressor.state_dict(), regressor_save_path)
                     else:
-                        model_name = f'{args.model}_regressor'
+                        model_name = f'{args.model}_regressor_{args.id}'
                         model_save_path = model_folder + model_name + '_overall_best.pth'
                         torch.save(model.state_dict(), model_save_path)
                     if not args.no_wandb:
@@ -313,7 +313,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     print(f'New overall best accuracy: {OVERALL_BEST_ACCURACY}%')
                     model_folder = f'{args.save_path}{args.model}_classifier/'
                     os.makedirs(model_folder, exist_ok=True)
-                    model_name = f'{args.model}_classifier'
+                    model_name = f'{args.model}_classifier_{args.id}'
                     model_save_path = model_folder + model_name + '_overall_best.pth'
                     torch.save(model.state_dict(), model_save_path)
                     if not args.no_wandb:
@@ -563,7 +563,8 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'optim': args.optim,
             'weight_decay': args.weight_decay,
             'momentum': args.momentum,
-            'pretrained': args.pretrained
+            'pretrained': args.pretrained,
+            'id': args.id
         })
     
     global LOG_DICT
@@ -620,6 +621,7 @@ def get_args():
     parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay for the optimizer')
     parser.add_argument('--momentum', type=float, default=0.0, help='Momentum for the optimizer')
     parser.add_argument('--pretrained', action='store_true', help='Use a pretrained model')
+    parser.add_argument('--id', type=str, default='', help='ID for the run')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -739,12 +741,12 @@ if __name__ == '__main__':
             feature_size = torch.flatten(features, 1).shape[1]
             feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
             
-            model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor_best.pth', weights_only=True))
-            feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor_best.pth', weights_only=True))
+            model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor_{args.id}_best.pth', weights_only=True))
+            feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor_{args.id}_best.pth', weights_only=True))
             
         else:
             feature_regressor = None
-            model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier_best.pth', weights_only=True))
+            model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier_{args.id}_best.pth', weights_only=True))
         
         sensor_loader = DataLoader(sensor_set, batch_size=args.batch_size)
         outputs, fullnesses, accuracies, losses = predict_sensor_data(args, model, sensor_loader, feature_regressor)
@@ -778,12 +780,12 @@ if __name__ == '__main__':
         feature_size = torch.flatten(features, 1).shape[1]
         feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
         
-        model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor_overall_best.pth', weights_only=True))
-        feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor_overall_best.pth', weights_only=True))
+        model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor_{args.id}_overall_best.pth', weights_only=True))
+        feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor_{args.id}_overall_best.pth', weights_only=True))
         
     else:
         feature_regressor = None
-        model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier_overall_best.pth', weights_only=True))
+        model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier_{args.id}_overall_best.pth', weights_only=True))
     
     sensor_loader = DataLoader(sensor_set, batch_size=args.batch_size)
     outputs, fullnesses, accuracies, losses = predict_sensor_data(args, model, sensor_loader, feature_regressor, in_fold=False)
