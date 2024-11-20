@@ -37,10 +37,13 @@ class Chute(torch.utils.data.Dataset):
             
         
         # Load the data file
-        self.frames = h5py.File(self.data_path, 'a')
+        self.frames = h5py.File(self.data_path, 'r')
         
         # Unfold the data to (segment, second)
         frame_names = list(self.frames.keys())
+        
+        # Sort frame_names
+        frame_names = sorted(frame_names, key=lambda x: int(x.split('_')[1]))
 
         # If data purpose is straw, we remove all cropped images from the dataset
         # if self.data_purpose == "straw":
@@ -58,6 +61,8 @@ class Chute(torch.utils.data.Dataset):
         # Create indices for train, test and validation
         if 'sensor' in self.data_path:
             self.test_indices = frame_names
+            if data_type == 'train':
+                raise ValueError('No training data available for sensor dataset. Use data_type="test"')
         else:
             self.train_indices, self.test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=0.15, random_state=random_state)
             # self.val_indices, self.test_indices, _, _ = train_test_split(self.test_indices, self.test_indices, test_size=0.5, random_state=random_state)
@@ -317,6 +322,9 @@ class Chute(torch.utils.data.Dataset):
         
         import strawml.data.extract_statistics as es
         
+        self.frames.close()
+        self.frames = h5py.File(self.data_path, 'a')
+        
         running_mean = None
         running_min = None
         running_max = None
@@ -378,6 +386,9 @@ class Chute(torch.utils.data.Dataset):
         self.frames.attrs['std'] = running_std
         self.frames.attrs['min'] = running_min
         self.frames.attrs['max'] = running_max
+        
+        self.frames.close()
+        self.frames = h5py.File(self.data_path, 'r')
         
         print("Statistics extracted:")
         if self.inc_heatmap:
@@ -501,6 +512,29 @@ class Chute(torch.utils.data.Dataset):
                     Number of straw classes:  {self.num_classes_straw}\n \
                         ')
 
+def plot_batch(data, labels, frame_start=0, mean=None, std=None):
+    data_num = data.shape[0]
+    fig, ax = plt.subplots(2, data_num//2, figsize=(15, 15))
+    ax = ax.flatten()
+    for i in range(data_num):
+        if mean is not None and std is not None:
+            img_unnormalize = transforms.Normalize(mean = [-m/s for m, s in zip(mean, std)],
+                                                                std = [1/s for s in std])
+            frame_data = img_unnormalize(data[i][:3])
+        else:
+            frame_data = data[i][:3]
+        frame_data = frame_data.permute(1, 2, 0)
+        frame_data = frame_data.detach().numpy()
+        frame_data = np.clip(frame_data, 0, 1)
+        ax[i].imshow(frame_data)
+        ax[i].set_title(f"Frame: {frame_start} | Fullness: {int(round(labels[i].item()*100))}%")
+        ax[i].set_axis_off()
+        frame_start += 1
+    
+    plt.suptitle("Straw Sensor Dataset")
+    plt.tight_layout()
+    plt.show()
+
 def plot_multiple_images(dataloader: Chute, num_images: int = 10, mode: str = 'rgb'):
     """Plots multiple images from the dataloader.
 
@@ -562,6 +596,7 @@ def plot_multiple_images(dataloader: Chute, num_images: int = 10, mode: str = 'r
 if __name__ == '__main__':
     import time
     from torch.utils.data import DataLoader
+    np.random.seed(42)
 
     # print("---- CHUTE DETECTION DATASET ----")
     # # train_set = Chute(data_type='train', inc_heatmap=False, inc_edges=True, force_update_statistics=False, data_path = 'data/interim/chute_detection.hdf5', image_size=(384, 384))
@@ -612,16 +647,25 @@ if __name__ == '__main__':
     print("---- STRAW DETECTION DATASET ----")
     train_set = Chute(data_path='data/interim/chute_detection.hdf5', data_type='train', inc_heatmap=True, inc_edges=True,
                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
-                         num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=1.0)
+                         num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=0.5)
     
-    np.random.seed(42)
-    for i in range(10):
-        plot_multiple_images(train_set, num_images=10, mode='rgb')
+    
+    # for i in range(10):
+    #     plot_multiple_images(train_set, num_images=10, mode='rgb')
     
     # for i in range(len(train_set)):
     #     data, target = train_set[i]
     #     train_set.plot_data(frame_data=data, labels=target)
     
+    mean, std = train_set.train_mean, train_set.train_std
+    statistics = (mean, std)
+    sensor_set = Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=False, inc_edges=True,
+                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), continuous=True, subsample=1.0,
+                          augment_probability=0, num_classes_straw=1, override_statistics=statistics)
+    sensor_loader = DataLoader(sensor_set, batch_size=8, shuffle=False, num_workers=0)
+    
+    for i, (data, target) in enumerate(sensor_loader):
+        plot_batch(data, target, i*8, mean, std)
     
     
     
