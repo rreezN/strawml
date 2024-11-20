@@ -209,12 +209,13 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if sum(val_lossses)/len(val_lossses) < best_accuracy:
                     best_accuracy = sum(val_lossses)/len(val_lossses)
                     print(f'New best loss: {best_accuracy}')
+                    id = f'_{args.id}' if args.id != '' else ''
                     if args.model != 'cnn':
                         model_folder = f'{args.save_path}{args.model}_regressor/'
                         os.makedirs(model_folder, exist_ok=True)
-                        model_name = args.model + '_feature_extractor'
+                        model_name = args.model + f'_feature_extractor{id}'
                         model_save_path = model_folder + model_name + '_best.pth'
-                        regressor_name = args.model + '_regressor'
+                        regressor_name = args.model + f'_regressor{id}'
                         regressor_save_path = model_folder + regressor_name + '_best.pth'
                         torch.save(model.state_dict(), model_save_path)
                         torch.save(feature_regressor.state_dict(), regressor_save_path)
@@ -222,7 +223,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                             wandb.save(model_save_path)
                             wandb.save(regressor_save_path)
                     else:
-                        model_name = args.model + '_regressor'
+                        model_name = args.model + f'_regressor{id}'
                         model_save_path = args.save_path + model_name + '_best.pth'
                         torch.save(model.state_dict(), model_save_path)
                         if not args.no_wandb:
@@ -242,7 +243,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 if accuracy > best_accuracy:
                     print(f'New best accuracy: {accuracy:.2f}%')
                     best_accuracy = accuracy
-                    model_name = args.model + '_classifier'
+                    id = f'_{args.id}' if args.id != '' else ''
+                    model_name = args.model + f'_classifier{id}'
                     model_save_path = args.save_path + model_name + '_best.pth'
                     torch.save(model.state_dict(), model_save_path)
                     if not args.no_wandb:
@@ -502,6 +504,7 @@ def get_args():
     parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay for the optimizer')
     parser.add_argument('--momentum', type=float, default=0.0, help='Momentum for the optimizer')
     parser.add_argument('--pretrained', action='store_true', help='Use a pretrained model')
+    parser.add_argument('--id', type=str, default='', help='ID for the Weights and Biases run')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -581,6 +584,22 @@ if __name__ == '__main__':
         feature_regressor = None
     
     train_model(args, model, train_loader, test_loader, feature_regressor)
+    
+    # Load best model
+    feature_regressor = None
+    if args.cont and args.model != 'cnn':
+        in_feats = torch.randn(1, input_channels, image_size[0], image_size[1])
+        in_feats = in_feats.cuda() if torch.cuda.is_available() else in_feats
+        features = model.forward_features(in_feats)
+        feature_size = torch.flatten(features, 1).shape[1]
+        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+        id = f'_{args.id}' if args.id != '' else ''
+        model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor{id}_best.pth', weights_only=True))
+        feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor{id}_best.pth', weights_only=True))
+        
+    else:
+        feature_regressor = None
+        model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier{id}_best.pth', weights_only=True))
 
     outputs, fullnesses, accuracies, losses = predict_sensor_data(args, model, sensor_loader, feature_regressor)
     if args.cont:
