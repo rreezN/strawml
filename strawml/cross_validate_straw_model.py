@@ -300,7 +300,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                         model_name = f'{args.model}_feature_extractor{id}'
                         model_save_path = model_folder + model_name + '_overall_best.pth'
                         torch.save(model.state_dict(), model_save_path)
-                        regressor_name = f'{args.model}_regressor'
+                        regressor_name = f'{args.model}_regressor{id}'
                         regressor_save_path = model_folder + regressor_name + '_overall_best.pth'
                         torch.save(feature_regressor.state_dict(), regressor_save_path)
                     else:
