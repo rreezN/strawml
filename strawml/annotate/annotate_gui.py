@@ -396,30 +396,22 @@ class ImageBox(ttk.Frame):
     
     def on_control_mouse_wheel(self, event: tk.Event) -> None:
         """Moves the upper line of the bounding box when the control key and mouse wheel are scrolled."""
-        
-        print("Control + Mouse Wheel")
-        
+  
         if self.rect is None:
             return
-        
-        print("Rect exists")
         
         if self.mouse_wheel_pressed:
             return
         
-        print("Mouse wheel not pressed")
-        
         # If bbox is upright
         move_amount = -1 if event.delta > 0 else 1
         move_amount *= 5
-        print(move_amount)
         if self.is_upright_bbox():
             self.top_left = (self.top_left[0], self.top_left[1] + move_amount)
             self.top_right = (self.top_right[0], self.top_right[1] + move_amount)
         else:
             # get the angle of the bbox in radians
             angle = np.arctan2(self.top_right[1] - self.top_left[1], self.top_right[0] - self.top_left[0])
-            print(np.rad2deg(angle))  # print angle in degrees for reference if needed
             
             # compute the orthogonal movement direction
             orthogonal_dx = -np.sin(angle)
