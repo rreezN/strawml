@@ -150,15 +150,17 @@ def rotate_image_and_bbox(image: np.ndarray,
         A tuple containing the rotated image, rotated image difference, and rotated bounding box.
     """
     # Step 1: Rotate the image and image_diff
-    h, w = image.shape[:2]
-    cx, cy = w // 2, h // 2
-    M = cv2.getRotationMatrix2D((cx, cy), angle_degrees, 1.0)
-    rotated_image = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_LINEAR)
-    rotated_image_diff = cv2.warpAffine(image_diff, M, (w, h), flags=cv2.INTER_LINEAR)
+    rotated_image, rotated_image_diff, rotated_bbox = SpecialRotate(image, image_diff, bbox, angle_degrees)
+    # # rotated_image_diff, _, _ = SpecialRotate(image_diff, bbox, angle_degrees)
+    # h, w = image.shape[:2]
+    # cx, cy = w // 2, h // 2
+    # M = cv2.getRotationMatrix2D((cx, cy), angle_degrees, 1.0)
+    # rotated_image = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_LINEAR)
+    # rotated_image_diff = cv2.warpAffine(image_diff, M, (w, h), flags=cv2.INTER_LINEAR)
 
-    # Step 2: Rotate the bounding box corners
-    img_height, img_width = rotated_image.shape[:2]
-    rotated_bbox = rotate_bbox(bbox, img_width, img_height, angle_degrees)
+    # # Step 2: Rotate the bounding box corners
+    # img_height, img_width = rotated_image.shape[:2]
+    # rotated_bbox = rotate_bbox(bbox, img_width, img_height, angle_degrees)
     
     return rotated_image, rotated_image_diff, rotated_bbox
 
@@ -182,48 +184,35 @@ def internal_image_operations(image: np.ndarray) -> np.ndarray:
     image = image[y:y+500, x:x+500]
     return image 
 
-def SpecialRotate(rotateImage, angle): 
+def SpecialRotate(image, image_diff, bbox, angle): 
     """
     Rotate image without cutting off sides and make borders transparent.
     Inspiration from: https://www.geeksforgeeks.org/rotate-image-without-cutting-off-sides-using-python-opencv/
     """
     # Taking image height and width 
-    imgHeight, imgWidth = rotateImage.shape[0], rotateImage.shape[1] 
-    
-    # Computing the centre x,y coordinates 
-    centreY, centreX = imgHeight // 2, imgWidth // 2
-    
-    # Computing 2D rotation Matrix to rotate an image 
-    rotationMatrix = cv2.getRotationMatrix2D((centreX, centreY), angle, 1.0) 
-    default_rot = rotationMatrix.copy()
-    # Calculate the new bounding dimensions of the image
-    abs_cos = abs(rotationMatrix[0, 0])
-    abs_sin = abs(rotationMatrix[0, 1])
-    bound_w = int(imgHeight * abs_sin + imgWidth * abs_cos)
-    bound_h = int(imgHeight * abs_cos + imgWidth * abs_sin)
-    
-    # Adjust the rotation matrix to take into account the translation
-    rotationMatrix[0, 2] += bound_w / 2 - centreX
-    rotationMatrix[1, 2] += bound_h / 2 - centreY
-    
-    # Create an empty image with an alpha channel
-    transparent_image = np.zeros((bound_h, bound_w, 4), dtype=np.uint8)
-    
-    # Convert the grayscale image to RGBA
-    rotateImage_rgba = cv2.cvtColor(rotateImage, cv2.COLOR_GRAY2RGBA)
-    
-    # Copy the original image to the center of the transparent image
-    transparent_image[(bound_h - imgHeight) // 2:(bound_h + imgHeight) // 2,
-                    (bound_w - imgWidth) // 2:(bound_w + imgWidth) // 2, :3] = rotateImage_rgba[:, :, :3]
-    
-    # Set the alpha channel to 255 (opaque) for the original image area
-    transparent_image[(bound_h - imgHeight) // 2:(bound_h + imgHeight) // 2,
-                    (bound_w - imgWidth) // 2:(bound_w + imgWidth) // 2, 3] = 255
-    
-    # Now, we will perform actual image rotation 
-    rotatingimage = cv2.warpAffine(transparent_image, rotationMatrix, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0)) 
-    
-    return rotatingimage, default_rot
+    height, width = image.shape[:2]
+    # get the image centers
+    image_center = (width/2, height/2)
+
+    rotation_arr = cv2.getRotationMatrix2D(image_center, angle, 1)
+
+    abs_cos = abs(rotation_arr[0,0])
+    abs_sin = abs(rotation_arr[0,1])
+
+    bound_w = int(height * abs_sin + width * abs_cos)
+    bound_h = int(height * abs_cos + width * abs_sin)
+
+    rotation_arr[0, 2] += bound_w/2 - image_center[0]
+    rotation_arr[1, 2] += bound_h/2 - image_center[1]
+
+    rotated_image = cv2.warpAffine(image, rotation_arr, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255, 255))
+    rotated_image_diff = cv2.warpAffine(image_diff, rotation_arr, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255, 255))
+    affine_warp = np.vstack((rotation_arr, np.array([0,0,1])))
+    bbox_ = np.expand_dims(bbox.reshape(-1, 2), 1)
+    bbox_ = cv2.perspectiveTransform(bbox_, affine_warp)
+    rotated_bbox = np.squeeze(bbox_, 1).flatten()
+    # get the new bounding box coordinates
+    return rotated_image, rotated_image_diff, rotated_bbox
 
 def overlay_image(bg, fg, default_rot, fg_size):
     # get the dimensions of the background image
