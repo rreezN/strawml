@@ -118,7 +118,10 @@ def extract_frames_from_video(video_name: str,
             count += 1
             continue
         else:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, saved_frame_count*fbf+1) # we say +1 because we want to skip the first frame as it is the previous frame (for the first iteration)
+            frame_position = saved_frame_count * fbf + 1
+            if frame_position >= video_length:
+                break
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_position)
             # Read the current frame from the video
             ret, frame = cap.read()
             if not ret:
