@@ -11,7 +11,9 @@ import torch
 import timm
 from torchvision.transforms import v2 as transforms
 import h5py
+import psutil
 from sklearn.linear_model import LinearRegression
+
 from strawml.models.straw_classifier import chute_cropper as cc
 from strawml.models.chute_finder.yolo import ObjectDetect
 import strawml.models.straw_classifier.cnn_classifier as cnn
@@ -406,14 +408,6 @@ class AprilDetector:
                 cv2.line(frame, (x4, y4), (x1, y1), (138,43,226), 2)
                 # plot label on the object
                 cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-                # # plot a line with angle_rad as the angle of the object
-                # angle_sin = np.sin(angle_rad[i].detach().cpu().numpy())
-                # angle_cos = np.cos(angle_rad[i].detach().cpu().numpy())
-                # # plot the line from the center of the object
-                # x_center = (x1 + x2 + x3 + x4) // 4
-                # y_center = (y1 + y2 + y3 + y4) // 4
-                # cv2.line(frame, (x_center, y_center), (x_center + int(500 * angle_cos), y_center + int(500 * angle_sin)), (0, 0, 255), 2)
-
             else:
                 x1, y1, x2, y2 = cord[i].flatten()
                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
@@ -459,31 +453,6 @@ class AprilDetector:
         undistorted_image = cv2.fisheye.undistortImage(frame, K, D, Knew=new_K,new_size=(w,h))
         return undistorted_image  
        
-    # def detect_(self, frame: np.ndarray) -> np.ndarray[Any] | list:
-    #     """
-    #     Wrapper method to detect AprilTags in a frame using the pupil_apriltags library. While detecting it checks if the
-    #     detected tags are already present in the tags array. If not, it appends the new tags to the tags array. Also, for 
-    #     each time the function is called it checks if the camera has moved and the chute tags have changed position. If so,
-    #     it resets the tags and tag_ids arrays.
-
-    #     Params:
-    #     -------
-    #     frame: np.ndarray
-    #         The frame in which the AprilTags are to be detected
-        
-    #     Returns:
-    #     --------
-    #     List
-    #         A list of detected AprilTags in the frame
-    #     """     
-    #     tags = self.detector.detect(frame, estimate_tag_pose=True, camera_params=[self.fx, self.fy, self.cx, self.cy], tag_size=0.05) # 5cm
-    #     for tag in tags:
-    #         if tag.tag_id not in self.tag_ids:            
-    #             self.tags = np.append(self.tags, tag)
-    #             self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
-    #     self.check_for_changes(tags)
-    #     return self.tags
-
     def detect(self, frame: np.ndarray) -> list:
         """
         Detects AprilTags in a frame, and performs further detection centered on each tag found.
@@ -617,10 +586,10 @@ class AprilDetector:
             Nothing is returned, only if the camera has moved and the chute tags have changed position, the tags and tag_ids
             arrays are reset.
         """
-        if len(tags) == 0:
-            self.tags = []
-            self.tag_ids = []
-            return
+        # if len(tags) == 0:
+        #     self.tags = []
+        #     self.tag_ids = []
+        #     return
         tag_ids = np.array([int(tag.tag_id) for tag in tags])
         accumulated_error = 0
         for i, t in enumerate(self.tag_ids):
@@ -637,40 +606,48 @@ class AprilDetector:
             self.tags = []
             self.tag_ids = []
 
-    def order_corners(self, corners: np.ndarray, center: np.ndarray) -> np.ndarray:
+    def order_corners(self, points, centroid):
         """
-        The purpose of this is to have the corners in the following order:
-        top_left, top_right, bottom_right, bottom_left
-
-        and we do this based on the coordiantes, knowing that topleft of the image is (0, 0)
-        and bottom right is (width, height).
-
-        Params:
-        -------
-        corners: np.ndarray
-            The corners of the detected AprilTag
-        center: np.ndarray
-            The center of tag
-            
+        Orders the points of a bounding box (tensor) as: top-right, bottom-right, bottom-left, top-left.
+        The points are temporarily rotated to identify their roles, but the output is the original coordinates.
+        
+        Args:
+            points (torch.Tensor): A (4, 2) tensor where each row is (x, y).
+        
         Returns:
-        --------
-        np.ndarray
-            The ordered corners of the detected AprilTag
+            torch.Tensor: Reordered points (4, 2) in their original coordinates.
         """
-        c = {}
-        for i, corner in enumerate(corners):
-            x, y = corner
-            if x < center[0] and y < center[1]:
-                c[0] = corner  # top_left
-            elif x > center[0] and y < center[1]:
-                c[1] = corner  # top_right
-            elif x > center[0] and y > center[1]:
-                c[2] = corner  # bottom_right
-            else:
-                c[3] = corner  # bottom_left
-        if len(c) != 4:
-            raise ValueError("The corners must have 4 points with the center in the middle")
-        return np.array(list(dict(sorted(c.items())).values()))
+        # make sure the data is torch tensors
+        if not torch.is_tensor(points):
+            points = torch.tensor(points)
+        if not torch.is_tensor(centroid):
+            centroid = torch.tensor(centroid)
+        # Compute the angle of rotation based on the first edge (assume points[0] and points[1])
+        p1, p2 = points[0], points[1]
+        delta_x, delta_y = p2[0] - p1[0], p2[1] - p1[1]
+        angle = torch.atan2(delta_y, delta_x)  # Angle in radians
+
+        # Rotation matrix for -angle (to align the bbox with axes)
+        cos_a, sin_a = torch.cos(-angle), torch.sin(-angle)
+        rotation_matrix = torch.tensor([[cos_a, -sin_a], [sin_a, cos_a]])
+
+        # Rotate all points
+        rotated_points = (points - centroid) @ rotation_matrix.T
+
+        # Identify the points in rotated space
+        # Top-right: Largest x, smallest y
+        # Bottom-right: Largest x, largest y
+        # Bottom-left: Smallest x, largest y
+        # Top-left: Smallest x, smallest y
+        top_right_idx = torch.argmin(rotated_points[:, 1] - rotated_points[:, 0])
+        bottom_right_idx = torch.argmax(rotated_points[:, 0] + rotated_points[:, 1])
+        bottom_left_idx = torch.argmax(-rotated_points[:, 0] + rotated_points[:, 1])
+        top_left_idx = torch.argmin(rotated_points[:, 1] + rotated_points[:, 0])
+
+        # Collect the points in desired order using original coordinates
+        ordered_points = points[torch.tensor([top_right_idx, bottom_right_idx, bottom_left_idx, top_left_idx])]
+
+        return ordered_points.numpy()
 
     def rotate_line(self, point1: Tuple, point2: Tuple, angle: float) -> Tuple[Tuple[int, int], Tuple[int, int]]:
         """
@@ -702,7 +679,7 @@ class AprilDetector:
 
         return point1, tuple(p2.astype(int))
 
-    def draw(self, frame: np.ndarray, tags: list, make_cutout: bool = False, straw_level: float = 25) -> np.ndarray:
+    def draw(self, frame: np.ndarray, tags: list, make_cutout: bool = False, straw_level: float = 25, use_cutout=False) -> np.ndarray:
         """
         Draws the detected AprilTags on the frame. The number tags are drawn in yellow and the chute tags are drawn in blue.
         The function also draws a line from the right side of the number tag to the right side of the chute tag closest to it on the y-axis,
@@ -798,7 +775,10 @@ class AprilDetector:
                 tag_graph.account_for_missing_tags()
                 frame = tag_graph.draw_overlay(frame)
                 cutout = tag_graph.crop_to_size(original_image)
-                return frame, cutout
+                if use_cutout:
+                    return frame, cutout
+                else:
+                    return frame, None
         except Exception as e:
             print("ERROR", e)
         return frame, None
@@ -861,7 +841,7 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, detect_april=False, with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
+    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         self.rtsp = rtsp
         if rtsp:
@@ -869,9 +849,30 @@ class RTSPStream(AprilDetector):
         else:
             self.cap = None
         self.make_cutout = make_cutout
+        self.use_cutout = use_cutout
         self.detect_april = detect_april
         self.regressor = regressor
         self.predictor_model = predictor_model
+        self.frame = None
+        # Theadlock to prevent multiple threads from accessing the queue at the same time
+        self.lock = threading.Lock()
+        self.threads = []
+        self.information = {
+            "FPS":              {"text": "", "font_scale": 1,   "font_thicknesss": 2, "position": (10, 50)},
+            "straw_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 100)},
+            "undistort_time":   {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 125)},
+            "april":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 150)},
+            "od":               {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 175)},
+            "prep":             {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 200)},
+            "model":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 225)},
+            "frame_time":       {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 250)},
+            "GPU":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 275)},
+        }
+                            
+                # texts = [f"Undistort Time: {undistort_time:.2f} s"]
+                # font_scales = [0.5]
+                # font_thicknesss = [1]
+                # "positions" = [(10, 125)]
         
     def create_capture(self, credentials_path: str) -> cv2.VideoCapture:
         """
@@ -955,7 +956,22 @@ class RTSPStream(AprilDetector):
             ret, frame = cap.read()
             self.q.put(frame)        
 
-    def display_frame(self, cap) -> None:
+    def find_tags(self) -> None:
+        while True:
+            start = time.time()
+            self.lock.acquire()
+            try:
+                if self.frame is None:
+                    continue
+                frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
+            finally:
+                self.lock.release()
+            self.detect(frame)
+            end = time.time()
+            self.information["april"]["text"] = f'(T3) AprilTag Time: {end - start:.2f} s' 
+            
+
+    def display_frame(self) -> None:
         """
         Display the frames with the detected AprilTags.
         """
@@ -969,39 +985,28 @@ class RTSPStream(AprilDetector):
         start_time = time.time()
 
         while True:
+            frame_time = time.time()
             if not self.q.empty():
                 frame = self.q.get() # Get the frame from the queue
-
+                # Update the frame in the class instance to be used in other methods and ensure thread safety
                 if frame is None: # check if the frame is none. If it is, skip the iteration
                     continue
+                self.lock.acquire()
+                try:
+                    self.frame = frame
+                finally:
+                    self.lock.release()
 
                 if self.rtsp:
                     self.q.queue.clear() # Clear the queue to account for any lag and prevent the queue from getting too large
                 
                 # # Fix the frame by undistorting it
                 # frame, undistort_time = self.time_function(self.fix_frame, frame) # NOTE this cant be used since undistort crops the top and bottom of the chute too much
-                # texts = [f"Undistort Time: {undistort_time:.2f} s"]
-                # font_scales = [0.5]
-                # font_thicknesss = [1]
-                # positions = [(10, 125)]
-                texts = []
-                font_scales = []
-                font_thicknesss = []
-                positions = []
+                # self.information["undistort_time"]["text"] = f'Undistort Time: {undistort_time:.2f} s'
 
-                # Detect the AprilTags in the frame every 5 frames
-                if self.detect_april:
-                    if frame_count % 5 == 0: # Due to latency we wish to limit the detection to every 5 frames
-                        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                        _, detect_time = self.time_function(self.detect, self.fix_frame(gray, blur=True))
-                    # Save the time taken for detection to the text
-                    texts += [f'AprilTags Time: {detect_time:.2f} s']
-                    font_scales += [0.5]
-                    font_thicknesss += [1]
-                    positions += [(10, 150)]
-                    # Perform object detection and level prediction on the frame if with_predictor is True
-                    # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
-                    frame_drawn, cutout = self.draw(frame.copy(), self.tags, self.make_cutout)
+                if self.detect_april and (self.tags is not None):
+                    # # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
+                    frame_drawn, cutout = self.draw(frame.copy(), self.tags, self.make_cutout, self.use_cutout)
                 else:
                     frame_drawn = frame
                     cutout = None
@@ -1015,11 +1020,7 @@ class RTSPStream(AprilDetector):
                     results, OD_time = self.time_function(self.OD.score_frame, frame) # This takes a lot of time if ran on CPU
                     if len(results[0]) == 0:
                         results = "NA"
-                    # make sure results has at least one bbox
-                    texts += [f'OD Time: {OD_time:.2f} s']
-                    font_scales += [0.5]
-                    font_thicknesss += [1]
-                    positions += [(10, 175)]
+                    self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
                 else:
                     raise ValueError("The cutout image is None and the object detection is not used.")
 
@@ -1043,61 +1044,63 @@ class RTSPStream(AprilDetector):
                                 straw_level = predicted[0]*10
 
                             # Add the time taken for inference to the text
-                            texts += [f'Straw Level: {straw_level:.2f} %', 
-                                    f'Image Prep. Time: {prep_time:.2f} s',
-                                    f'Inference Time: {inference_time:.2f} s']
-                            font_scales += [0.5, 0.5, 0.5]
-                            font_thicknesss += [1, 1, 1]
-                            positions += [(10, 100), (10, 200), (10, 225)]
+                            self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
+                            self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
+                            self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
 
                     if self.object_detect:
                         frame_drawn = self.plot_boxes(results, frame_drawn)
                 else:
                     frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
                     cv2.imshow('Video', frame_drawn) # Display the frame
-                    cv2.waitKey(1)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        self.close_threads()
+                        break
                     continue
                 frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
 
                 frame_count += 1 # Increment frame count
                 
                 # Calculate FPS
-                elapsed_time = time.time() - start_time
+                e = time.time()
+                elapsed_time = e - start_time
                 fps = frame_count / elapsed_time
                 
                 # Display the FPS on the frame
-                texts += [f'FPS: {fps:.2f}']
-                font_scales += [1]
-                font_thicknesss += [2]
-                positions += [(10, 50)]
-
+                self.information["FPS"]["text"] = f'(T2) FPS: {fps:.2f}'
+                self.information["frame_time"]["text"] = f'(T2) Total Frame Time: {e - frame_time:.2f} s'
+                self.information["GPU"]["text"] = f'(TM) GPU Usage: {f"Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}"}'
                 # Draw the text on the frame
-                for i, (pos, text) in enumerate(zip(positions, texts)):
+                for i, (key, val) in enumerate(self.information.items()):
                     # Get the text size
-                    font_scale = font_scales[i]
-                    font_thickness = font_thicknesss[i]
-                    (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, font_thickness)
-                    
+                    if val["text"] == "":
+                        continue
+                    font_scale = val["font_scale"]
+                    font_thickness = val["font_thicknesss"]
+                    (text_width, text_height), baseline = cv2.getTextSize(val["text"], font, font_scale, font_thickness)
+                    pos = val["position"]
                     box_coords = ((pos[0], pos[1] - text_height - baseline), (pos[0] + text_width, pos[1] + baseline)) # Calculate the box coordinates
                     cv2.rectangle(frame_drawn, box_coords[0], box_coords[1], box_color, cv2.FILLED) # Draw the white box                    
-                    cv2.putText(frame_drawn, text, pos, font, font_scale, color, font_thickness, cv2.LINE_AA) # Draw the text over the box
-                
+                    cv2.putText(frame_drawn, val["text"], pos, font, font_scale, color, font_thickness, cv2.LINE_AA) # Draw the text over the box
                 
                 cv2.imshow('Video', frame_drawn) # Display the frame
 
                 # flush everything from memory to prevent memory leak
                 frame = None
-                gray = None
                 results = None
                 cutout_image = None
                 output = None
                 torch.cuda.empty_cache()
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
+                self.close_threads()
                 break
         self.cap.release()
         cv2.destroyAllWindows()
 
+    def close_threads(self):
+        for thread in self.threads:
+            thread.join()
 
     def display_frame_from_videocapture(self) -> None:
         """
@@ -1125,18 +1128,9 @@ class RTSPStream(AprilDetector):
             font_scales = [0.5]
             font_thicknesss = [1]
             positions = [(10, 125)]
-            # Detect the AprilTags in the frame every 5 frames
-            if self.detect_april:
-                if frame_count % 5 == 0: # Due to latency we wish to limit the detection to every 5 frames
-                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    _, detect_time = self.time_function(self.detect, self.fix_frame(gray, blur=True))
-                # Save the time taken for detection to the text
-                texts += [f'AprilTags Time: {detect_time:.2f} s']
-                font_scales += [0.5]
-                font_thicknesss += [1]
-                positions += [(10, 150)]
-                # Perform object detection and level prediction on the frame if with_predictor is True
-                # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
+
+            if self.detect_april and (self.tags is not None):
+                # # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
                 frame_drawn, cutout = self.draw(frame.copy(), self.tags, self.make_cutout)
             else:
                 frame_drawn = frame
@@ -1228,6 +1222,7 @@ class RTSPStream(AprilDetector):
             torch.cuda.empty_cache()
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
+                self.close_threads()
                 break
         self.cap.release()
         cv2.destroyAllWindows()
@@ -1258,9 +1253,14 @@ class RTSPStream(AprilDetector):
                 if cap is not None:
                     self.cap = cap
                 self.thread1 = threading.Thread(target=self.receive_frame, args=(self.cap,))
-                self.thread2 = threading.Thread(target=self.display_frame, args=(self.cap,))
+                self.thread2 = threading.Thread(target=self.display_frame)
                 self.thread1.start()
                 self.thread2.start()
+                self.threads += [self.thread1, self.thread2]
+                if self.detect_april:
+                    self.thread3 = threading.Thread(target=self.find_tags)
+                    self.thread3.start()
+                    self.threads.append(self.thread3)
         elif frame is not None:
             # resize frame half the size
             frame = cv2.resize(frame, (0, 0), fx=0.3, fy=0.3)
@@ -1300,6 +1300,6 @@ if __name__ == "__main__":
     
     RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
             rtsp=True , # Only used when the stream is from an RTSP source
-            make_cutout=False, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
-            detect_april=False,
+            make_cutout=True, use_cutout=False, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
+            detect_april=True,
             with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
