@@ -161,6 +161,7 @@ class ImageBox(ttk.Frame):
         self.canvas.bind("<ButtonPress-3>", self.on_right_press)
         self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)
         self.canvas.bind("<Shift-MouseWheel>", self.on_shift_mouse_wheel)
+        self.canvas.bind("<Control-MouseWheel>", self.on_control_mouse_wheel)
         self.canvas.bind("<Button-2>", self.on_mouse_wheel_press)
         self.canvas.bind("<ButtonRelease-2>", self.on_mouse_wheel_release)
         self.canvas.bind("<B2-Motion>", self.on_mouse_wheel_move_press)
@@ -392,6 +393,43 @@ class ImageBox(ttk.Frame):
         self.top_right = coords[2], coords[3]
         self.bottom_right = coords[4], coords[5]
         self.bottom_left = coords[6], coords[7]
+    
+    def on_control_mouse_wheel(self, event: tk.Event) -> None:
+        """Moves the upper line of the bounding box when the control key and mouse wheel are scrolled."""
+  
+        if self.rect is None:
+            return
+        
+        if self.mouse_wheel_pressed:
+            return
+        
+        # If bbox is upright
+        move_amount = -1 if event.delta > 0 else 1
+        move_amount *= 5
+        if self.is_upright_bbox():
+            self.top_left = (self.top_left[0], self.top_left[1] + move_amount)
+            self.top_right = (self.top_right[0], self.top_right[1] + move_amount)
+        else:
+            # get the angle of the bbox in radians
+            angle = np.arctan2(self.top_right[1] - self.top_left[1], self.top_right[0] - self.top_left[0])
+            
+            # compute the orthogonal movement direction
+            orthogonal_dx = -np.sin(angle)
+            orthogonal_dy = np.cos(angle)
+
+            # move the top line of the bbox up according to the angle
+            self.top_left = (
+                self.top_left[0] + move_amount * orthogonal_dx,
+                self.top_left[1] + move_amount * orthogonal_dy
+            )
+            self.top_right = (
+                self.top_right[0] + move_amount * orthogonal_dx,
+                self.top_right[1] + move_amount * orthogonal_dy
+            )
+            
+        self.canvas.coords(self.rect, self.top_left[0], self.top_left[1], self.top_right[0], self.top_right[1], self.bottom_right[0], self.bottom_right[1], self.bottom_left[0], self.bottom_left[1])
+        self.canvas.coords(self.top_left_ring, self.top_left[0], self.top_left[1], self.top_left[0]+5, self.top_left[1]+5)
+        
         
     def on_mouse_wheel_press(self, event: tk.Event) -> None:
         """Starts moving the image when the middle mouse button is pressed.
@@ -630,7 +668,7 @@ class MainApplication(ttk.Frame):
         parent (tk.Tk): The parent frame. This is the main window.
         images_hdf5 (str, optional): The path to the extracted frames (images.hdf5). Defaults to 'data/raw/images/images.hdf5'.
     """
-    def __init__(self, parent, images_hdf5='data/raw/images/images.hdf5', *args, **kwargs) -> None:
+    def __init__(self, parent, images_hdf5='data/raw/images/images.hdf5', annotate_straw=False, *args, **kwargs) -> None:
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
 
@@ -640,6 +678,7 @@ class MainApplication(ttk.Frame):
         self.current_image = 0
         self.image_scale = 0.5
         self.images_hdf5 = images_hdf5
+        self.annotate_straw = annotate_straw
         
         self.save_file = tk.StringVar()
         self.file_button = ttk.Combobox(self, text="Select File", textvariable=self.save_file)
@@ -786,9 +825,10 @@ class MainApplication(ttk.Frame):
         # if self.image_box.rect is None and self.image_box.rect2 is None and self.fullness_box.full_amount.get() == -1:
         #     return
         
-        if self.image_box.rect is None or self.fullness_box.full_amount.get() == -1:
-            print(f"{self.image_box.current_image_group}: No annotations to save.")
-            return
+        if not self.annotate_straw:
+            if self.image_box.rect is None or self.fullness_box.full_amount.get() == -1:
+                print(f"{self.image_box.current_image_group}: No annotations to save.")
+                return
         
         new_hdf5_file = f'data/interim/{self.file_button.get()}'
         
@@ -831,31 +871,36 @@ class MainApplication(ttk.Frame):
         img_box = self.image_box
         if img_box.rect != None:
             coords = [img_box.top_right[0]*2, img_box.top_right[1]*2, img_box.bottom_right[0]*2, img_box.bottom_right[1]*2, img_box.bottom_left[0]*2, img_box.bottom_left[1]*2, img_box.top_left[0]*2, img_box.top_left[1]*2]
-            annotation_group.create_dataset('bbox_chute', data=coords)
+            if self.annotate_straw:
+                annotation_group.create_dataset('bbox_straw', data=coords)
+            else:
+                annotation_group.create_dataset('bbox_chute', data=coords)
             width, height = get_box_width_and_height()
             if width < 25 or height < 25:
                 print(f"WARNING: Saving a bounding box with width or height less than 25 pixels {frame}.")
-        else:
+        elif not self.annotate_straw:
             print("No chute bounding box to save.")
+
         # if img_box.start_x2 != None:
         #     coords = [img_box.curX2*2, img_box.start_y2*2, img_box.curX2*2, img_box.curY2*2, img_box.start_x2*2, img_box.curY2*2, img_box.start_x2*2, img_box.start_y2*2]
         #     annotation_group.create_dataset('bbox_straw', data=coords)
         
-        # Save the fullness and obstructed values
-        fullness = self.fullness_box.full_amount.get()
-        obstructed = self.obstructed_box.obstructed.get()
-        if fullness != -1: # If the fullness is not set, don't save it
-            annotation_group.create_dataset('fullness', data=fullness)
-        else:
-            print("No fullness value to save.")
-        annotation_group.create_dataset('obstructed', data=obstructed)
+        if not self.annotate_straw:
+            # Save the fullness and obstructed values
+            fullness = self.fullness_box.full_amount.get()
+            obstructed = self.obstructed_box.obstructed.get()
+            if fullness != -1: # If the fullness is not set, don't save it
+                annotation_group.create_dataset('fullness', data=fullness)
+            else:
+                print("No fullness value to save.")
+            annotation_group.create_dataset('obstructed', data=obstructed)
         
-        # print(old_hf[frame].keys())
-        if "annotations" in old_hf[frame].keys():
-            # print(f"{old_hf[frame]['annotations'].keys()}")
-            if "sensor_fullness" in old_hf[frame]["annotations"].keys():
-                # print(f"Copying sensor data for {frame}, {old_hf[frame]['annotations']['sensor_fullness'][...]}")
-                old_hf.copy(old_hf[frame]["annotations"]["sensor_fullness"], annotation_group)
+            # print(old_hf[frame].keys())
+            if "annotations" in old_hf[frame].keys():
+                # print(f"{old_hf[frame]['annotations'].keys()}")
+                if "sensor_fullness" in old_hf[frame]["annotations"].keys():
+                    # print(f"Copying sensor data for {frame}, {old_hf[frame]['annotations']['sensor_fullness'][...]}")
+                    old_hf.copy(old_hf[frame]["annotations"]["sensor_fullness"], annotation_group)
         
         
         if printing:
@@ -911,12 +956,13 @@ def get_args():
     """
     parser = ArgumentParser(description="AnnotateGUI")
     parser.add_argument('--images', type=str, default='data/raw/images/images.hdf5', help="The path to the extracted frames (images.hdf5).")
+    parser.add_argument('--straw', action='store_true', help="Annotate straw instead of chute.")
     return parser.parse_args()
 
 if __name__ == '__main__':
     args = get_args()
     root = tk.Tk()
     root.resizable(False, False)
-    MainApplication(root, images_hdf5=args.images).pack(side="top", fill="both", expand=True)
+    MainApplication(root, images_hdf5=args.images, annotate_straw=args.straw).pack(side="top", fill="both", expand=True)
     root.mainloop()
     
