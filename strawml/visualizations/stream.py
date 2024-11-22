@@ -1113,6 +1113,7 @@ class RTSPStream(AprilDetector):
         start_time = time.time()
 
         while True:
+            frame_time = time.time()
             success, frame = self.cap.read() # Get the frame from the queue
 
             if not success: # check if the frame is none. If it is, skip the iteration
@@ -1194,14 +1195,15 @@ class RTSPStream(AprilDetector):
             frame_count += 1 # Increment frame count
             
             # Calculate FPS
-            elapsed_time = time.time() - start_time
+            e = time.time()
+            elapsed_time = e - start_time
             fps = frame_count / elapsed_time
             
             # Display the FPS on the frame
-            texts += [f'FPS: {fps:.2f}']
-            font_scales += [1]
-            font_thicknesss += [2]
-            positions += [(10, 50)]
+            texts += [f'FPS: {fps:.2f}', f'Frame Time: {e - frame_time:.2f} s']
+            font_scales += [1, 0.5]
+            font_thicknesss += [2, 1]
+            positions += [(10, 50), (10, 250)]
 
             # Draw the text on the frame
             for i, (pos, text) in enumerate(zip(positions, texts)):
@@ -1288,12 +1290,12 @@ if __name__ == "__main__":
         debug=config["debug"]
     )
 
-    # video_path = "data/special/Pin drum Chute 2_HKVision_HKVision_20241102105959_20241102112224_1532587042.mp4"
+    # video_path = "data/raw/stream-2024-09-23-10h11m28s.mp4"
 
     # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
     #            rtsp=False, # Only used when the stream is from an RTSP source
-    #            make_cutout=True, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
-    #            detect_april=True,
+    #            make_cutout=False, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
+    #            detect_april=False,
     #            with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
     
     RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 

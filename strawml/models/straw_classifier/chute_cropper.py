@@ -20,7 +20,7 @@ def rotate_to_bbox(image, bbox) -> tuple:
 
 
         # Rotate the image and bounding box
-        rotated_image, _, rotated_bbox = rotate_image_and_bbox(image, image, bbox, angle_degrees=angle_degrees)
+        rotated_image, rotated_image_diff, rotated_bbox = rotate_image_and_bbox(image, image, bbox, angle_degrees=angle_degrees)
         
         return rotated_image, rotated_bbox
     except Exception as e:
@@ -49,6 +49,7 @@ def crop_to_bbox(rotated_image, rotated_bbox) -> tuple:
 
 
 def rotate_and_crop_to_bbox(image, bbox) -> tuple:
+    import time
     rotated_image, rotated_bbox = rotate_to_bbox(image, bbox)
     if rotated_image is None or rotated_bbox is None:
         return None, None    
