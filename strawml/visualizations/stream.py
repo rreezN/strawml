@@ -1221,6 +1221,13 @@ class RTSPStream(AprilDetector):
         self.cap.release()
         cv2.destroyAllWindows()
 
+    def close_threads(self):
+        for thread in self.threads:
+            thread.should_abort_immediately = True
+            thread.join()
+        self.cap.release()
+        cv2.destroyAllWindows()
+
     def __call__(self, frame: Optional[np.ndarray] = None, cap: Optional[cv2.VideoCapture] = None, video_path: str=None) -> None | list:
         """
         Upon calling the object, if self.window is True and frame is None, the frames are received from the video stream
@@ -1255,6 +1262,12 @@ class RTSPStream(AprilDetector):
                     self.thread3 = threading.Thread(target=self.find_tags)
                     self.thread3.start()
                     self.threads.append(self.thread3)
+                while True:
+                    # print("Threads", threading.active_count())
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        print("Closing threads")
+                        self.close_threads()
+                        break
         elif frame is not None:
             # resize frame half the size
             frame = cv2.resize(frame, (0, 0), fx=0.3, fy=0.3)
@@ -1267,10 +1280,6 @@ class RTSPStream(AprilDetector):
                 cv2.imshow('frame', frame)
                 cv2.waitKey(0)
             return tags
-
-    def close_threads(self):
-        for thread in self.threads:
-            thread.join()
 
 if __name__ == "__main__":
     from pupil_apriltags import Detector
