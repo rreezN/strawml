@@ -435,7 +435,7 @@ def plot_cont_predictions(outputs, fullnesses, in_fold=True):
     """Plot the continuous predictions.
     """
     
-    global BEST_FOLD
+    global BEST_SENSOR_FOLD
     
     outputs = np.array(outputs)
     fullnesses = np.array(fullnesses)
@@ -451,7 +451,7 @@ def plot_cont_predictions(outputs, fullnesses, in_fold=True):
     accuracy = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
     
     model_name = f'{args.model}_reg' if args.cont else f'{args.model}_cls'
-    if not in_fold: model_name = f'{model_name}_f{BEST_FOLD+1}' 
+    if not in_fold: model_name = f'{model_name}_f{BEST_SENSOR_FOLD}' 
     
     plt.figure(figsize=(10, 5))
     plt.plot(outputs, label='Predicted')
@@ -690,6 +690,7 @@ if __name__ == '__main__':
     OVERALL_BEST_ACCURACY = -1.0 if not args.cont else torch.inf
     global LOG_DICT
     global BEST_FOLD
+    global BEST_SENSOR_FOLD
     
     BEST_SENSOR_ACCURACY = -1.0
     
@@ -771,6 +772,7 @@ if __name__ == '__main__':
         sensor_accuracy = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
         if sensor_accuracy > BEST_SENSOR_ACCURACY:
             BEST_SENSOR_ACCURACY = sensor_accuracy
+            BEST_SENSOR_FOLD = fold + 1
             model_folder = f'{args.save_path}/{args.model}' + '_regressor/' if args.cont else '_classifier/'
             id = f'_{args.id}' if args.id != '' else ''
             model_suffix = 'feature_extractor' if args.cont else 'classifier'
@@ -821,7 +823,7 @@ if __name__ == '__main__':
     model_save_path = f'{model_folder}{args.model}_{model_suffix}{id}'
     model.load_state_dict(torch.load(f'{model_save_path}_best_sensor.pth', weights_only=True))
     if feature_regressor is not None:
-        feature_regressor.load_state_dict(torch.load(f'{model_folder}{args.model}_regressor_{id}_best_sensor.pth', weights_only=True))
+        feature_regressor.load_state_dict(torch.load(f'{model_folder}{args.model}_regressor{id}_best_sensor.pth', weights_only=True))
     
     sensor_loader = DataLoader(sensor_set, batch_size=args.batch_size)
     outputs, fullnesses, accuracies, losses = predict_sensor_data(args, model, sensor_loader, feature_regressor, in_fold=False)
@@ -834,6 +836,8 @@ if __name__ == '__main__':
     if not args.no_wandb:
         wandb.log({'best_fold': BEST_FOLD})
         wandb.log({'overall_best_acc_or_loss': OVERALL_BEST_ACCURACY})
+        wandb.log({'best_sensor_fold': BEST_SENSOR_FOLD})
+        wandb.log({'best_sensor_accuracy': BEST_SENSOR_ACCURACY})
         # if not args.cont:
         #     wandb.log({'mean_best_val_accuracy': mean_best_val_accuracy, 'std_best_val_accuracy': std_best_val_accuracy})
     
@@ -886,21 +890,21 @@ if __name__ == '__main__':
     if not args.no_wandb: wandb.finish()
     
     # Delete the models to free up memory
-    print(f'Deleting models with id: {id} in 60 seconds...')
+    print(f'Deleting {args.model} models with id: {id} in 60 seconds...')
     time.sleep(60)
     
     os.remove(f'{model_save_path}_best_sensor.pth')
     print(f'Deleted {model_save_path}_best_sensor.pth')
-    os.remove(f'{model_folder}{args.model}_{model_suffix}{id}_best.pth')
-    print(f'Deleted {model_folder}{args.model}_{model_suffix}{id}_best.pth')
-    os.remove(f'{model_folder}{args.model}_{model_suffix}{id}_overall_best.pth')
-    print(f'Deleted {model_folder}{args.model}_{model_suffix}{id}_overall_best.pth')
+    os.remove(f'{args.save_path}/{model_folder}{args.model}_{model_suffix}{id}_best.pth')
+    print(f'Deleted {args.save_path}/{model_folder}{args.model}_{model_suffix}{id}_best.pth')
+    os.remove(f'{args.save_path}/{model_folder}{args.model}_{model_suffix}{id}_overall_best.pth')
+    print(f'Deleted {args.save_path}/{model_folder}{args.model}_{model_suffix}{id}_overall_best.pth')
     if feature_regressor is not None:
-        os.remove(f'{model_folder}{args.model}_regressor{id}_best_sensor.pth')
-        print(f'Deleted {model_folder}{args.model}_regressor{id}_best_sensor.pth')
-        os.remove(f'{model_folder}{args.model}_regressor{id}_best.pth')
-        print(f'Deleted {model_folder}{args.model}_regressor{id}_best.pth')
-        os.remove(f'{model_folder}{args.model}_regressor{id}_overall_best.pth')
-        print(f'Deleted {model_folder}{args.model}_regressor{id}_overall_best.pth')
+        os.remove(f'{args.save_path}/{model_folder}{args.model}_regressor{id}_best_sensor.pth')
+        print(f'Deleted {args.save_path}/{model_folder}{args.model}_regressor{id}_best_sensor.pth')
+        os.remove(f'{args.save_path}/{model_folder}{args.model}_regressor{id}_best.pth')
+        print(f'Deleted {args.save_path}/{model_folder}{args.model}_regressor{id}_best.pth')
+        os.remove(f'{args.save_path}/{model_folder}{args.model}_regressor{id}_overall_best.pth')
+        print(f'Deleted {args.save_path}/{model_folder}{args.model}_regressor{id}_overall_best.pth')
     
         
