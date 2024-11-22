@@ -15,7 +15,7 @@ from strawml.models.straw_classifier import chute_cropper as cc
 class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True, inc_edges: bool = False,
                  random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21,
-                 continuous: bool = False, subsample: float = 1.0, augment_probability: float = 0.5, override_statistics: tuple = ()) -> torch.utils.data.Dataset:
+                 continuous: bool = False, subsample: float = 1.0, augment_probability: float = 0.5, override_statistics: tuple = (), greyscale: bool = False) -> torch.utils.data.Dataset:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
@@ -28,6 +28,7 @@ class Chute(torch.utils.data.Dataset):
         self.continuous = continuous
         self.subsample = subsample
         self.augment_probability = augment_probability
+        self.greyscale = greyscale
         
         if len(override_statistics) > 0:
             self.train_mean, self.train_std = override_statistics
@@ -59,31 +60,31 @@ class Chute(torch.utils.data.Dataset):
 
         
         # Create indices for train, test and validation
-        if 'sensor' in self.data_path:
-            self.test_indices = frame_names
-            if data_type == 'train':
-                raise ValueError('No training data available for sensor dataset. Use data_type="test"')
-        else:
-            self.train_indices, self.test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=0.15, random_state=random_state)
+        # if 'sensor' in self.data_path:
+        #     self.test_indices = frame_names
+        #     if data_type == 'train':
+        #         raise ValueError('No training data available for sensor dataset. Use data_type="test"')
+        # else:
+            # self.train_indices, self.test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=0.15, random_state=random_state)
             # self.val_indices, self.test_indices, _, _ = train_test_split(self.test_indices, self.test_indices, test_size=0.5, random_state=random_state)
             
-            self.train_indices = self.train_indices[:int(len(self.train_indices)*self.subsample)]
+        self.indices = frame_names[:int(len(frame_names)*self.subsample)]
         
         # Set the indices based on the data type
-        if data_type == 'train':
-            self.indices = self.train_indices
-        # elif data_type == 'val':
-        #     self.indices = self.val_indices
-        elif data_type == 'test':
-            self.indices = self.test_indices
-        else:
-            raise ValueError('data_type must be either "train" or "test"')
+        # if data_type == 'train':
+        #     self.indices = self.train_indices
+        # # elif data_type == 'val':
+        # #     self.indices = self.val_indices
+        # elif data_type == 'test':
+        #     self.indices = self.test_indices
+        # else:
+        #     raise ValueError('data_type must be either "train" or "test"')
         
         # Define the transformation to apply to the data
         self.transform = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]) # transforms.Resize((224, 224)) 
 
         # Store the mean and std of the training data for normalization
-        if len(override_statistics) == 0:
+        if len(override_statistics) == 0 and self.data_type == 'train':
             if self.inc_heatmap:
                 self.train_mean, self.train_std, self.train_min, self.train_max, self.train_hm_mean, self.train_hm_std, self.train_hm_min, self.train_hm_max = self.extract_means_and_stds(force_update_statistics)
             else:
@@ -187,14 +188,20 @@ class Chute(torch.utils.data.Dataset):
                     frame_data = (img, frame_data[1])
                 else:
                     frame_data = augmentation(frame_data)
-
+        
         if self.inc_edges:
             if self.inc_heatmap:
                 edges = self.get_edge_features(((frame_data[0].permute(1,2,0)*255).to(torch.uint8)).detach().numpy())
             else:
                 edges = self.get_edge_features(((frame_data.permute(1,2,0)*255).to(torch.uint8)).detach().numpy())
                 
-        
+        if self.greyscale:
+            grey_transform = transforms.Grayscale(num_output_channels=1)
+            if self.inc_heatmap:
+                grey_img = grey_transform(frame_data[0])
+                frame_data = (grey_img, frame_data[1])
+            else:
+                frame_data = grey_transform(frame_data)
         
         
         # print("2. Transform")
@@ -251,7 +258,7 @@ class Chute(torch.utils.data.Dataset):
             return frame_data, fullness
         
         return frame_data, labels
-            
+    
     def convert_fullness_to_class(self, fullness: float) -> list[int]:
         """Converts the fullness value to a class label.
 
@@ -273,7 +280,6 @@ class Chute(torch.utils.data.Dataset):
         
         return label
         
-    
     def convert_class_to_fullness(self, label: list[int]) -> float:
         """Converts the class label to a fullness value.
 
@@ -309,15 +315,25 @@ class Chute(torch.utils.data.Dataset):
         tuple: mean, std
         """
         if self.frames is None:
-            return
+            raise ValueError("No data loaded. Load the data first.")
         
         if "mean" in list(self.frames.attrs.keys()) and not force_update_statistics:
             print(f"Statistics already extracted, loading from file: {self.data_path}")
             if self.inc_heatmap:
                 if "mean_hm" in list(self.frames.attrs.keys()):
+                    if self.greyscale:
+                        if "mean_grey" in list(self.frames.attrs.keys()):
+                            return self.frames.attrs['mean_grey'], self.frames.attrs['std_grey'], self.frames.attrs['min_grey'], self.frames.attrs['max_grey'], self.frames.attrs['mean_hm'], self.frames.attrs['std_hm'], self.frames.attrs['min_hm'], self.frames.attrs['max_hm']
+                        else:
+                            raise ValueError("Greyscale statistics not found in file. Run with force_update_statistics=True and greyscale=True to update the statistics.")
                     return self.frames.attrs['mean'], self.frames.attrs['std'], self.frames.attrs['min'], self.frames.attrs['max'], self.frames.attrs['mean_hm'], self.frames.attrs['std_hm'], self.frames.attrs['min_hm'], self.frames.attrs['max_hm']
                 else:
-                    raise ValueError("Heatmap statistics not found in file. Run with force_update_statistics=True to update the statistics.")
+                    raise ValueError("Heatmap statistics not found in file. Run with force_update_statistics=True and inc_heatmaps=True to update the statistics.")
+            if self.greyscale:
+                if "mean_grey" in list(self.frames.attrs.keys()):
+                    return self.frames.attrs['mean_grey'], self.frames.attrs['std_grey'], self.frames.attrs['min_grey'], self.frames.attrs['max_grey']
+                else:
+                    raise ValueError("Greyscale statistics not found in file. Run with force_update_statistics=True and greyscale=True to update the statistics.")
             return self.frames.attrs['mean'], self.frames.attrs['std'], self.frames.attrs['min'], self.frames.attrs['max']
         
         import strawml.data.extract_statistics as es
@@ -337,9 +353,15 @@ class Chute(torch.utils.data.Dataset):
         zeros_array_hm = None
         n_hm = 0
         
-        pbar = tqdm(range(len(self.train_indices)), desc='Extracting statistics', leave=True)
+        running_mean_grey = None
+        running_min_grey = None
+        running_max_grey = None
+        zeros_array_grey = None
+        n_grey = 0
+        
+        pbar = tqdm(range(len(self.indices)), desc='Extracting statistics', leave=True)
         for idx in pbar:
-            new_frame = self.frames[self.train_indices[idx]]
+            new_frame = self.frames[self.indices[idx]]
             
             image = decode_binary_image(new_frame['image'][...])
             image = image.reshape(image.shape[2], image.shape[0], image.shape[1])
@@ -347,18 +369,29 @@ class Chute(torch.utils.data.Dataset):
                 image_diff = decode_binary_image(new_frame['image_diff'][...])
                 image_diff = image_diff.reshape(image_diff.shape[2], image_diff.shape[0], image_diff.shape[1])
             
+            if self.greyscale:
+                image_gray = cv2.cvtColor(decode_binary_image(new_frame['image'][...]), code=cv2.COLOR_BGR2GRAY)
+                image_gray = image_gray.reshape(1, image_gray.shape[0], image_gray.shape[1])
+            
             if running_mean is None:
                 if self.inc_heatmap:
                     existing_aggregate_hm = (0, np.zeros(image.shape[0]), np.zeros(image.shape[0]))
                     running_min_hm = np.min(image_diff, axis=(1, 2))
                     running_max_hm = np.max(image_diff, axis=(1, 2))
-                    
+                
+                if self.greyscale:
+                    existing_aggregate_grey = (0, np.zeros(1), np.zeros(1))
+                    running_min_grey = np.min(image_gray, axis=(1, 2))
+                    running_max_grey = np.max(image_gray, axis=(1, 2))
+                
                 existing_aggregate = (0, np.zeros(image.shape[0]), np.zeros(image.shape[0]))
                 running_min = np.min(image, axis=(1, 2))
                 running_max = np.max(image, axis=(1, 2))
             else:
                 if self.inc_heatmap:
                     existing_aggregate_hm = (n_hm, running_mean_hm, running_s_hm)
+                if self.greyscale:
+                    existing_aggregate_grey = (n_grey, running_mean_grey, running_s_grey)
                 existing_aggregate = (n, running_mean, running_s)
 
             if self.inc_heatmap:
@@ -366,7 +399,13 @@ class Chute(torch.utils.data.Dataset):
                 n_hm, running_mean_hm, running_s_hm = es.update(existing_aggregate=existing_aggregate_hm, new_value=new_hm)
                 running_min_hm = np.minimum(running_min_hm, np.min(image_diff, axis=(1, 2)))
                 running_max_hm = np.maximum(running_max_hm, np.max(image_diff, axis=(1, 2)))
-                
+            
+            if self.greyscale:
+                new_grey = np.mean(image_gray, axis=(1, 2))
+                n_grey, running_mean_grey, running_s_grey = es.update(existing_aggregate=existing_aggregate_grey, new_value=new_grey)
+                running_min_grey = np.minimum(running_min_grey, np.min(image_gray, axis=(1, 2)))
+                running_max_grey = np.maximum(running_max_grey, np.max(image_gray, axis=(1, 2)))
+            
             new_image = np.mean(image, axis=(1, 2))
             n, running_mean, running_s = es.update(existing_aggregate=existing_aggregate, new_value=new_image)
             running_min = np.minimum(running_min, np.min(image, axis=(1, 2)))
@@ -380,7 +419,14 @@ class Chute(torch.utils.data.Dataset):
             self.frames.attrs['std_hm'] = running_std_hm
             self.frames.attrs['min_hm'] = running_min_hm
             self.frames.attrs['max_hm'] = running_max_hm
-            
+        
+        if self.greyscale:
+            running_mean_grey, _, running_std_grey = es.finalize((n_grey, running_mean_grey, running_s_grey))
+            self.frames.attrs['mean_grey'] = running_mean_grey
+            self.frames.attrs['std_grey'] = running_std_grey
+            self.frames.attrs['min_grey'] = running_min_grey
+            self.frames.attrs['max_grey'] = running_max_grey
+        
         running_mean, _, running_std = es.finalize((n, running_mean, running_s))
         self.frames.attrs['mean'] = running_mean 
         self.frames.attrs['std'] = running_std
@@ -391,10 +437,17 @@ class Chute(torch.utils.data.Dataset):
         self.frames = h5py.File(self.data_path, 'r')
         
         print("Statistics extracted:")
+        print(f'Mean: {running_mean}, Std: {running_std}, Min: {running_min}, Max: {running_max}')
         if self.inc_heatmap:
             print(f'Mean HM: {running_mean_hm}, Std HM: {running_std_hm}, Min HM: {running_min_hm}, Max HM: {running_max_hm}')
-        else:
-            print(f'Mean: {running_mean}, Std: {running_std}, Min: {running_min}, Max: {running_max}')
+        if self.greyscale:
+            print(f'Mean Grey: {running_mean_grey}, Std Grey: {running_std_grey}, Min Grey: {running_min_grey}, Max Grey: {running_max_grey}')
+        
+        
+        running_mean = running_mean if not self.greyscale else running_mean_grey
+        running_std = running_std if not self.greyscale else running_std_grey
+        running_min = running_min if not self.greyscale else running_min_grey
+        running_max = running_max if not self.greyscale else running_max_grey
         
         if self.inc_heatmap:
             return running_mean, running_std, running_min, running_max, running_mean_hm, running_std_hm, running_min_hm, running_max_hm
@@ -503,7 +556,7 @@ class Chute(torch.utils.data.Dataset):
         return edges
     
     def print_arguments(self):
-        dataset_size = len(self.train_indices) if self.data_type == 'train' else len(self.test_indices)
+        dataset_size = len(self.indices) # if self.data_type == 'train' else len(self.indices)
         print(f'Parameters: \n \
                     Data Path:                {self.data_path}\n \
                     Include Heatmaps:         {self.inc_heatmap} \n \
@@ -512,21 +565,22 @@ class Chute(torch.utils.data.Dataset):
                     Number of straw classes:  {self.num_classes_straw}\n \
                         ')
 
-def plot_batch(data, labels, frame_start=0, mean=None, std=None):
+def plot_batch(data, labels, frame_start=0, mean=None, std=None, grey=False):
     data_num = data.shape[0]
     fig, ax = plt.subplots(2, data_num//2, figsize=(15, 15))
     ax = ax.flatten()
+    num_channels = 1 if grey else 3
     for i in range(data_num):
         if mean is not None and std is not None:
             img_unnormalize = transforms.Normalize(mean = [-m/s for m, s in zip(mean, std)],
                                                                 std = [1/s for s in std])
-            frame_data = img_unnormalize(data[i][:3])
+            frame_data = img_unnormalize(data[i][:num_channels])
         else:
-            frame_data = data[i][:3]
+            frame_data = data[i][:num_channels]
         frame_data = frame_data.permute(1, 2, 0)
         frame_data = frame_data.detach().numpy()
         frame_data = np.clip(frame_data, 0, 1)
-        ax[i].imshow(frame_data)
+        ax[i].imshow(frame_data, cmap='gray' if grey else None)
         ax[i].set_title(f"Frame: {frame_start} | Fullness: {int(round(labels[i].item()*100))}%")
         ax[i].set_axis_off()
         frame_start += 1
@@ -647,7 +701,10 @@ if __name__ == '__main__':
     print("---- STRAW DETECTION DATASET ----")
     train_set = Chute(data_path='data/interim/chute_detection.hdf5', data_type='train', inc_heatmap=True, inc_edges=True,
                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
-                         num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=0.5)
+                         num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=0.5, greyscale=True)
+    train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
+    for i, (data, target) in enumerate(train_loader):
+        plot_batch(data, target, i*8, train_set.train_mean, train_set.train_std, grey=train_set.greyscale)
     
     
     # for i in range(10):
@@ -657,15 +714,15 @@ if __name__ == '__main__':
     #     data, target = train_set[i]
     #     train_set.plot_data(frame_data=data, labels=target)
     
-    mean, std = train_set.train_mean, train_set.train_std
-    statistics = (mean, std)
-    sensor_set = Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=False, inc_edges=True,
-                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), continuous=True, subsample=1.0,
-                          augment_probability=0, num_classes_straw=1, override_statistics=statistics)
-    sensor_loader = DataLoader(sensor_set, batch_size=8, shuffle=False, num_workers=0)
+    # mean, std = train_set.train_mean, train_set.train_std
+    # statistics = (mean, std)
+    # sensor_set = Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=False, inc_edges=True,
+    #                       random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), continuous=True, subsample=1.0,
+    #                       augment_probability=0, num_classes_straw=1, override_statistics=statistics, greyscale=True)
+    # sensor_loader = DataLoader(sensor_set, batch_size=8, shuffle=False, num_workers=0)
     
-    for i, (data, target) in enumerate(sensor_loader):
-        plot_batch(data, target, i*8, mean, std)
+    # for i, (data, target) in enumerate(sensor_loader):
+    #     plot_batch(data, target, i*8, mean, std, grey=sensor_set.greyscale)
     
     
     

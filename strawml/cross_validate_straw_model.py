@@ -525,6 +525,10 @@ def plot_example(info, frame_data, prediction, target):
     if frame_data.shape[0] > 3:
         frame_data = frame_data[:3]
     
+    if args.greyscale:
+        frame_data = frame_data[0]
+        frame_data = frame_data.unsqueeze(0)
+    
     frame_data = frame_data.permute(1, 2, 0)
     frame_data = frame_data.detach().cpu().numpy()
     prediction = prediction.detach().cpu().numpy()
@@ -543,7 +547,7 @@ def plot_example(info, frame_data, prediction, target):
         prediction = prediction * increment
         target = target * increment
     
-    plt.imshow(frame_data)
+    plt.imshow(frame_data, cmap='gray' if args.greyscale else None)
     plt.title(f'{info["data_type"]} Epoch: {info["epoch"]} it: {info["current_iteration"]} Prediction: {prediction} Target: {target}')
     
     # plt.show()
@@ -582,7 +586,8 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'weight_decay': args.weight_decay,
             'momentum': args.momentum,
             'pretrained': args.pretrained,
-            'id': args.id
+            'id': args.id,
+            'greyscale': args.greyscale,
         })
     
     global LOG_DICT
@@ -640,6 +645,7 @@ def get_args():
     parser.add_argument('--momentum', type=float, default=0.0, help='Momentum for the optimizer')
     parser.add_argument('--pretrained', action='store_true', help='Use a pretrained model')
     parser.add_argument('--id', type=str, default='', help='ID for the run')
+    parser.add_argument('--greyscale', action='store_true', help='Use greyscale images')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -666,7 +672,8 @@ if __name__ == '__main__':
     
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
-                         num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=args.augment_probability)
+                         num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, 
+                         augment_probability=args.augment_probability, greyscale=args.greyscale)
     
     mean, std = train_set.train_mean, train_set.train_std
     if args.inc_heatmap:
@@ -679,7 +686,7 @@ if __name__ == '__main__':
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont)
     sensor_set = dl.Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                           random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=args.data_subsample,
-                          augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics)
+                          augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics, greyscale=args.greyscale)
     
     fold_train_losses = []
     fold_val_losses = []
@@ -716,13 +723,9 @@ if __name__ == '__main__':
         train_loader = DataLoader(train_set, batch_size=args.batch_size, sampler=SubsetRandomSampler(train_idx))
         val_loader = DataLoader(train_set, batch_size=args.batch_size, sampler=SubsetRandomSampler(val_idx))
         
-        input_channels = 3
+        input_channels = 3 if not args.greyscale else 1
         if args.inc_heatmap: input_channels += 3
         if args.inc_edges: input_channels += 1
-        
-        # TRY: Using only the edge image as input
-        # input_channels = 1
-        
         
         if args.cont:
             args.num_classes_straw = 1
