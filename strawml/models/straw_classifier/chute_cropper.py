@@ -49,7 +49,6 @@ def crop_to_bbox(rotated_image, rotated_bbox) -> tuple:
 
 
 def rotate_and_crop_to_bbox(image, bbox) -> tuple:
-    import time
     rotated_image, rotated_bbox = rotate_to_bbox(image, bbox)
     if rotated_image is None or rotated_bbox is None:
         return None, None    
