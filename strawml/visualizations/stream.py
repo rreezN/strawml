@@ -703,14 +703,16 @@ class AprilDetector:
         if len(tags) == 0:
             return frame, None
         for t in tags:
-            corners = self.order_corners(t.corners, t.center)
-            if t.tag_id in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
-                number_tags.append(t)
-                cv2.polylines(frame, [corners.astype(np.int32)], True, (0, 255, 255), 4, cv2.LINE_AA)
-            else:
-                chute_tags.append(t)
-                cv2.polylines(frame, [corners.astype(np.int32)], True, (255, 0, 0), 4, cv2.LINE_AA)
-            cv2.putText(frame, f"{int(t.tag_id)}", tuple(corners[0].astype(np.int32)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+            if t.tag_id in self.wanted_tags.values():
+                corners = self.order_corners(t.corners, t.center)
+                if t.tag_id in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
+                    number_tags.append(t)
+                    cv2.polylines(frame, [corners.astype(np.int32)], True, (0, 255, 255), 4, cv2.LINE_AA)
+                else:
+                    chute_tags.append(t)
+                    cv2.polylines(frame, [corners.astype(np.int32)], True, (255, 0, 0), 4, cv2.LINE_AA)
+                cv2.putText(frame, f"{int(t.tag_id)}", tuple(corners[0].astype(np.int32)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+
         try:
             chute_right = []
             chute_left = []
@@ -845,6 +847,7 @@ class RTSPStream(AprilDetector):
     def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         self.rtsp = rtsp
+        self.wanted_tags = ids
         if rtsp:
             self.cap = self.create_capture(credentials_path)
         else:
