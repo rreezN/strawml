@@ -758,7 +758,7 @@ class MainApplication(ttk.Frame):
     def next(self) -> None:
         """Saves the current frame and annotations and moves to the next image.
         """
-        self.save_current_frame(printing=False)
+        self.save_current_frame(printing=True)
         
         if self.current_image == len(self.image_list)-1:
             self.change_image(0)
@@ -773,7 +773,7 @@ class MainApplication(ttk.Frame):
     def back(self):
         """Saves the current frame and annotations and moves to the previous image.
         """
-        self.save_current_frame(printing=False)
+        self.save_current_frame(printing=True)
         
         if self.current_image == 0:
             self.change_image(len(self.image_list)-1)
@@ -788,7 +788,7 @@ class MainApplication(ttk.Frame):
         """
         selected_image = self.selected_image.get()
         if selected_image in self.image_list:
-            self.save_current_frame(printing=False)
+            self.save_current_frame(printing=True)
             self.change_image(self.image_list.index(selected_image))
         else:
             print(f"Could not find image {selected_image} in the image list.")
@@ -814,7 +814,7 @@ class MainApplication(ttk.Frame):
         self.update_progress_bar()
         self.update_next_button()
     
-    def save_current_frame(self, printing=False) -> None:
+    def save_current_frame(self, printing=True) -> None:
         """Saves the annotations for the current frame to the new HDF5 file.
 
         Args:
@@ -836,8 +836,14 @@ class MainApplication(ttk.Frame):
         old_hf = h5py.File(self.images_hdf5, 'r') # Open the original HDF5 file in read mode
         
         # Copy the attributes from the original HDF5 file to the new HDF5 file
-        new_hf.attrs['dataset_name'] = old_hf.attrs['dataset_name']
-        new_hf.attrs['description'] = old_hf.attrs['description']
+        if 'dataset_name' in old_hf.attrs.keys():
+            new_hf.attrs['dataset_name'] = old_hf.attrs['dataset_name']
+        else:
+            new_hf.attrs['dataset_name'] = 'annotated_images'
+        if 'description' in old_hf.attrs.keys():
+            new_hf.attrs['description'] = old_hf.attrs['description']
+        else:
+            new_hf.attrs['description'] = 'Annotated images for chute detection'
         new_hf.attrs['date_created'] = np.bytes_(str(datetime.datetime.now()))
         
         
