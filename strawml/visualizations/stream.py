@@ -13,6 +13,7 @@ from torchvision.transforms import v2 as transforms
 import h5py
 import psutil
 from sklearn.linear_model import LinearRegression
+import signal
 
 from strawml.models.straw_classifier import chute_cropper as cc
 from strawml.models.chute_finder.yolo import ObjectDetect
@@ -205,7 +206,10 @@ class TagGraphWithPositionsCV:
 
     def crop_to_size(self, image):
         """
-        Based on the detected tags, crop the image to the size of the chute system.
+        Based on opencv's homography tutorial: https://docs.opencv.org/3.4/d9/dab/tutorial_homography.html
+
+        Seeks to perform persepective corrections on the detected tags in the frame. The tags are assumed to be
+        quadrilaterals, and the function uses the four corners of the tags to calculate the homography matrix.
 
         Params:
         -------
@@ -217,10 +221,6 @@ class TagGraphWithPositionsCV:
         np.ndarray
             The cropped image
         """
-        from PIL import Image, ImageDraw
-        import numpy as np
-        import cv2
-        
         # see if tag 11, 15, 22, 26 are detected
         if 11 not in self.detected_tags or 15 not in self.detected_tags or 22 not in self.detected_tags or 26 not in self.detected_tags:
             return None
@@ -527,48 +527,48 @@ class AprilDetector:
         self.check_for_changes(detected_tags)
         self.processed_tags.clear()  # Clear the set of processed tags
 
-    def detect_recursive(self, frame: np.ndarray, 
-               cutout_coord: np.ndarray,
-               depth: int = 0, 
-               max_depth: int = 3, 
-               x_offset: int = 0, 
-               y_offset: int = 0, 
-               px_pm: int = 150,
-               ) -> list:
+    # def detect_recursive(self, frame: np.ndarray, 
+    #            cutout_coord: np.ndarray,
+    #            depth: int = 0, 
+    #            max_depth: int = 3, 
+    #            x_offset: int = 0, 
+    #            y_offset: int = 0, 
+    #            px_pm: int = 150,
+    #            ) -> list:
         
-        new_frame = frame.copy()
-        cutout_coord = cutout_coord.astype(np.int32)
-        new_frame = new_frame[cutout_coord[1]:cutout_coord[3], cutout_coord[0]:cutout_coord[2]]
-        tags = self.detector.detect(new_frame)
+    #     new_frame = frame.copy()
+    #     cutout_coord = cutout_coord.astype(np.int32)
+    #     new_frame = new_frame[cutout_coord[1]:cutout_coord[3], cutout_coord[0]:cutout_coord[2]]
+    #     tags = self.detector.detect(new_frame)
 
-        if depth < max_depth:
-            for tag in tags:
-                # correct the tag coordiantes with the offset
-                tag.center = (tag.center[0] + x_offset, tag.center[1] + y_offset)
-                tag.corners[:,0] += x_offset
-                tag.corners[:,1] += y_offset
+    #     if depth < max_depth:
+    #         for tag in tags:
+    #             # correct the tag coordiantes with the offset
+    #             tag.center = (tag.center[0] + x_offset, tag.center[1] + y_offset)
+    #             tag.corners[:,0] += x_offset
+    #             tag.corners[:,1] += y_offset
 
-                # now we need to add the tag to the tags and tag_ids arrays if it is not already present
-                if tag.tag_id not in self.tag_ids:
-                    self.tags = np.append(self.tags, tag)
-                    self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
+    #             # now we need to add the tag to the tags and tag_ids arrays if it is not already present
+    #             if tag.tag_id not in self.tag_ids:
+    #                 self.tags = np.append(self.tags, tag)
+    #                 self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
                 
-                # check if the tag has already been processed
-                if tag.tag_id in self.processed_tags:
-                    continue
-                self.processed_tags.add(tag.tag_id)
-                self.detected_tags.append(tag)
+    #             # check if the tag has already been processed
+    #             if tag.tag_id in self.processed_tags:
+    #                 continue
+    #             self.processed_tags.add(tag.tag_id)
+    #             self.detected_tags.append(tag)
 
-                # create cutout with px_pm around the tag center
-                x_start = max(tag.center[0] - px_pm, 0)
-                x_end = min(tag.center[0] + px_pm, frame.shape[1])
-                y_start = max(tag.center[1] - px_pm, 0)
-                y_end = min(tag.center[1] + px_pm, frame.shape[0])
-                # now redefine the offset values to account for the new cutout
-                new_x_offset = x_start
-                new_y_offset = y_start
-                # call the detect function recursively
-                self.detect(self.fix_frame(frame, blur=True), np.array([x_start, y_start, x_end, y_end]), depth=depth+1, max_depth=max_depth, x_offset=new_x_offset, y_offset=new_y_offset, px_pm=px_pm)
+    #             # create cutout with px_pm around the tag center
+    #             x_start = max(tag.center[0] - px_pm, 0)
+    #             x_end = min(tag.center[0] + px_pm, frame.shape[1])
+    #             y_start = max(tag.center[1] - px_pm, 0)
+    #             y_end = min(tag.center[1] + px_pm, frame.shape[0])
+    #             # now redefine the offset values to account for the new cutout
+    #             new_x_offset = x_start
+    #             new_y_offset = y_start
+    #             # call the detect function recursively
+    #             self.detect(self.fix_frame(frame, blur=True), np.array([x_start, y_start, x_end, y_end]), depth=depth+1, max_depth=max_depth, x_offset=new_x_offset, y_offset=new_y_offset, px_pm=px_pm)
 
 
     def check_for_changes(self, tags: list) -> None:
@@ -775,6 +775,7 @@ class AprilDetector:
                 tag_graph.account_for_missing_tags()
                 frame = tag_graph.draw_overlay(frame)
                 cutout = tag_graph.crop_to_size(original_image)
+
                 if use_cutout:
                     return frame, cutout
                 else:
@@ -854,6 +855,7 @@ class RTSPStream(AprilDetector):
         self.regressor = regressor
         self.predictor_model = predictor_model
         self.frame = None
+        self.should_abort_immediately = False
         # Theadlock to prevent multiple threads from accessing the queue at the same time
         self.lock = threading.Lock()
         self.threads = []
@@ -937,27 +939,18 @@ class RTSPStream(AprilDetector):
 
 
     def receive_frame(self, cap: cv2.VideoCapture) -> None:
-        """
-        Read frames from the video stream and store them in a queue.
-
-        Params:
-        -------
-        cap: cv2.VideoCapture
-            The video capture object to receive frames from the RTSP stream
-        
-        Returns:
-        --------
-        None
-            Nothing is returned, only the frames are stored in a queue
-        """
         ret, frame = cap.read()
         self.q.put(frame)
         while ret and cap.isOpened():
+            if self.should_abort_immediately:
+                break
             ret, frame = cap.read()
-            self.q.put(frame)        
+            self.q.put(frame)
 
     def find_tags(self) -> None:
         while True:
+            if self.should_abort_immediately:
+                break
             start = time.time()
             self.lock.acquire()
             try:
@@ -969,7 +962,6 @@ class RTSPStream(AprilDetector):
             self.detect(frame)
             end = time.time()
             self.information["april"]["text"] = f'(T3) AprilTag Time: {end - start:.2f} s' 
-            
 
     def display_frame(self) -> None:
         """
@@ -985,7 +977,14 @@ class RTSPStream(AprilDetector):
         start_time = time.time()
 
         while True:
+            if self.should_abort_immediately:
+                break
             frame_time = time.time()
+            # empty information
+            for key in self.information.keys():
+                if key == "april":
+                    continue
+                self.information[key]["text"] = ""
             if not self.q.empty():
                 frame = self.q.get() # Get the frame from the queue
                 # Update the frame in the class instance to be used in other methods and ensure thread safety
@@ -1006,17 +1005,17 @@ class RTSPStream(AprilDetector):
 
                 if self.detect_april and (self.tags is not None):
                     # # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
-                    frame_drawn, cutout = self.draw(frame.copy(), self.tags, self.make_cutout, self.use_cutout)
+                    frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags, make_cutout=self.make_cutout, use_cutout=self.use_cutout)
                 else:
                     frame_drawn = frame
                     cutout = None
                 # We initialise results to None to avoid errors when the model is not used -> only when OD is used do we need
                 # the results to crop the bbox from the frame. However, with the apriltrags from self.draw, we simply make the 
                 # cutout from the frame and do not need the results.
-                results = None
                 if cutout is not None:
                     frame = cutout
-                elif self.object_detect:
+                    results = None
+                elif cutout is None and self.object_detect:
                     results, OD_time = self.time_function(self.OD.score_frame, frame) # This takes a lot of time if ran on CPU
                     if len(results[0]) == 0:
                         results = "NA"
@@ -1053,9 +1052,9 @@ class RTSPStream(AprilDetector):
                 else:
                     frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
                     cv2.imshow('Video', frame_drawn) # Display the frame
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        self.close_threads()
-                        break
+                    # if cv2.waitKey(1) & 0xFF == ord('q'):
+                    #     self.close_threads()
+                    #     break
                     continue
                 frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
 
@@ -1092,9 +1091,9 @@ class RTSPStream(AprilDetector):
                 output = None
                 torch.cuda.empty_cache()
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                self.close_threads()
-                break
+            # if cv2.waitKey(1) & 0xFF == ord('q'):
+            #     self.close_threads()
+            #     break
         self.cap.release()
         cv2.destroyAllWindows()
 
@@ -1222,9 +1221,9 @@ class RTSPStream(AprilDetector):
         cv2.destroyAllWindows()
 
     def close_threads(self):
-        for thread in self.threads:
-            thread.should_abort_immediately = True
-            thread.join()
+        self.should_abort_immediately = True
+        # for thread in self.threads:
+        #     thread.join()
         self.cap.release()
         cv2.destroyAllWindows()
 
@@ -1263,9 +1262,7 @@ class RTSPStream(AprilDetector):
                     self.thread3.start()
                     self.threads.append(self.thread3)
                 while True:
-                    # print("Threads", threading.active_count())
                     if cv2.waitKey(1) & 0xFF == ord('q'):
-                        print("Closing threads")
                         self.close_threads()
                         break
         elif frame is not None:
@@ -1306,6 +1303,6 @@ if __name__ == "__main__":
     
     RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
             rtsp=True , # Only used when the stream is from an RTSP source
-            make_cutout=True, use_cutout=False, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
+            make_cutout=True, use_cutout=True, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
             detect_april=True,
             with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
