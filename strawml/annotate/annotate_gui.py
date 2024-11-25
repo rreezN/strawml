@@ -726,7 +726,6 @@ class MainApplication(ttk.Frame):
         # Bind arrow keys to next and back methods
         self.parent.bind('<Right>', self.next_image)
         self.parent.bind('<Left>', self.previous_image)
-
         
     def load_image_list(self) -> None:
         """Loads the image list from the images HDF5 file and sorts it.
@@ -959,6 +958,13 @@ class MainApplication(ttk.Frame):
         help_window.resizable(False, False)
         HelpWindow(help_window).pack(side="top", fill="both", expand=True)
     
+    def next_image(self, event: tk.Event) -> None:
+        """Handles the right arrow key event to go to the next image."""
+        self.next()
+
+    def previous_image(self, event: tk.Event) -> None:
+        """Handles the left arrow key event to go to the previous image."""
+        self.back()
 
 def get_args():
     """Parses command line arguments.
