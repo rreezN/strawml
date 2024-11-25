@@ -165,6 +165,7 @@ class ImageBox(ttk.Frame):
         self.canvas.bind("<Button-2>", self.on_mouse_wheel_press)
         self.canvas.bind("<ButtonRelease-2>", self.on_mouse_wheel_release)
         self.canvas.bind("<B2-Motion>", self.on_mouse_wheel_move_press)
+
         
         # Show image
         self.new_image = ImageTk.PhotoImage(Image.fromarray(image))
@@ -721,6 +722,11 @@ class MainApplication(ttk.Frame):
 
         self.load_image_list()
         self.select_image_button['values'] = self.image_list
+        
+        # Bind arrow keys to next and back methods
+        self.parent.bind('<Right>', self.next_image)
+        self.parent.bind('<Left>', self.previous_image)
+
         
     def load_image_list(self) -> None:
         """Loads the image list from the images HDF5 file and sorts it.
