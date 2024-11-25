@@ -12,13 +12,13 @@ import psutil
 from sklearn.model_selection import train_test_split
 import shutil
 import json
+import threading
 
+# Create a lock object
+lock = threading.Lock()
 
 def decode_binary_image(image: bytes) -> np.ndarray:
     """
-    Decodes a binary image and returns it as a NumPy array.
-
-    ...
 
     Parameters
     ----------

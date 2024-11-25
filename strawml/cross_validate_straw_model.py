@@ -646,11 +646,25 @@ def get_args():
     parser.add_argument('--pretrained', action='store_true', help='Use a pretrained model')
     parser.add_argument('--id', type=str, default='', help='ID for the run')
     parser.add_argument('--greyscale', action='store_true', help='Use greyscale images')
+    parser.add_argument('--hpc', action='store_true', help='Use the HPC')
     return parser.parse_args()
 
 if __name__ == '__main__':
     args = get_args()
     
+    # Is this how we want to do it?
+    if args.hpc:
+        path_to_data = f'/work3/{os.getlogin()}/'
+        if not os.path.exists(path_to_data):
+            raise FileNotFoundError(f'Path to data not found: {path_to_data}')
+        os.makedirs(f'{path_to_data}/data', exist_ok=True)
+        args.data_path = path_to_data + args.data_path
+        if not os.path.exists(args.data_path):
+            raise FileNotFoundError(f'Data path not found: {args.data_path}')
+        os.makedirs(f'{path_to_data}/models', exist_ok=True)
+        args.save_path = path_to_data + args.save_path
+        if not os.path.exists(args.save_path):
+            raise FileNotFoundError(f'Save path not found: {args.save_path}')
     
     if torch.cuda.is_available(): print('Using GPU')
     

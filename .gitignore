@@ -15,6 +15,7 @@ reports/
 *.err
 *.out
 
+strawml/test_path.py
 
 # models
 models/*
