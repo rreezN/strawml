@@ -119,7 +119,7 @@ def get_args() -> Namespace:
     # Create the parser
     parser = ArgumentParser()
     # Add arguments to the parser
-    parser.add_argument('mode', type=str, choices=['combine'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
+    parser.add_argument('mode', type=str, choices=['combine', 'validate'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
     parser.add_argument('--data_path', type=str, default='D:/HCAI/msc/strawml/data/interim/', help='The folder containing the files.')
     parser.add_argument('--file1', type=str, help='The first file to combine.')
     parser.add_argument('--file2', type=str, help='The second file to combine.')
@@ -134,4 +134,7 @@ if __name__ == '__main__':
     file2 = args.file2
     output_file = args.output_file
     force = args.force
-    combine_hdf5(data_path, file1, file2, output_file, force)
+    if args.mode == 'validate':
+        check_validity(data_path, file1)
+    elif args.mode == 'combine':
+        combine_hdf5(data_path, file1, file2, output_file, force)

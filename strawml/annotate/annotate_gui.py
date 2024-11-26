@@ -165,6 +165,7 @@ class ImageBox(ttk.Frame):
         self.canvas.bind("<Button-2>", self.on_mouse_wheel_press)
         self.canvas.bind("<ButtonRelease-2>", self.on_mouse_wheel_release)
         self.canvas.bind("<B2-Motion>", self.on_mouse_wheel_move_press)
+
         
         # Show image
         self.new_image = ImageTk.PhotoImage(Image.fromarray(image))
@@ -725,6 +726,10 @@ class MainApplication(ttk.Frame):
         self.load_image_list()
         self.select_image_button['values'] = self.image_list
         
+        # Bind arrow keys to next and back methods
+        self.parent.bind('<Right>', self.next_image)
+        self.parent.bind('<Left>', self.previous_image)
+        
     def load_image_list(self) -> None:
         """Loads the image list from the images HDF5 file and sorts it.
 
@@ -966,6 +971,13 @@ class MainApplication(ttk.Frame):
         help_window.resizable(False, False)
         HelpWindow(help_window).pack(side="top", fill="both", expand=True)
     
+    def next_image(self, event: tk.Event) -> None:
+        """Handles the right arrow key event to go to the next image."""
+        self.next()
+
+    def previous_image(self, event: tk.Event) -> None:
+        """Handles the left arrow key event to go to the previous image."""
+        self.back()
 
 def get_args():
     """Parses command line arguments.
