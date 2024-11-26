@@ -526,50 +526,6 @@ class AprilDetector:
         self.check_for_changes(detected_tags)
         self.processed_tags.clear()  # Clear the set of processed tags
 
-    # def detect_recursive(self, frame: np.ndarray, 
-    #            cutout_coord: np.ndarray,
-    #            depth: int = 0, 
-    #            max_depth: int = 3, 
-    #            x_offset: int = 0, 
-    #            y_offset: int = 0, 
-    #            px_pm: int = 150,
-    #            ) -> list:
-        
-    #     new_frame = frame.copy()
-    #     cutout_coord = cutout_coord.astype(np.int32)
-    #     new_frame = new_frame[cutout_coord[1]:cutout_coord[3], cutout_coord[0]:cutout_coord[2]]
-    #     tags = self.detector.detect(new_frame)
-
-    #     if depth < max_depth:
-    #         for tag in tags:
-    #             # correct the tag coordiantes with the offset
-    #             tag.center = (tag.center[0] + x_offset, tag.center[1] + y_offset)
-    #             tag.corners[:,0] += x_offset
-    #             tag.corners[:,1] += y_offset
-
-    #             # now we need to add the tag to the tags and tag_ids arrays if it is not already present
-    #             if tag.tag_id not in self.tag_ids:
-    #                 self.tags = np.append(self.tags, tag)
-    #                 self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
-                
-    #             # check if the tag has already been processed
-    #             if tag.tag_id in self.processed_tags:
-    #                 continue
-    #             self.processed_tags.add(tag.tag_id)
-    #             self.detected_tags.append(tag)
-
-    #             # create cutout with px_pm around the tag center
-    #             x_start = max(tag.center[0] - px_pm, 0)
-    #             x_end = min(tag.center[0] + px_pm, frame.shape[1])
-    #             y_start = max(tag.center[1] - px_pm, 0)
-    #             y_end = min(tag.center[1] + px_pm, frame.shape[0])
-    #             # now redefine the offset values to account for the new cutout
-    #             new_x_offset = x_start
-    #             new_y_offset = y_start
-    #             # call the detect function recursively
-    #             self.detect(self.fix_frame(frame, blur=True), np.array([x_start, y_start, x_end, y_end]), depth=depth+1, max_depth=max_depth, x_offset=new_x_offset, y_offset=new_y_offset, px_pm=px_pm)
-
-
     def check_for_changes(self, tags: list) -> None:
         """
         Check if the camera has moved and the chute tags have changed position. If so, reset the tags and tag_ids arrays.
@@ -585,10 +541,6 @@ class AprilDetector:
             Nothing is returned, only if the camera has moved and the chute tags have changed position, the tags and tag_ids
             arrays are reset.
         """
-        # if len(tags) == 0:
-        #     self.tags = []
-        #     self.tag_ids = []
-        #     return
         tag_ids = np.array([int(tag.tag_id) for tag in tags])
         accumulated_error = 0
         for i, t in enumerate(self.tag_ids):
