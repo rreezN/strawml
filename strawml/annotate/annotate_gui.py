@@ -40,7 +40,7 @@ class ImageBox(ttk.Frame):
         self.parent = parent
         
         self.images_hdf5 = images_hdf5
-        self.annotated_hdf5 = self.parent.file_button.get()
+        self.annotated_hdf5 = self.parent.output_hdf5
         self.image = None
         self.image_size = None
         self.current_image_group = None
@@ -92,7 +92,7 @@ class ImageBox(ttk.Frame):
         
         images = h5py.File(self.images_hdf5, 'r')
         annotated = None
-        self.annotated_hdf5 = f'data/interim/{self.parent.file_button.get()}'
+        self.annotated_hdf5 = f'{self.parent.output_hdf5}'
         if os.path.exists(self.annotated_hdf5):
             annotated = h5py.File(self.annotated_hdf5, 'r')
         
@@ -106,18 +106,18 @@ class ImageBox(ttk.Frame):
             image_bytes = annotated[image_group]['image'][...]
             if 'annotations' in annotated[image_group].keys():
                 # load bboxes
-                if 'bbox_chute' in annotated[image_group]['annotations'].keys():
+                if 'bbox_chute' in annotated[image_group]['annotations'].keys() and not self.parent.annotate_straw:
                     self.chute_annotated = True
                     self.top_left = annotated[image_group]['annotations']['bbox_chute'][...][6]/2, annotated[image_group]['annotations']['bbox_chute'][...][7]/2
                     self.top_right = annotated[image_group]['annotations']['bbox_chute'][...][0]/2, annotated[image_group]['annotations']['bbox_chute'][...][1]/2
                     self.bottom_right = annotated[image_group]['annotations']['bbox_chute'][...][2]/2, annotated[image_group]['annotations']['bbox_chute'][...][3]/2
                     self.bottom_left = annotated[image_group]['annotations']['bbox_chute'][...][4]/2, annotated[image_group]['annotations']['bbox_chute'][...][5]/2
-                # if 'bbox_straw' in annotated[image_group]['annotations'].keys():
-                #     self.straw_annotated = True
-                #     self.start_x2 = annotated[image_group]['annotations']['bbox_straw'][...][6]/2
-                #     self.start_y2 = annotated[image_group]['annotations']['bbox_straw'][...][7]/2
-                #     self.curX2 = annotated[image_group]['annotations']['bbox_straw'][...][2]/2
-                #     self.curY2 = annotated[image_group]['annotations']['bbox_straw'][...][3]/2
+                elif 'bbox_straw' in annotated[image_group]['annotations'].keys() and self.parent.annotate_straw:
+                    self.straw_annotated = True
+                    self.top_left = annotated[image_group]['annotations']['bbox_straw'][...][6]/2, annotated[image_group]['annotations']['bbox_straw'][...][7]/2
+                    self.top_right = annotated[image_group]['annotations']['bbox_straw'][...][0]/2, annotated[image_group]['annotations']['bbox_straw'][...][1]/2
+                    self.bottom_right = annotated[image_group]['annotations']['bbox_straw'][...][2]/2, annotated[image_group]['annotations']['bbox_straw'][...][3]/2
+                    self.bottom_left = annotated[image_group]['annotations']['bbox_straw'][...][4]/2, annotated[image_group]['annotations']['bbox_straw'][...][5]/2
                 
                 # load fullness and obstructed
                 if 'fullness' in annotated[image_group]['annotations'].keys():
@@ -172,7 +172,7 @@ class ImageBox(ttk.Frame):
         
         self.load_previous_bbox()
         # Initialize bounding box parameters
-        if not self.chute_annotated:
+        if not self.chute_annotated or not self.straw_annotated:
             self.rect = None
             self.top_left = None
             self.top_right = None
@@ -543,6 +543,7 @@ class ImageBox(ttk.Frame):
         self.bottom_right = self.previous_bbox[2]
         self.bottom_left = self.previous_bbox[3]
         self.chute_annotated = True
+        self.straw_annotated = True
         
         self.parent.obstructed_box.obstructed.set(self.previous_obstructed)
     
@@ -668,7 +669,7 @@ class MainApplication(ttk.Frame):
         parent (tk.Tk): The parent frame. This is the main window.
         images_hdf5 (str, optional): The path to the extracted frames (images.hdf5). Defaults to 'data/raw/images/images.hdf5'.
     """
-    def __init__(self, parent, images_hdf5='data/raw/images/images.hdf5', annotate_straw=False, *args, **kwargs) -> None:
+    def __init__(self, parent, images_hdf5='data/raw/images/images.hdf5', output_hdf5='data/interim/annotated_images.hdf5', annotate_straw=False, sensor_data=False, *args, **kwargs) -> None:
         ttk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
 
@@ -678,15 +679,17 @@ class MainApplication(ttk.Frame):
         self.current_image = 0
         self.image_scale = 0.5
         self.images_hdf5 = images_hdf5
+        self.output_hdf5 = output_hdf5
         self.annotate_straw = annotate_straw
+        self.sensor_data = sensor_data
         
-        self.save_file = tk.StringVar()
-        self.file_button = ttk.Combobox(self, text="Select File", textvariable=self.save_file)
-        self.file_button['values'] = ['chute_detection.hdf5', 'sensors.hdf5']
-        if "sensor" in self.images_hdf5:
-            self.file_button.set(self.file_button['values'][1])
-        else:
-            self.file_button.set(self.file_button['values'][0])
+        # self.save_file = tk.StringVar()
+        # self.file_button = ttk.Combobox(self, text="Select File", textvariable=self.save_file)
+        # self.file_button['values'] = ['chute_detection.hdf5', 'sensors.hdf5']
+        # if "sensor" in self.images_hdf5:
+        #     self.file_button.set(self.file_button['values'][1])
+        # else:
+        #     self.file_button.set(self.file_button['values'][0])
         
         self.fullness_box = FullnessBox(self)
         self.obstructed_box = ObstructedBox(self)
@@ -713,7 +716,7 @@ class MainApplication(ttk.Frame):
         self.fullness_box.grid(row=2, column=5, sticky="W", padx=5, pady=5)
         self.obstructed_box.grid(row=3, column=5, sticky="W", padx=5, pady=5)
         self.back_button.grid(row=5, column=0, sticky='NW', padx=5, pady=(0, 5))
-        self.file_button.grid(row=5, column=1, sticky='NW', padx=5, pady=(0, 5))
+        # self.file_button.grid(row=5, column=1, sticky='NW', padx=5, pady=(0, 5))
         self.select_image_button.grid(row=5, column=2, sticky="NW", padx=5, pady=(0, 5))
         self.progress_bar.grid(row=5, column=3, sticky='NW', padx=5, pady=(0, 5))
         self.progress_label.grid(row=5, column=4, sticky="W", padx=5, pady=5)
@@ -830,39 +833,47 @@ class MainApplication(ttk.Frame):
                 print(f"{self.image_box.current_image_group}: No annotations to save.")
                 return
         
-        new_hdf5_file = f'data/interim/{self.file_button.get()}'
+        new_hdf5_file = f'{self.output_hdf5}'
         
-        new_hf = h5py.File(new_hdf5_file, 'a') # Open the HDF5 file in write mode
-        old_hf = h5py.File(self.images_hdf5, 'r') # Open the original HDF5 file in read mode
+        if not new_hdf5_file == self.images_hdf5:
+            new_hf = h5py.File(new_hdf5_file, 'a') # Open the HDF5 file in write mode
+            old_hf = h5py.File(self.images_hdf5, 'r') # Open the original HDF5 file in read mode
+            
+            
+            # Copy the attributes from the original HDF5 file to the new HDF5 file
+            if 'dataset_name' in old_hf.attrs.keys():
+                new_hf.attrs['dataset_name'] = old_hf.attrs['dataset_name']
+            else:
+                new_hf.attrs['dataset_name'] = 'annotated_images'
+            if 'description' in old_hf.attrs.keys():
+                new_hf.attrs['description'] = old_hf.attrs['description']
+            else:
+                new_hf.attrs['description'] = 'Annotated images for chute detection'
+            new_hf.attrs['date_created'] = np.bytes_(str(datetime.datetime.now()))
+            
+            
+            # Create a new group for the current frame
+            frame = f'frame_{self.current_image}'
+            
+            # Overwrite the frame if it already exists
+            if frame in new_hf.keys():
+                del new_hf[frame]
+            
+            group = new_hf.create_group(frame)
+            
+            # Copy the original image and image_diff to the new HDF5 file
+            old_hf.copy(old_hf[frame]['image'], group)
+            old_hf.copy(old_hf[frame]['image_diff'], group) 
+            group.attrs['video ID'] = old_hf[frame].attrs['video ID']
+            
+            # Create a new group for the annotations
+            annotation_group = group.create_group('annotations')    
         
-        # Copy the attributes from the original HDF5 file to the new HDF5 file
-        if 'dataset_name' in old_hf.attrs.keys():
-            new_hf.attrs['dataset_name'] = old_hf.attrs['dataset_name']
         else:
-            new_hf.attrs['dataset_name'] = 'annotated_images'
-        if 'description' in old_hf.attrs.keys():
-            new_hf.attrs['description'] = old_hf.attrs['description']
-        else:
-            new_hf.attrs['description'] = 'Annotated images for chute detection'
-        new_hf.attrs['date_created'] = np.bytes_(str(datetime.datetime.now()))
-        
-        
-        # Create a new group for the current frame
-        frame = f'frame_{self.current_image}'
-        
-        # Overwrite the frame if it already exists
-        if frame in new_hf.keys():
-            del new_hf[frame]
-        
-        group = new_hf.create_group(frame)
-        
-        # Copy the original image and image_diff to the new HDF5 file
-        old_hf.copy(old_hf[frame]['image'], group)
-        old_hf.copy(old_hf[frame]['image_diff'], group) 
-        group.attrs['video ID'] = old_hf[frame].attrs['video ID']
-        
-        # Create a new group for the annotations
-        annotation_group = group.create_group('annotations')
+            new_hf = h5py.File(new_hdf5_file, 'a')
+            frame = f'frame_{self.current_image}'
+            group = new_hf[frame]
+            annotation_group = group['annotations']
         
         def get_box_width_and_height():
             # Get the bounding box coordinates
@@ -878,6 +889,8 @@ class MainApplication(ttk.Frame):
         if img_box.rect != None:
             coords = [img_box.top_right[0]*2, img_box.top_right[1]*2, img_box.bottom_right[0]*2, img_box.bottom_right[1]*2, img_box.bottom_left[0]*2, img_box.bottom_left[1]*2, img_box.top_left[0]*2, img_box.top_left[1]*2]
             if self.annotate_straw:
+                if 'bbox_straw' in annotation_group.keys():
+                    del annotation_group['bbox_straw']
                 annotation_group.create_dataset('bbox_straw', data=coords)
             else:
                 annotation_group.create_dataset('bbox_chute', data=coords)
@@ -911,7 +924,7 @@ class MainApplication(ttk.Frame):
         
         if printing:
             print(f'Saved annotations for frame {frame}')
-            print(new_hf.keys())
+            print(len(new_hf.keys()))
             print(new_hf.attrs.keys())
             print(new_hf[frame].keys())
             print(new_hf[frame].attrs.keys())
@@ -928,8 +941,8 @@ class MainApplication(ttk.Frame):
             if 'obstructed' in new_hf[frame]['annotations'].keys():
                 print('obstructed:')
                 print(new_hf[frame]['annotations']['obstructed'][...])
-
-        old_hf.close()  # close the original hdf5 file
+        if not new_hdf5_file == self.images_hdf5:
+            old_hf.close()  # close the original hdf5 file
         new_hf.close()  # close the hdf5 file
     
     def update_next_button(self) -> None:
@@ -962,13 +975,15 @@ def get_args():
     """
     parser = ArgumentParser(description="AnnotateGUI")
     parser.add_argument('--images', type=str, default='data/raw/images/images.hdf5', help="The path to the extracted frames (images.hdf5).")
+    parser.add_argument('--output', type=str, default='data/interim/annotated_images.hdf5', help="The path to save the annotated images.")
     parser.add_argument('--straw', action='store_true', help="Annotate straw instead of chute.")
+    parser.add_argument('--sensor', action='store_true', help="Annotate sensor data.")
     return parser.parse_args()
 
 if __name__ == '__main__':
     args = get_args()
     root = tk.Tk()
     root.resizable(False, False)
-    MainApplication(root, images_hdf5=args.images, annotate_straw=args.straw).pack(side="top", fill="both", expand=True)
+    MainApplication(root, images_hdf5=args.images, output_hdf5=args.output, annotate_straw=args.straw, sensor_data=args.sensor).pack(side="top", fill="both", expand=True)
     root.mainloop()
     
