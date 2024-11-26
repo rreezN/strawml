@@ -187,6 +187,8 @@ def check_missing_frames(annotated_file: str, original_file: str):
             for group in original:
                 if group not in anno:
                     print(f'{group} is missing in {annotated_file}.')
+    
+    print("Check complete. If no output, then all frames are present.")
 
 def correct_hdf5(data_path: str, file: str, resolution: tuple = (2560, 1440)):
     """
