@@ -6,8 +6,7 @@ import cv2
 from tqdm import tqdm
 from strawml.data.make_dataset import decode_binary_image
 
-def combine_hdf5(data_path: str, file1: str, file2: str, output_file:str, force: bool=True, annotations_to_merge: list=["bbox_chute", "bbox_straw"]
-):
+def combine_hdf5(data_path: str, file1: str, file2: str, output_file:str):
     """
     Combines the contents of two HDF5 files into a new file.
 
@@ -37,81 +36,37 @@ def combine_hdf5(data_path: str, file1: str, file2: str, output_file:str, force:
         raise ValueError('Files must be in HDF5 format.')
 
     with h5py.File(data_path + file1, 'r') as f1:
-        if force:
-            # we find the highets index name in f1 and add to the names of f2
-            # we then add the contents of f2 to f1
-            # we then save f1 to the output file
-            k = list(f1.keys()) 
-            values = [int(key.split(".")[0].split("_")[-1]) for key in k]
-            max_value = max(values)
-            # Change the name of the keys in f2
-            with h5py.File(data_path + file2, 'r') as f2:
-                with h5py.File('temp.hdf5', 'w') as f_new:
-                    for name in list(f2.keys()):
-                        frame_nr = int(name.split(".")[0].split("_")[-1]) + max_value
-                        new_name = f"frame_{frame_nr}"
-                        # Copy the dataset to the new file with the new key
-                        f2.copy(name, f_new, new_name)
-            # Delete the old file and rename the new file
-            with h5py.File("temp.hdf5", 'r') as f2:
-                # Create a new file
-                with h5py.File(data_path + output_file, 'w') as f_combined:
-                    # Copy the contents of the first file
-                    for name in f1:
-                        f1.copy(name, f_combined)
-                    
-                    # Append the contents of the second file
-                    for name in f2:
-                        if name in f_combined:
-                            print(name)
-                            continue
-                        else:
-                            f2.copy(name, f_combined)
-            print('Files combined successfully!')
-            os.remove('temp.hdf5')
-        else:
-            with h5py.File(data_path + file2, 'r') as f2:
-                # Create a new file
-                with h5py.File(data_path + output_file, 'w') as f_combined:
-                    # Copy the contents of the first file
-                    for frame_nr in f1:
-                        # first check if the frame_nr exists in f2
-                        if not frame_nr in f2:
-                            print(f"[!!!] Warning: {frame_nr} not found in {file2}. Can't merge annotations.")
-                            print(" --- Continuing...")
-                            continue
-                        print(f"\nCURRENT: {frame_nr}")
-                        # Copy the frame from f1 to the final output file
-                        f1.copy(frame_nr, f_combined)
-
-                        # Get the annotations of the current frame for each file
-                        f1_annotations = list(f1[frame_nr]['annotations'].keys())
-                        f2_annotations = list(f2[frame_nr]['annotations'].keys())
-                        # Loop through the annotations to merge
-                        for annotation in annotations_to_merge:
-                            # Check if the annotation is missing from f1 
-                            if annotation not in f1_annotations:
-                                # Check if the annotation is present in f2
-                                if annotation in f2_annotations:
-                                    # then copy the annotation from f2 to f1
-                                    print(f"--- Copying {annotation}")
-                                    f_combined[frame_nr]['annotations'].create_dataset(annotation, data=f2[frame_nr]['annotations'][annotation][()])
-                                else: # If the annotation is missing from both files, print a warning
-                                    print(f"[!!!] Warning: {annotation} not found in {file1} and {file2}.")
-                                    print(f" ---  Dropping {frame_nr}")
-                                    del f_combined[frame_nr]
-                            else: # Check if the annotation exists in both files
-                                # If the annotation is empty in f1 but not in f2, copy the annotation from f2 to f1
-                                print(annotation, type(f1[frame_nr]['annotations'][annotation][()]))
-                                if len(f1[frame_nr]['annotations'][annotation][()]) == 0:
-                                    if len(f2[frame_nr]['annotations'][annotation][()]) != 0:
-                                        print(f" --- Copying {annotation} from {file2} to {file1}")
-                                        f_combined[frame_nr]['annotations'][annotation][()] = f2[frame_nr]['annotations'][annotation][()]
-                                    else: # If the annotation is empty in both files, print a warning and drop the frame
-                                        print(f"[!!!] Warning: {annotation} empty in {file1} and {file2}.")
-                                        print(f" ---  Dropping {frame_nr}")
-                                        del f_combined[frame_nr]
-                        print("\n")
+        # we find the highets index name in f1 and add to the names of f2
+        # we then add the contents of f2 to f1
+        # we then save f1 to the output file
+        k = list(f1.keys()) 
+        values = [int(key.split(".")[0].split("_")[-1]) for key in k]
+        max_value = max(values)
+        # Change the name of the keys in f2
+        with h5py.File(data_path + file2, 'r') as f2:
+            with h5py.File('temp.hdf5', 'w') as f_new:
+                for name in list(f2.keys()):
+                    frame_nr = int(name.split(".")[0].split("_")[-1]) + max_value
+                    new_name = f"frame_{frame_nr}"
+                    # Copy the dataset to the new file with the new key
+                    f2.copy(name, f_new, new_name)
+        # Delete the old file and rename the new file
+        with h5py.File("temp.hdf5", 'r') as f2:
+            # Create a new file
+            with h5py.File(data_path + output_file, 'w') as f_combined:
+                # Copy the contents of the first file
+                for name in f1:
+                    f1.copy(name, f_combined)
+                
+                # Append the contents of the second file
+                for name in f2:
+                    if name in f_combined:
+                        print(name)
+                        continue
+                    else:
+                        f2.copy(name, f_combined)
+        print('Files combined successfully!')
+        os.remove('temp.hdf5')
     check_validity(data_path, output_file)
 
 def check_validity(data_path: str, file: str):
@@ -160,6 +115,101 @@ def check_validity(data_path: str, file: str):
                 raise ValueError(f'The "annotations" dataset in the "{group}" group is missing the "fullness" attribute.')
     print(f'{file} is a valid dataset, i.e. no missing values.')
 
+def combine_and_correct_hdf5(data_path: str, 
+                             file1: str, 
+                             file2: str, 
+                             annotations_to_merge: list = ['bbox_chute', 'bbox_straw'], 
+                             desired_resolution: tuple = (2560, 1440)):
+    frame_nrs = []
+    nr_of_resized_images = 0
+    case1, case2, case3, case4 = [], [], [], []
+    with h5py.File(data_path + file1, 'r+') as f1:
+        with h5py.File(data_path + file2, 'r') as f2:
+            go_to_outer_loop = False
+            pbar = tqdm(f1)
+            for frame_nr in pbar:
+                # first check if the frame_nr exists in f2
+                if not frame_nr in f2:
+                    tqdm.write(f"[!!!] Warning: {frame_nr} not found in {file2}. Can't merge annotations.")
+                    tqdm.write(" --- Dropping frame...")
+                    del f1[frame_nr]
+                    continue
+                tqdm.write(f"\nCURRENT: {frame_nr}")
+                frame_nrs.append(int(frame_nr.split(".")[0].split("_")[-1]))
+                ## FIRST: Add annotations from f2 to f1
+                # Get the annotations of the current frame for each file
+                f1_annotations = list(f1[frame_nr]['annotations'].keys())
+                f2_annotations = list(f2[frame_nr]['annotations'].keys())
+                # Loop through the annotations to merge
+                for annotation in annotations_to_merge:
+                    # Check if the annotation is missing from f1 
+                    if annotation not in f1_annotations:
+                        # Check if the annotation is present in f2
+                        if annotation in f2_annotations:
+                            # then copy the annotation from f2 to f1
+                            tqdm.write(f"--- Copying {annotation}")
+                            f1[frame_nr]['annotations'].create_dataset(annotation, data=f2[frame_nr]['annotations'][annotation][()])
+                            case1 += [frame_nr]
+                        else: # If the annotation is missing from both files, print a warning
+                            tqdm.write(f"[!!!] Warning: {annotation} not found in {file1} and {file2}.")
+                            tqdm.write(f" ---  Dropping {frame_nr}")
+                            del f1[frame_nr]
+                            go_to_outer_loop = True
+                            case2 += [frame_nr]
+                            break
+                    else: # Check if the annotation exists in both files
+                        # If the annotation is empty in f1 but not in f2, copy the annotation from f2 to f1
+                        if len(f1[frame_nr]['annotations'][annotation][()]) == 0:
+                            if len(f2[frame_nr]['annotations'][annotation][()]) != 0:
+                                tqdm.write(f" --- Copying {annotation} from {file2} to {file1}")
+                                # drop the old annotation and replace with the new one
+                                del f1[frame_nr]['annotations'][annotation]
+                                f1[frame_nr]['annotations'].create_dataset(annotation, data=f2[frame_nr]['annotations'][annotation][()])
+                                case3 += [frame_nr]
+                            else: # If the annotation is empty in both files, print a warning and drop the frame
+                                tqdm.write(f"[!!!] Warning: {annotation} empty in {file1} and {file2}. Ignore if this is expected e.g. empty chute for straw level, then the straw_bbox is expected to be an empty list.")
+                                case4 += [frame_nr]
+                if go_to_outer_loop:
+                    go_to_outer_loop = False
+                    continue
+                image = decode_binary_image(f1[frame_nr]['image'][()])            
+                if image.shape[0] != desired_resolution[1] or image.shape[1] != desired_resolution[0]:
+                    tqdm.write(f'[!!!] Warning: The resolution of the image "{frame_nr}" is incorrect. Performing resize...')
+                    image_diff = decode_binary_image(f1[frame_nr]['image_diff'][()])
+                    image = cv2.resize(image, desired_resolution)
+                    image_diff = cv2.resize(image_diff, desired_resolution)
+                    # drop the old image and image_diff and replace with the new ones
+                    del f1[frame_nr]['image']
+                    del f1[frame_nr]['image_diff']
+                    f1[frame_nr].create_dataset('image', data=cv2.imencode('.jpg', image)[1])
+                    f1[frame_nr].create_dataset('image_diff', data=cv2.imencode('.jpg', image_diff)[1])
+                    bbox_chute, bbox_straw = fix_bbox(image.shape[:2], desired_resolution, f1[frame_nr]['annotations']['bbox_chute'][()], f1[frame_nr]['annotations']['bbox_straw'][()])
+                    try:
+                        del f1[frame_nr]['annotations']['bbox_chute']
+                        f1[frame_nr]['annotations'].create_dataset('bbox_chute', data=bbox_chute)
+                    except KeyError:
+                        tqdm.write(f'No bbox_chute in {frame_nr}')
+                    if bbox_straw != []:
+                        try:
+                            del f1[frame_nr]['annotations']['bbox_straw']
+                            f1[frame_nr]['annotations'].create_dataset('bbox_straw', data=bbox_straw)
+                        except KeyError:
+                            tqdm.write(f'No bbox_straw in {frame_nr}')
+                    tqdm.write(f'Resized the image "{frame_nr}" to the correct resolution.')
+                    nr_of_resized_images += 1
+                
+    frame_nrs = sorted(frame_nrs)
+    missing_frames = [i for i in range(frame_nrs[0], frame_nrs[-1]+1) if i not in frame_nrs]
+    if missing_frames:
+        print(f'\nMissing frames: {missing_frames}\n')
+    else:
+        print('All frames are present.')
+    print(f'Number of resized images: {nr_of_resized_images}')
+    print(f'Direct copy from f2 to f1 (f1 has no annotation): {len(case1)}')
+    print(f'Missing annotation in both files: {len(case2)}')
+    print(f'Copy to f1 from f2 (f1 has empty value) {len(case3)}')
+    print(f'Both files have empty value for the annotation: {len(case4)}')
+
 def correct_hdf5(data_path: str, file: str, resolution: tuple = (2560, 1440)):
     """
     File that ensures that the HDF5 file is correct, meaning we account for
@@ -177,8 +227,10 @@ def correct_hdf5(data_path: str, file: str, resolution: tuple = (2560, 1440)):
     """
     frame_nrs = []
     nr_of_resized_images = 0
-    with h5py.File(data_path + file, 'r') as f:
-        for group in tqdm(f):
+    with h5py.File(data_path + file, 'r+') as f:
+        pbar = tqdm(f)
+        pbar.set_postfix_str(f'resized images: {nr_of_resized_images}')
+        for group in pbar:
             frame_nrs.append(int(group.split(".")[0].split("_")[-1]))
             image = decode_binary_image(f[group]['image'][()])            
             if image.shape[0] != resolution[1] or image.shape[1] != resolution[0]:
@@ -186,13 +238,28 @@ def correct_hdf5(data_path: str, file: str, resolution: tuple = (2560, 1440)):
                 image_diff = decode_binary_image(f[group]['image_diff'][()])
                 image = cv2.resize(image, resolution)
                 image_diff = cv2.resize(image_diff, resolution)
-                f[group]['image'][()] = image
-                f[group]['image_diff'][()] = image_diff
+                # drop the old image and image_diff and replace with the new ones
+                del f[group]['image']
+                del f[group]['image_diff']
+                f[group].create_dataset('image', data=cv2.imencode('.jpg', image)[1])
+                f[group].create_dataset('image_diff', data=cv2.imencode('.jpg', image_diff)[1])
                 bbox_chute, bbox_straw = fix_bbox(image.shape[:2], resolution, f[group]['annotations']['bbox_chute'][()], f[group]['annotations']['bbox_straw'][()])
-                f[group]['annotations']['bbox_chute'][()] = bbox_chute
-                f[group]['annotations']['bbox_straw'][()] = bbox_straw
+                
+                try:
+                    del f[group]['annotations']['bbox_chute']
+                    f[group]['annotations'].create_dataset('bbox_chute', data=bbox_chute)
+                except KeyError:
+                    print(f'No bbox_chute in {group}')
+                
+                try:
+                    del f[group]['annotations']['bbox_straw']
+                    f[group]['annotations'].create_dataset('bbox_straw', data=bbox_straw)
+                except KeyError:
+                    print(f'No bbox_straw in {group}')
                 print(f'Resized the image "{group}" to the correct resolution.')
                 nr_of_resized_images += 1
+                pbar.set_postfix_str(f'resized images: {nr_of_resized_images}')
+
     frame_nrs = sorted(frame_nrs)
     missing_frames = [i for i in range(frame_nrs[0], frame_nrs[-1]+1) if i not in frame_nrs]
     if missing_frames:
@@ -233,7 +300,7 @@ def get_args() -> Namespace:
     # Create the parser
     parser = ArgumentParser()
     # Add arguments to the parser
-    parser.add_argument('mode', type=str, choices=['combine', 'validate', 'correct'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
+    parser.add_argument('mode', type=str, choices=['combine', 'validate', 'annotate_combine'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
     parser.add_argument('--data_path', type=str, default='D:/HCAI/msc/strawml/data/interim/', help='The folder containing the files.')
     parser.add_argument('--file1', type=str, help='The first file to combine.')
     parser.add_argument('--file2', type=str, help='The second file to combine.')
@@ -252,5 +319,5 @@ if __name__ == '__main__':
         check_validity(data_path, file1)
     elif args.mode == 'combine':
         combine_hdf5(data_path, file1, file2, output_file, force)
-    elif args.mode == 'correct':
-        correct_hdf5(data_path, file1, resolution=(2560, 1440))
+    elif args.mode == 'annotate_combine':
+        combine_and_correct_hdf5(data_path, file1, file2, annotations_to_merge=['bbox_chute', 'bbox_straw'], desired_resolution=(2560, 1440))
