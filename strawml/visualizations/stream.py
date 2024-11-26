@@ -1,5 +1,4 @@
 from __init__ import *
-from calendar import c
 import cv2
 import numpy as np
 from typing import Tuple, Optional, Any
@@ -13,7 +12,7 @@ from torchvision.transforms import v2 as transforms
 import h5py
 import psutil
 from sklearn.linear_model import LinearRegression
-import signal
+import keyboard
 
 from strawml.models.straw_classifier import chute_cropper as cc
 from strawml.models.chute_finder.yolo import ObjectDetect
@@ -940,20 +939,20 @@ class RTSPStream(AprilDetector):
             elapsed_time = end_time - start_time
         return result, elapsed_time
 
-
     def receive_frame(self, cap: cv2.VideoCapture) -> None:
         ret, frame = cap.read()
         self.q.put(frame)
-        while ret and cap.isOpened():
-            if self.should_abort_immediately:
+        while not self.should_abort_immediately:
+            try:
+                ret, frame = cap.read()
+                if ret:
+                    self.q.put(frame)
+            except Exception as e:
+                print("Error in receiving frame", e)
                 break
-            ret, frame = cap.read()
-            self.q.put(frame)
 
     def find_tags(self) -> None:
-        while True:
-            if self.should_abort_immediately:
-                break
+        while not self.should_abort_immediately:
             start = time.time()
             self.lock.acquire()
             try:
@@ -979,9 +978,7 @@ class RTSPStream(AprilDetector):
         frame_count = 0
         start_time = time.time()
 
-        while True:
-            if self.should_abort_immediately:
-                break
+        while not self.should_abort_immediately:
             frame_time = time.time()
             # empty information
             for key in self.information.keys():
@@ -1055,9 +1052,6 @@ class RTSPStream(AprilDetector):
                 else:
                     frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
                     cv2.imshow('Video', frame_drawn) # Display the frame
-                    # if cv2.waitKey(1) & 0xFF == ord('q'):
-                    #     self.close_threads()
-                    #     break
                     continue
                 frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
 
@@ -1094,14 +1088,7 @@ class RTSPStream(AprilDetector):
                 output = None
                 torch.cuda.empty_cache()
 
-            # if cv2.waitKey(1) & 0xFF == ord('q'):
-            #     self.close_threads()
-            #     break
-        self.cap.release()
-        cv2.destroyAllWindows()
-
-
-    def display_frame_from_videocapture(self) -> None:
+    def display_frame_from_videofile(self) -> None:
         """
         Display the frames with the detected AprilTags.
         """
@@ -1224,11 +1211,15 @@ class RTSPStream(AprilDetector):
         cv2.destroyAllWindows()
 
     def close_threads(self):
+        print("END: Threads and resources...")
+        self.lock.acquire()
         self.should_abort_immediately = True
-        # for thread in self.threads:
-        #     thread.join()
+        self.lock.release()
+        for thread in self.threads:
+            thread.join()
         self.cap.release()
         cv2.destroyAllWindows()
+        print("EXIT: Stream has been terminated...")
 
     def __call__(self, frame: Optional[np.ndarray] = None, cap: Optional[cv2.VideoCapture] = None, video_path: str=None) -> None | list:
         """
@@ -1251,10 +1242,12 @@ class RTSPStream(AprilDetector):
         if frame is None:
             if video_path:
                 self.cap = cv2.VideoCapture(video_path)
-                self.display_frame_from_videocapture()
+                print("START: Videofile loaded")
+                self.display_frame_from_videofile()
             else:
                 if cap is not None:
                     self.cap = cap
+                print("START: Threads and resources...")
                 self.thread1 = threading.Thread(target=self.receive_frame, args=(self.cap,))
                 self.thread2 = threading.Thread(target=self.display_frame)
                 self.thread1.start()
@@ -1265,6 +1258,9 @@ class RTSPStream(AprilDetector):
                     self.thread3.start()
                     self.threads.append(self.thread3)
                 while True:
+                    if keyboard.is_pressed('q'):
+                        self.close_threads()
+                        break
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                         self.close_threads()
                         break
