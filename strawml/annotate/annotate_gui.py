@@ -173,14 +173,7 @@ class ImageBox(ttk.Frame):
         
         self.load_previous_bbox()
         # Initialize bounding box parameters
-        if not self.chute_annotated or not self.straw_annotated:
-            self.rect = None
-            self.top_left = None
-            self.top_right = None
-            self.bottom_right = None
-            self.bottom_left = None
-            self.top_left_ring = None
-        else:
+        if self.chute_annotated or self.straw_annotated:
             if self.is_upright_bbox():
                 coords = self.get_upright_bbox()
             else:
@@ -190,6 +183,14 @@ class ImageBox(ttk.Frame):
             self.rect = self.canvas.create_polygon(coords, outline='green', width=2, fill='', tag='bbox')
             self.top_left_ring = self.canvas.create_oval(self.top_left[0], self.top_left[1], self.top_left[0]+5, self.top_left[1]+5, outline="yellow", width=2, fill='', tag='bbox_top_left')
             self.current_rect = self.rect
+        else:
+            self.rect = None
+            self.top_left = None
+            self.top_right = None
+            self.bottom_right = None
+            self.bottom_left = None
+            self.top_left_ring = None
+            
             
         # if not self.straw_annotated:
         #     self.rect2 = None

@@ -94,26 +94,37 @@ def check_validity(data_path: str, file: str):
     with h5py.File(data_path + file, 'r') as f:
         print(f'{file} is a valid HDF5 file.')
 
+    errored = False
     with h5py.File(data_path + file, 'r') as f:
         for group in f:
             # ensure that each group has 'annotations', 'image', and 'image_diff' datasets
             if 'annotations' not in f[group]:
-                raise ValueError(f'{file} is missing the "annotations" dataset in the "{group}" group.')
+                print(f'{file} is missing the "annotations" dataset in the "{group}" group.')
+                errored = True
             if 'image' not in f[group]:
-                raise ValueError(f'{file} is missing the "image" dataset in the "{group}" group.')
+                print(f'{file} is missing the "image" dataset in the "{group}" group.')
+                errored = True
             if 'image_diff' not in f[group]:
-                raise ValueError(f'{file} is missing the "image_diff" dataset in the "{group}" group.')
+                print(f'{file} is missing the "image_diff" dataset in the "{group}" group.')
+                errored = True
             
             # Check if image actually contains an image
             if f[group]['image'].shape[0] == 0:
-                raise ValueError(f'The "image" dataset in the "{group}" group is empty.')
+                print(f'The "image" dataset in the "{group}" group is empty.')
+                errored = True
             if f[group]['image_diff'].shape[0] == 0:
-                raise ValueError(f'The "image_diff" dataset in the "{group}" group is empty.')
+                print(f'The "image_diff" dataset in the "{group}" group is empty.')
+                errored = True
             
             # ensure that 'annotations' has a fullness score 
-            if 'fullness' not in f[group]['annotations']:
-                raise ValueError(f'The "annotations" dataset in the "{group}" group is missing the "fullness" attribute.')
-    print(f'{file} is a valid dataset, i.e. no missing values.')
+            if 'fullness' not in f[group]['annotations'] and not 'straw' in file:
+                print(f'The "annotations" dataset in the "{group}" group is missing the "fullness" attribute.')
+                errored = True
+            
+    if errored:
+        print(f'{file} is not a valid dataset, i.e. missing values.')
+    else:
+        print(f'{file} is a valid dataset, i.e. no missing values.')
 
 def combine_and_correct_hdf5(data_path: str, 
                              file1: str, 
@@ -210,6 +221,25 @@ def combine_and_correct_hdf5(data_path: str,
     print(f'Copy to f1 from f2 (f1 has empty value) {len(case3)}')
     print(f'Both files have empty value for the annotation: {len(case4)}')
 
+
+def check_missing_frames(annotated_file: str, original_file: str):
+    if not os.path.exists(annotated_file):
+        raise ValueError(f'{annotated_file} does not exist.')
+    if not annotated_file.endswith('.hdf5'):
+        raise ValueError('Annotated File must be in HDF5 format.')
+    if not os.path.exists(original_file):
+        raise ValueError(f'{original_file} does not exist.')
+    if not original_file.endswith('.hdf5'):
+        raise ValueError('Original File must be in HDF5 format.')
+
+    with h5py.File(annotated_file, 'r') as anno:
+        with h5py.File(original_file, 'r') as original:
+            for group in original:
+                if group not in anno:
+                    print(f'{group} is missing in {annotated_file}.')
+    
+    print("Check complete. If no output, then all frames are present.")
+
 def correct_hdf5(data_path: str, file: str, resolution: tuple = (2560, 1440)):
     """
     File that ensures that the HDF5 file is correct, meaning we account for
@@ -300,7 +330,7 @@ def get_args() -> Namespace:
     # Create the parser
     parser = ArgumentParser()
     # Add arguments to the parser
-    parser.add_argument('mode', type=str, choices=['combine', 'validate', 'annotate_combine'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
+    parser.add_argument('mode', type=str, choices=['combine', 'validate', 'annotate_combine', 'check_missing'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
     parser.add_argument('--data_path', type=str, default='D:/HCAI/msc/strawml/data/interim/', help='The folder containing the files.')
     parser.add_argument('--file1', type=str, help='The first file to combine.')
     parser.add_argument('--file2', type=str, help='The second file to combine.')
@@ -321,3 +351,5 @@ if __name__ == '__main__':
         combine_hdf5(data_path, file1, file2, output_file, force)
     elif args.mode == 'annotate_combine':
         combine_and_correct_hdf5(data_path, file1, file2, annotations_to_merge=['bbox_chute', 'bbox_straw'], desired_resolution=(2560, 1440))
+    elif args.mode == 'check_missing':
+        check_missing_frames(file1, file2)
