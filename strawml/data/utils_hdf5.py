@@ -5,6 +5,7 @@ from argparse import ArgumentParser, Namespace
 import cv2
 from tqdm import tqdm
 from strawml.data.make_dataset import decode_binary_image
+import copy
 
 def combine_hdf5(data_path: str, file1: str, file2: str, output_file:str):
     """
@@ -133,7 +134,10 @@ def combine_and_correct_hdf5(data_path: str,
                              desired_resolution: tuple = (2560, 1440)):
     frame_nrs = []
     nr_of_resized_images = 0
-    case1, case2, case3, case4 = [], [], [], []
+    case1 = {key: [] for key in annotations_to_merge}
+    case2 = {key: [] for key in annotations_to_merge}
+    case3 = {key: [] for key in annotations_to_merge}
+    case4 = {key: [] for key in annotations_to_merge} 
     with h5py.File(data_path + file1, 'r+') as f1:
         with h5py.File(data_path + file2, 'r') as f2:
             go_to_outer_loop = False
@@ -141,11 +145,11 @@ def combine_and_correct_hdf5(data_path: str,
             for frame_nr in pbar:
                 # first check if the frame_nr exists in f2
                 if not frame_nr in f2:
-                    tqdm.write(f"[!!!] Warning: {frame_nr} not found in {file2}. Can't merge annotations.")
-                    tqdm.write(" --- Dropping frame...")
+                    tqdm.write(f"[!{frame_nr}!] Warning: Frame not found in {file2}. Can't merge annotations.")
+                    tqdm.write("           --- Dropping frame...")
                     del f1[frame_nr]
                     continue
-                tqdm.write(f"\nCURRENT: {frame_nr}")
+                pbar.set_description(f'Processing {frame_nr}')
                 frame_nrs.append(int(frame_nr.split(".")[0].split("_")[-1]))
                 ## FIRST: Add annotations from f2 to f1
                 # Get the annotations of the current frame for each file
@@ -158,34 +162,32 @@ def combine_and_correct_hdf5(data_path: str,
                         # Check if the annotation is present in f2
                         if annotation in f2_annotations:
                             # then copy the annotation from f2 to f1
-                            tqdm.write(f"--- Copying {annotation}")
                             f1[frame_nr]['annotations'].create_dataset(annotation, data=f2[frame_nr]['annotations'][annotation][()])
-                            case1 += [frame_nr]
+                            case1[annotation] += [frame_nr]
                         else: # If the annotation is missing from both files, print a warning
-                            tqdm.write(f"[!!!] Warning: {annotation} not found in {file1} and {file2}.")
-                            tqdm.write(f" ---  Dropping {frame_nr}")
+                            tqdm.write(f"[!{frame_nr}!] Warning: {annotation} not found in {file1} and {file2}.")
+                            tqdm.write(f"           --- Dropping {frame_nr}")
                             del f1[frame_nr]
                             go_to_outer_loop = True
-                            case2 += [frame_nr]
+                            case2[annotation] += [frame_nr]
                             break
                     else: # Check if the annotation exists in both files
                         # If the annotation is empty in f1 but not in f2, copy the annotation from f2 to f1
                         if len(f1[frame_nr]['annotations'][annotation][()]) == 0:
                             if len(f2[frame_nr]['annotations'][annotation][()]) != 0:
-                                tqdm.write(f" --- Copying {annotation} from {file2} to {file1}")
                                 # drop the old annotation and replace with the new one
                                 del f1[frame_nr]['annotations'][annotation]
                                 f1[frame_nr]['annotations'].create_dataset(annotation, data=f2[frame_nr]['annotations'][annotation][()])
-                                case3 += [frame_nr]
+                                case3[annotation] += [frame_nr]
                             else: # If the annotation is empty in both files, print a warning and drop the frame
-                                tqdm.write(f"[!!!] Warning: {annotation} empty in {file1} and {file2}. Ignore if this is expected e.g. empty chute for straw level, then the straw_bbox is expected to be an empty list.")
-                                case4 += [frame_nr]
+                                tqdm.write(f"[!{frame_nr}!] Warning: {annotation} empty in {file1} and {file2}. Ignore if this is expected e.g. empty chute for straw level, then the straw_bbox is expected to be an empty list.")
+                                case4[annotation] += [frame_nr]
                 if go_to_outer_loop:
                     go_to_outer_loop = False
                     continue
                 image = decode_binary_image(f1[frame_nr]['image'][()])            
                 if image.shape[0] != desired_resolution[1] or image.shape[1] != desired_resolution[0]:
-                    tqdm.write(f'[!!!] Warning: The resolution of the image "{frame_nr}" is incorrect. Performing resize...')
+                    tqdm.write(f'[!{frame_nr}!] Warning: The resolution of the image is incorrect. Performing resize...')
                     image_diff = decode_binary_image(f1[frame_nr]['image_diff'][()])
                     image = cv2.resize(image, desired_resolution)
                     image_diff = cv2.resize(image_diff, desired_resolution)
@@ -199,14 +201,14 @@ def combine_and_correct_hdf5(data_path: str,
                         del f1[frame_nr]['annotations']['bbox_chute']
                         f1[frame_nr]['annotations'].create_dataset('bbox_chute', data=bbox_chute)
                     except KeyError:
-                        tqdm.write(f'No bbox_chute in {frame_nr}')
+                        tqdm.write(f'[!{frame_nr}!] Warning: No bbox_chute in {frame_nr}')
                     if bbox_straw != []:
                         try:
                             del f1[frame_nr]['annotations']['bbox_straw']
                             f1[frame_nr]['annotations'].create_dataset('bbox_straw', data=bbox_straw)
                         except KeyError:
-                            tqdm.write(f'No bbox_straw in {frame_nr}')
-                    tqdm.write(f'Resized the image "{frame_nr}" to the correct resolution.')
+                            tqdm.write(f'[!{frame_nr}!] Warning: No bbox_straw in {frame_nr}')
+                    tqdm.write(f'           --- Image resized')
                     nr_of_resized_images += 1
                 
     frame_nrs = sorted(frame_nrs)
@@ -215,11 +217,19 @@ def combine_and_correct_hdf5(data_path: str,
         print(f'\nMissing frames: {missing_frames}\n')
     else:
         print('All frames are present.')
-    print(f'Number of resized images: {nr_of_resized_images}')
+    print(f'Number of resized images:                         {nr_of_resized_images}')
     print(f'Direct copy from f2 to f1 (f1 has no annotation): {len(case1)}')
-    print(f'Missing annotation in both files: {len(case2)}')
-    print(f'Copy to f1 from f2 (f1 has empty value) {len(case3)}')
-    print(f'Both files have empty value for the annotation: {len(case4)}')
+    for key in case1:
+        print(f'--- {key}: {len(case1[key])}')    
+    print(f'Missing annotation in both files:                 {sum([len(case2[key]) for key in case2])}')
+    for key in case2:
+        print(f'--- {key}: {len(case2[key])}')    
+    print(f'Copy to f1 from f2 (f1 has empty value):          {sum([len(case3[key]) for key in case3])}')
+    for key in case3:
+        print(f'--- {key}: {len(case3[key])}')    
+    print(f'Both files have empty value for the annotation:   {sum([len(case4[key]) for key in case4])}')
+    for key in case4:
+        print(f'--- {key}: {len(case4[key])}')    
 
 
 def check_missing_frames(annotated_file: str, original_file: str):
