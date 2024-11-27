@@ -628,7 +628,7 @@ def get_args():
     parser.add_argument('--save_path', type=str, default='models/', help='Path to save the model to')
     parser.add_argument('--data_path', type=str, default='data/interim/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
-    parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
+    parser.add_argument('--inc_edges', type=bool, default=False, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--no_wandb', action='store_true', help='Do not use Weights and Biases for logging')
     parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])

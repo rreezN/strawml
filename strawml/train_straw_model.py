@@ -477,7 +477,9 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'optim': args.optim,
             'weight_decay': args.weight_decay,
             'momentum': args.momentum,
-            'pretrained': args.pretrained
+            'pretrained': args.pretrained,
+            'id': args.id,
+            'greyscale': args.greyscale,
         })
 
 
@@ -491,7 +493,7 @@ def get_args():
     parser.add_argument('--save_path', type=str, default='models/', help='Path to save the model to')
     parser.add_argument('--data_path', type=str, default='data/interim/chute_detection.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
-    parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
+    parser.add_argument('--inc_edges', type=bool, default=False, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--no_wandb', action='store_true', help='Do not use Weights and Biases for logging')
     parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
@@ -507,6 +509,7 @@ def get_args():
     parser.add_argument('--momentum', type=float, default=0.0, help='Momentum for the optimizer')
     parser.add_argument('--pretrained', action='store_true', help='Use a pretrained model')
     parser.add_argument('--id', type=str, default='', help='ID for the Weights and Biases run')
+    parser.add_argument('--greyscale', action='store_true', help='Use greyscale images')
     parser.add_argument('--hpc', action='store_true', help='Run on the HPC')
     return parser.parse_args()
 
@@ -548,7 +551,7 @@ if __name__ == '__main__':
     
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
-                         num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=0.5)
+                         num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=0.5, greyscale=args.greyscale)
     # test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
     #                     random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=0.0)
@@ -564,7 +567,7 @@ if __name__ == '__main__':
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont)
     sensor_set = dl.Chute(data_path=sensor_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                           random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=1.0,
-                          augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics)
+                          augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics, greyscale=args.greyscale)
     
     
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
