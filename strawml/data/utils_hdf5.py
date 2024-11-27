@@ -3,6 +3,7 @@ import h5py
 import os
 from argparse import ArgumentParser, Namespace
 import cv2
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 from strawml.data.make_dataset import decode_binary_image
 import copy
@@ -344,12 +345,46 @@ def fix_bbox(old_resolution: tuple, new_resolution: tuple, bbox_chute: list, bbo
     
     return bbox_chute, bbox_straw
 
+def plot_annotations(frame: int, data_path: str, file: str):
+    """Open the image from the hdf5 file and plot the annotations on the image.
+
+    Args:
+        frame (int): the frame idx to plot
+        data_path (str): the path to the directory containing the hdf5 file
+        file (str): the path to the file
+    """
+    with h5py.File(data_path + file, 'r') as f:
+        group = f'frame_{frame}'
+        image = decode_binary_image(f[group]['image'][()])            
+        bbox_straw = f[group]['annotations']['bbox_straw'][()]
+        bbox_chute = f[group]['annotations']['bbox_chute'][()]
+        fig, ax = plt.subplots()
+        ax.imshow(image)
+        print(f'bbox_straw: {bbox_straw}')
+        print(f'bbox_chute: {bbox_chute}')
+        if len(bbox_straw) == 0:
+            print(f'No bbox_straw in {group}')
+        else:
+            x_coords = bbox_straw[::2] + [bbox_straw[0]]
+            y_coords = bbox_straw[1::2] + [bbox_straw[1]]
+            ax.plot(x_coords, y_coords, 'r')
+            
+        if len(bbox_chute) == 0:
+            print(f'No bbox_chute in {group}')
+        else:
+            x_coords = bbox_chute[::2] + [bbox_chute[0]]
+            y_coords = bbox_chute[1::2] + [bbox_chute[1]]
+            ax.plot(x_coords, y_coords, 'g')
+        title = f'Frame {frame}' if f[group]['annotations']['fullness'][()] == -1 else f'Frame {frame} - Fullness: {f[group]["annotations"]["fullness"][()]}'
+        plt.title(title)
+        plt.show()
+    
 
 def get_args() -> Namespace:
     # Create the parser
     parser = ArgumentParser()
     # Add arguments to the parser
-    parser.add_argument('mode', type=str, choices=['combine', 'validate', 'annotate_combine', 'check_missing'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
+    parser.add_argument('mode', type=str, choices=['combine', 'validate', 'annotate_combine', 'check_missing', 'plot'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
     parser.add_argument('--data_path', type=str, default='D:/HCAI/msc/strawml/data/interim/', help='The folder containing the files.')
     parser.add_argument('--file1', type=str, help='The first file to combine.')
     parser.add_argument('--file2', type=str, help='The second file to combine.')
@@ -372,3 +407,5 @@ if __name__ == '__main__':
         combine_and_correct_hdf5(data_path, file1, file2, annotations_to_merge=['bbox_chute', 'bbox_straw'], desired_resolution=(2560, 1440))
     elif args.mode == 'check_missing':
         check_missing_frames(file1, file2)
+    elif args.mode == 'plot':
+        plot_annotations(10100, data_path, file1)
