@@ -244,10 +244,19 @@ def check_missing_frames(annotated_file: str, original_file: str):
 
     with h5py.File(annotated_file, 'r') as anno:
         with h5py.File(original_file, 'r') as original:
+            print("Checking for missing frames...")
             for group in original:
                 if group not in anno:
                     print(f'{group} is missing in {annotated_file}.')
-    
+                    
+        print("Checking for missing annotations...")
+        for group in anno:
+            if not 'annotations' in anno[group].keys():
+                print(f'{group} is missing the "annotations" dataset.')
+            else:
+                if not 'bbox_straw' in anno[group]['annotations'].keys():
+                    print(f'{group} is missing the "bbox_straw" dataset.')
+        
     print("Check complete. If no output, then all frames are present.")
 
 def correct_hdf5(data_path: str, file: str, resolution: tuple = (2560, 1440)):

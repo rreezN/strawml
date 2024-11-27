@@ -113,11 +113,14 @@ class ImageBox(ttk.Frame):
                     self.bottom_right = annotated[image_group]['annotations']['bbox_chute'][...][2]/2, annotated[image_group]['annotations']['bbox_chute'][...][3]/2
                     self.bottom_left = annotated[image_group]['annotations']['bbox_chute'][...][4]/2, annotated[image_group]['annotations']['bbox_chute'][...][5]/2
                 elif 'bbox_straw' in annotated[image_group]['annotations'].keys() and self.parent.annotate_straw:
-                    self.straw_annotated = True
-                    self.top_left = annotated[image_group]['annotations']['bbox_straw'][...][6]/2, annotated[image_group]['annotations']['bbox_straw'][...][7]/2
-                    self.top_right = annotated[image_group]['annotations']['bbox_straw'][...][0]/2, annotated[image_group]['annotations']['bbox_straw'][...][1]/2
-                    self.bottom_right = annotated[image_group]['annotations']['bbox_straw'][...][2]/2, annotated[image_group]['annotations']['bbox_straw'][...][3]/2
-                    self.bottom_left = annotated[image_group]['annotations']['bbox_straw'][...][4]/2, annotated[image_group]['annotations']['bbox_straw'][...][5]/2
+                    if len(annotated[image_group]['annotations']['bbox_straw'][...]) == 0:
+                        self.straw_annotated = False
+                    else:
+                        self.straw_annotated = True
+                        self.top_left = annotated[image_group]['annotations']['bbox_straw'][...][6]/2, annotated[image_group]['annotations']['bbox_straw'][...][7]/2
+                        self.top_right = annotated[image_group]['annotations']['bbox_straw'][...][0]/2, annotated[image_group]['annotations']['bbox_straw'][...][1]/2
+                        self.bottom_right = annotated[image_group]['annotations']['bbox_straw'][...][2]/2, annotated[image_group]['annotations']['bbox_straw'][...][3]/2
+                        self.bottom_left = annotated[image_group]['annotations']['bbox_straw'][...][4]/2, annotated[image_group]['annotations']['bbox_straw'][...][5]/2
                 
                 # load fullness and obstructed
                 if 'fullness' in annotated[image_group]['annotations'].keys():
@@ -905,6 +908,10 @@ class MainApplication(ttk.Frame):
                 print(f"WARNING: Saving a bounding box with width or height less than 25 pixels {frame}.")
         elif not self.annotate_straw:
             print("No chute bounding box to save.")
+        else:
+            if 'bbox_straw' in annotation_group.keys():
+                del annotation_group['bbox_straw']
+            annotation_group.create_dataset('bbox_straw', data=[])
 
         # if img_box.start_x2 != None:
         #     coords = [img_box.curX2*2, img_box.start_y2*2, img_box.curX2*2, img_box.curY2*2, img_box.start_x2*2, img_box.curY2*2, img_box.start_x2*2, img_box.start_y2*2]
