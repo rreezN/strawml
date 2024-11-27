@@ -4,6 +4,7 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import time
 import timeit
 import timm
 import wandb
@@ -117,17 +118,18 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 epoch_accuracies.append(accuracy.item())
         
                 train_iterator.set_postfix(loss=loss.item(), accuracy=sum(epoch_accuracies)/len(epoch_accuracies))
-            
-            if not args.no_wandb:
-                # Save an example every 10% of the length of the training data
-                training_info = {'data_type': 'train', 'current_iteration': current_iteration, 'epoch': epoch+1}
-                divisor = int(len(train_loader) * plot_examples_every)
-                divisor = 1 if divisor == 0 else divisor
-                if current_iteration % divisor == 0:
-                    if args.cont:
-                        plot_example(training_info, frame_data, output, fullness)
-                    else:
-                        plot_example(training_info, frame_data, predicted, target_fullness)
+           
+            # TODO: For some reason this completely fucks up the wandb logging (something to do with steps out of order) 
+            # if not args.no_wandb:
+            #     # Save an example every 10% of the length of the training data
+            #     training_info = {'data_type': 'train', 'current_iteration': current_iteration, 'epoch': epoch+1}
+            #     divisor = int(len(train_loader) * plot_examples_every)
+            #     divisor = 1 if divisor == 0 else divisor
+            #     if current_iteration % divisor == 0:
+            #         if args.cont:
+            #             plot_example(training_info, frame_data, output, fullness)
+            #         else:
+            #             plot_example(training_info, frame_data, predicted, target_fullness)
 
         if args.cont:
             print(f'Epoch: {epoch+1}, Training Loss: {sum(epoch_losses)/len(epoch_losses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')                
@@ -244,8 +246,10 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                     print(f'New best accuracy: {accuracy:.2f}%')
                     best_accuracy = accuracy
                     id = f'_{args.id}' if args.id != '' else ''
+                    model_folder = f'{args.model}_classifier/'
                     model_name = args.model + f'_classifier{id}'
-                    model_save_path = args.save_path + model_name + '_best.pth'
+                    model_save_path = args.save_path + model_folder + model_name + '_best.pth'
+                    os.makedirs(f'{args.save_path}{model_folder}', exist_ok=True)
                     torch.save(model.state_dict(), model_save_path)
                     if not args.no_wandb:
                         wandb.log(step=epoch+1, data={'best_val_accuracy': best_accuracy})
@@ -258,8 +262,6 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                               'epoch': epoch+1,
                               'inference_time': average_time,})
             
-    
-    if not args.no_wandb: wandb.finish()
 
 def predict_sensor_data(args, model: torch.nn.Module, sensor_loader: DataLoader, feature_regressor: torch.nn.Module = None):
     """Predict the output of a model on a dataset.
@@ -294,17 +296,17 @@ def predict_sensor_data(args, model: torch.nn.Module, sensor_loader: DataLoader,
                 fullness = fullness.cuda()
 
             # Forward pass
-                if args.cont and args.model != 'cnn':
-                    features = model.forward_features(frame_data)
-                    output = features
-                else:
-                    output = model(frame_data)
-                # print("features shape:", features.shape)
-                # print("output shape (post squeeze, before feature_regressor):", output.shape)
-                if feature_regressor is not None:
-                    output = output.flatten(1)
-                    output = feature_regressor(output)
-                    # output = torch.clamp(output, 0, 1)
+            if args.cont and args.model != 'cnn':
+                features = model.forward_features(frame_data)
+                output = features
+            else:
+                output = model(frame_data)
+            # print("features shape:", features.shape)
+            # print("output shape (post squeeze, before feature_regressor):", output.shape)
+            if feature_regressor is not None:
+                output = output.flatten(1)
+                output = feature_regressor(output)
+                # output = torch.clamp(output, 0, 1)
                 
             loss = loss_fn(output, fullness)
             losses = np.append(losses, loss.item())
@@ -505,10 +507,29 @@ def get_args():
     parser.add_argument('--momentum', type=float, default=0.0, help='Momentum for the optimizer')
     parser.add_argument('--pretrained', action='store_true', help='Use a pretrained model')
     parser.add_argument('--id', type=str, default='', help='ID for the Weights and Biases run')
+    parser.add_argument('--hpc', action='store_true', help='Run on the HPC')
     return parser.parse_args()
 
 if __name__ == '__main__':
     args = get_args()
+    
+    # Is this how we want to do it?
+    if args.hpc:
+        path_to_data = f'/work3/{os.getlogin()}/data/'
+        if not os.path.exists(path_to_data):
+            raise FileNotFoundError(f'Path to data not found: {path_to_data}')
+        os.makedirs(f'{path_to_data}', exist_ok=True)
+        args.data_path = path_to_data + args.data_path
+        if not os.path.exists(args.data_path):
+            raise FileNotFoundError(f'Data path not found: {args.data_path}')
+        args.save_path = f'/work3/{os.getlogin()}/models/'
+        os.makedirs(args.save_path, exist_ok=True)
+        if not os.path.exists(args.save_path):
+            raise FileNotFoundError(f'Save path not found: {args.save_path}')
+        sensor_path = f'/work3/{os.getlogin()}/data/sensors.hdf5'
+        if not os.path.exists(sensor_path):
+            raise FileNotFoundError(f'Sensor data path not found: {sensor_path}')
+        
     
     args.image_size = tuple(args.image_size)
     print(f'Using image size: {args.image_size}')
@@ -528,9 +549,9 @@ if __name__ == '__main__':
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
                          num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=0.5)
-    test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
-                        random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
-                        num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=0.0)
+    # test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
+    #                     random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
+    #                     num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=0.0)
     
     mean, std = train_set.train_mean, train_set.train_std
     if args.inc_heatmap:
@@ -541,13 +562,13 @@ if __name__ == '__main__':
     # test_set = dl.Chute(data_path=args.data_path, data_type='val', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
     #                     random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont)
-    sensor_set = dl.Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
-                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=args.data_subsample,
+    sensor_set = dl.Chute(data_path=sensor_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
+                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=1.0,
                           augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics)
     
     
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
-    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False)
+    # test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False)
     sensor_loader = DataLoader(sensor_set, batch_size=args.batch_size, shuffle=False)
     
     input_channels = 3
@@ -583,17 +604,17 @@ if __name__ == '__main__':
     else:
         feature_regressor = None
     
-    train_model(args, model, train_loader, test_loader, feature_regressor)
+    train_model(args, model, train_loader, sensor_loader, feature_regressor)
     
     # Load best model
     feature_regressor = None
+    id = f'_{args.id}' if args.id != '' else ''
     if args.cont and args.model != 'cnn':
         in_feats = torch.randn(1, input_channels, image_size[0], image_size[1])
         in_feats = in_feats.cuda() if torch.cuda.is_available() else in_feats
         features = model.forward_features(in_feats)
         feature_size = torch.flatten(features, 1).shape[1]
         feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
-        id = f'_{args.id}' if args.id != '' else ''
         model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor{id}_best.pth', weights_only=True))
         feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor{id}_best.pth', weights_only=True))
         
@@ -606,5 +627,24 @@ if __name__ == '__main__':
         plot_cont_predictions(outputs, fullnesses)
     else:
         plot_confusion_matrix(outputs, fullnesses, num_classes=args.num_classes_straw)
+        
+    if not args.no_wandb:
+        wandb.finish()
     
+    # Delete the model after 60 seconds
+    print(f'Deleting {args.model} models with id {id} in 60 seconds...')
+    time.sleep(60)
+    
+    if args.cont and args.model != 'cnn':
+        os.remove(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor{id}_best.pth')
+        print(f'Deleted {args.model}_feature_extractor{id}_best.pth')
+        os.remove(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor{id}_best.pth')
+        print(f'Deleted {args.model}_regressor{id}_best.pth')
+    else:
+        if args.cont:
+            os.remove(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor{id}_best.pth')
+            print(f'Deleted {args.model}_regressor{id}_best.pth')
+        else:
+            os.remove(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier{id}_best.pth')
+            print(f'Deleted {args.model}_classifier{id}_best.pth')
     

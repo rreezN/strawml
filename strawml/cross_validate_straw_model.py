@@ -383,17 +383,17 @@ def predict_sensor_data(args, model: torch.nn.Module, sensor_loader: DataLoader,
                 fullness = fullness.cuda()
 
             # Forward pass
-                if args.cont and args.model != 'cnn':
-                    features = model.forward_features(frame_data)
-                    output = features
-                else:
-                    output = model(frame_data)
-                # print("features shape:", features.shape)
-                # print("output shape (post squeeze, before feature_regressor):", output.shape)
-                if feature_regressor is not None:
-                    output = output.flatten(1)
-                    output = feature_regressor(output)
-                    # output = torch.clamp(output, 0, 1)
+            if args.cont and args.model != 'cnn':
+                features = model.forward_features(frame_data)
+                output = features
+            else:
+                output = model(frame_data)
+            # print("features shape:", features.shape)
+            # print("output shape (post squeeze, before feature_regressor):", output.shape)
+            if feature_regressor is not None:
+                output = output.flatten(1)
+                output = feature_regressor(output)
+                # output = torch.clamp(output, 0, 1)
                 
             loss = loss_fn(output, fullness)
             losses = np.append(losses, loss.item())
@@ -654,17 +654,20 @@ if __name__ == '__main__':
     
     # Is this how we want to do it?
     if args.hpc:
-        path_to_data = f'/work3/{os.getlogin()}/'
+        path_to_data = f'/work3/{os.getlogin()}/data/'
         if not os.path.exists(path_to_data):
             raise FileNotFoundError(f'Path to data not found: {path_to_data}')
-        os.makedirs(f'{path_to_data}/data', exist_ok=True)
+        os.makedirs(f'{path_to_data}', exist_ok=True)
         args.data_path = path_to_data + args.data_path
         if not os.path.exists(args.data_path):
             raise FileNotFoundError(f'Data path not found: {args.data_path}')
-        os.makedirs(f'{path_to_data}/models', exist_ok=True)
-        args.save_path = path_to_data + args.save_path
+        args.save_path = f'/work3/{os.getlogin()}/models/'
+        os.makedirs(args.save_path, exist_ok=True)
         if not os.path.exists(args.save_path):
             raise FileNotFoundError(f'Save path not found: {args.save_path}')
+        sensor_path = f'/work3/{os.getlogin()}/data/sensors.hdf5'
+        if not os.path.exists(sensor_path):
+            raise FileNotFoundError(f'Sensor data path not found: {sensor_path}')
     
     if torch.cuda.is_available(): print('Using GPU')
     
@@ -699,7 +702,7 @@ if __name__ == '__main__':
     #                     random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont)
     sensor_set = dl.Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
-                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=args.data_subsample,
+                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=0.01,
                           augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics, greyscale=args.greyscale)
     
     fold_train_losses = []
@@ -773,11 +776,10 @@ if __name__ == '__main__':
         fold_val_accuracies.append(val_accuracy)
         best_accuracies.append(best_accuracy)
         
+        id = f'_{args.id}' if args.id != '' else ''
         if args.cont and args.model != 'cnn':
-            id = f'_{args.id}' if args.id != '' else ''
             model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor{id}_best.pth', weights_only=True))
             feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor{id}_best.pth', weights_only=True))
-            
         else:
             feature_regressor = None
             model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier{id}_best.pth', weights_only=True))
@@ -790,7 +792,7 @@ if __name__ == '__main__':
         if sensor_accuracy > BEST_SENSOR_ACCURACY:
             BEST_SENSOR_ACCURACY = sensor_accuracy
             BEST_SENSOR_FOLD = fold + 1
-            model_folder = f'{args.save_path}/{args.model}' + '_regressor/' if args.cont else '_classifier/'
+            model_folder = f'{args.save_path}/{args.model}' + ('_regressor/' if args.cont else '_classifier/')
             id = f'_{args.id}' if args.id != '' else ''
             model_suffix = 'feature_extractor' if args.cont else 'classifier'
             model_save_path = f'{model_folder}{args.model}_{model_suffix}{id}'
@@ -834,7 +836,7 @@ if __name__ == '__main__':
     #     feature_regressor = None
     #     model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_classifier/{args.model}_classifier{id}_overall_best.pth', weights_only=True))
     
-    model_folder = f'{args.save_path}/{args.model}' + '_regressor/' if args.cont else '_classifier/'
+    model_folder = f'{args.save_path}/{args.model}' + ('_regressor/' if args.cont else '_classifier/')
     id = f'_{args.id}' if args.id != '' else ''
     model_suffix = 'feature_extractor' if args.cont else 'classifier'
     model_save_path = f'{model_folder}{args.model}_{model_suffix}{id}'
