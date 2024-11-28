@@ -289,8 +289,9 @@ def image_extractor(video_folder: str,
                                              fbf=fbf)
 
 def hdf5_to_yolo(hdf5_file: str, 
-                 with_augmentation: bool = True, 
-                 sizes: list[float] = [0.8,0.1,0.1]) -> None:
+                 sizes: list[float] = [0.8,0.1,0.1],
+                 annotation_types = ['bbox_chute', 'bbox_straw']
+) -> None:
     """
     Accomodates the conversion of the frames in the HDF5 file to the YOLO format. The function
     loops through the frames in the HDF5 file and saves the images and labels in the YOLO format.
@@ -303,7 +304,6 @@ def hdf5_to_yolo(hdf5_file: str,
         # label file should be in the format: frame_{frame_nr}.txt
         # The label should contain the following information with the following syntax,
             class_index x1 y1 x2 y2 x3 y3 x4 y4
-
     ...
 
     Parameters
@@ -321,25 +321,23 @@ def hdf5_to_yolo(hdf5_file: str,
     # First ensure the file exists
     if not os.path.exists(hdf5_file):
         raise FileNotFoundError(f"The file {hdf5_file} does not exist.")
-    
-    save_path = 'data/processed/yolo_format'
+
+    with h5py.File(hdf5_file, 'r') as hf:
+        frame_names = list(np.arange(hf.__len__()))
+        # check if 'bbox_straw' is in the annotations
+        hf_annotations = list(hf['frame_0']['annotations'].keys())
+        if not set(annotation_types).issubset(hf_annotations):
+            raise ValueError(f"The HDF5 file does not contain the annotation types {annotation_types}.")
+        
+    save_path = 'data/processed/yolo_format_' + "_".join(annotation_types)
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     else:
         # remove the folder and create a new one
         shutil.rmtree(save_path)
         os.makedirs(save_path)
-    
-    # Load json file
-    if with_augmentation:
-        with open('data/processed/augmented/frame_to_augment.json', 'r') as f:
-            frame_to_augment_frame = json.load(f)
-        frame_names = list(frame_to_augment_frame.keys())
-    else:
-        with h5py.File(hdf5_file, 'r') as hf:
-            frame_names = list(np.arange(hf.__len__()))
-    # split frames in train, test and validation with 70%, 20% and 10% respectively
-    # random state = 42
+
+    # split frames in train, test and validation with 80%, 10% and 10% respectively
     train_size, test_size, val_size = sizes
     train_indices, test_indices, _, _ = train_test_split(frame_names, frame_names, test_size=test_size+val_size, random_state=42)
     test_indices, val_indices, _, _ = train_test_split(test_indices, test_indices, test_size=test_size/(test_size+val_size), random_state=42)
@@ -349,34 +347,86 @@ def hdf5_to_yolo(hdf5_file: str,
     with h5py.File(hdf5_file, 'r') as hf:        
         # create a progress bar
         pbar = tqdm(total = len(frame_names), desc="Converting HDF5 to YOLO format", position=0)
-        
         # loop through the datasets and save the images and labels
         for key, val in index_dict.items():
-            pbar.set_description(f"Converting HDF5 to YOLO format: {key} set")
+            save_path = 'data/processed/yolo_format_' + "_".join(annotation_types)
+            pbar.set_postfix_str(f"Saving to ..._{'_'.join(annotation_types)}/{key}")
             if not os.path.exists(f'{save_path}/{key}'):
                 os.makedirs(f'{save_path}/{key}')
             for frame in val:
-                if not with_augmentation:
-                    if hf[frame].attrs['augmented'] != "None":
-                        continue
-                fs_ = [frame] + [f"frame_{i}" for i in frame_to_augment_frame[frame]]
-                for fs in fs_:
-                    image_bytes = hf[fs]['image'][...]
-                    # decode the binary image
-                    image = decode_binary_image(image_bytes)
-                    # Save the image to a file
-                    cv2.imwrite(f'{save_path}/{key}/{fs}.jpg', image)
+                labels = []
+                image_bytes = hf[f"frame_{frame}"]['image'][...]
+                # decode the binary image
+                image = decode_binary_image(image_bytes)
+                ############################
+                # NOTE CASE 1: bbox_straw only, use the bbox_chute to crop the image and correct the bbox_straw coordinates
+                ############################
+                if annotation_types == ['bbox_straw']:
+                    desired_res = (180, 1350)
+                    # crop the image to the chute area
+                    x1, y1, x2, y2, x3, y3, x4, y4 = hf[f"frame_{frame}"]['annotations']["bbox_chute"][...]
+                    pts_src = np.array([[x4, y4], [x1, y1], [x3, y3], [x2, y2]], dtype='float32')
 
-                    # Now we load the bounding boxes
-                    bbox = hf[fs]['annotations']['bbox_chute'][...]
-                    # normalize the bounding box coordinates to values between 0 and 1 
-                    for i in range(len(bbox)):
-                        bbox[i] /= image.shape[1] if i % 2 == 0 else image.shape[0]
-                    # add the class index to the label
-                    label = np.insert(bbox, 0, 0)
+                    # Ensure the output is a rectangular
+                    width = int(max(abs(x2 - x1), abs(x4 - x3)))  # Largest horizontal difference
+                    height = int(max(abs(y3 - y1), abs(y4 - y2))) # Largest vertical difference
+                    # Define the destination points for the square output
+                    pts_dst = np.array([[0, 0], 
+                                        [width - 1, 0], 
+                                        [0, height - 1], 
+                                        [width - 1, height - 1]]
+                                        , dtype='float32')
+                    # Compute the perspective transformation matrix
+                    M = cv2.getPerspectiveTransform(pts_src, pts_dst)
+                    # Apply the perspective warp to create a square cutout
+                    cutout = cv2.warpPerspective(image, M, (width, height))
+                    # Resize the cutout to the desired resolution
+                    cutout_resized = cv2.resize(cutout, desired_res)
+                    # Save the resized cutout
+                    cv2.imwrite(f'{save_path}/{key}/{frame}.jpg', cutout_resized)
+
+                    # Now we load the respective bounding boxes
+                    straw_bbox = hf[f"frame_{frame}"]['annotations']['bbox_straw'][...]
+                    # If the bbox_straw is empty, meaning the chute is empty, we dont save a *.txt file
+                    if len(straw_bbox) == 0:
+                        # create empty txt file
+                        with open( f'{save_path}/{key}/{frame}.txt', 'w') as f:
+                            pass
+                        pbar.update(1)
+                        continue
+                    straw_bbox = straw_bbox.reshape(-1, 1, 2).astype('float32')
+                    straw_bbox = cv2.perspectiveTransform(straw_bbox, M).flatten()
+                    # Scale the straw_bbox to match the resized cutout
+                    scale_x = desired_res[0] / width
+                    scale_y = desired_res[1] / height
+                    straw_bbox[::2] *= scale_x
+                    straw_bbox[1::2] *= scale_y
+                    for i in range(len(straw_bbox)):
+                        straw_bbox[i] /= cutout_resized.shape[1] if i % 2 == 0 else cutout_resized.shape[0]
+                    label = np.insert(straw_bbox, 0, 0)
                     # Save the label to a file
-                    with open( f'{save_path}/{key}/{fs}.txt', 'w') as f:
-                        f.write(' '.join(map(str, label)))
+                    with open( f'{save_path}/{key}/{frame}.txt', 'w') as f:
+                        f.write(' '.join(map(str, label)) + "\n")
+                ############################
+                # NOTE CASE 2: Either bbox_chute only or both labels are saved
+                ############################
+                else:
+                    # Save the image to a file
+                    cv2.imwrite(f'{save_path}/{key}/{frame}.jpg', image)
+                    for i, annotation_type in enumerate(annotation_types):
+                        # Now we load the respective bounding boxes
+                        bbox = hf[f"frame_{frame}"]['annotations'][annotation_type][...]
+                        if len(bbox) == 0:
+                            continue
+                        # normalize the bounding box coordinates to values between 0 and 1 
+                        for j in range(len(bbox)):
+                            bbox[j] /= image.shape[1] if j % 2 == 0 else image.shape[0]
+                        # add the class index to the label
+                        labels += [np.insert(bbox, 0, i)]
+                    # Save the label to a file
+                    with open( f'{save_path}/{key}/{frame}.txt', 'w') as f:
+                        for label in labels:
+                            f.write(' '.join(map(str, label)) + "\n")
                 pbar.update(1)
 
 def validate_image_extraction(hdf5_file: str,
@@ -749,7 +799,7 @@ def main(args: Namespace) -> None:
     elif args.mode == 'tree':
         print_hdf5_tree(args.hdf5_file)
     elif args.mode == 'h5_to_yolo':
-        hdf5_to_yolo(hdf5_file=args.hdf5_file, with_augmentation=args.with_augmentation)
+        hdf5_to_yolo(hdf5_file=args.hdf5_file, annotation_types = ['bbox_straw'])
     elif args.mode == 'place_digits':
         place_digits_on_chute_images()
     elif args.mode == 'timm':
