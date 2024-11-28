@@ -2,6 +2,7 @@ from __init__ import *
 import torch
 import numpy as np
 import h5py
+import os
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
@@ -699,12 +700,13 @@ if __name__ == '__main__':
     # train_set.plot_data(frame_idx=9)
     
     print("---- STRAW DETECTION DATASET ----")
-    train_set = Chute(data_path='data/interim/chute_detection.hdf5', data_type='train', inc_heatmap=True, inc_edges=True,
-                         random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
+    data_path = f'/work3/{os.getlogin()}/data/train.hdf5'
+    train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=True, inc_edges=True,
+                         random_state=42, force_update_statistics=True, data_purpose='straw', image_size=(384, 384), 
                          num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=0.5, greyscale=True)
-    train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
-    for i, (data, target) in enumerate(train_loader):
-        plot_batch(data, target, i*8, train_set.train_mean, train_set.train_std, grey=train_set.greyscale)
+    # train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
+    # for i, (data, target) in enumerate(train_loader):
+    #     plot_batch(data, target, i*8, train_set.train_mean, train_set.train_std, grey=train_set.greyscale)
     
     
     # for i in range(10):
