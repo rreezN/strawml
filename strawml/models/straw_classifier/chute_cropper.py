@@ -49,6 +49,10 @@ def crop_to_bbox(rotated_image, rotated_bbox) -> tuple:
 
 
 def rotate_and_crop_to_bbox(image, bbox) -> tuple:
+    if image.dtype != np.uint8:
+        image = image.astype(np.uint8)
+    if bbox.dtype != np.float64:
+        bbox = bbox.astype(np.float64)
     rotated_image, rotated_bbox = rotate_to_bbox(image, bbox)
     if rotated_image is None or rotated_bbox is None:
         return None, None    

@@ -82,7 +82,7 @@ class Chute(torch.utils.data.Dataset):
         #     raise ValueError('data_type must be either "train" or "test"')
         
         # Define the transformation to apply to the data
-        self.transform = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]) # transforms.Resize((224, 224)) 
+        self.transform = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=False)]) # transforms.Resize((224, 224)) 
 
         # Store the mean and std of the training data for normalization
         if len(override_statistics) == 0 and self.data_type == 'train':
@@ -174,11 +174,11 @@ class Chute(torch.utils.data.Dataset):
             if np.random.rand() < self.augment_probability:
                 transform_list = [
                                   transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.5, hue=0.05), 
-                                  transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.JPEG(quality=(1, 100)), transforms.ToDtype(torch.float32, scale=True)]),
+                                  transforms.Compose([transforms.ToDtype(torch.uint8, scale=False), transforms.JPEG(quality=(1, 100)), transforms.ToDtype(torch.float32, scale=False)]),
                                   transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 5.0)),
                                   transforms.GaussianNoise(mean=0.0, sigma=0.1),
                                   transforms.RandomEqualize(p=1.0),
-                                  transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.RandomPosterize(bits=np.random.randint(3, 5), p=1.0), transforms.ToDtype(torch.float32, scale=True)]),
+                                  transforms.Compose([transforms.ToDtype(torch.uint8, scale=False), transforms.RandomPosterize(bits=np.random.randint(3, 5), p=1.0), transforms.ToDtype(torch.float32, scale=False)]),
                                   transforms.RandomAdjustSharpness(p=1.0, sharpness_factor=np.random.uniform(1.0, 2.0)),
                                   ]
 
@@ -364,14 +364,20 @@ class Chute(torch.utils.data.Dataset):
         for idx in pbar:
             new_frame = self.frames[self.indices[idx]]
             
+            bbox = new_frame['annotations']['bbox_chute'][...]
             image = decode_binary_image(new_frame['image'][...])
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = cc.rotate_and_crop_to_bbox(image, bbox)[0]
             image = image.reshape(image.shape[2], image.shape[0], image.shape[1])
             if self.inc_heatmap:
                 image_diff = decode_binary_image(new_frame['image_diff'][...])
+                image_diff = cv2.cvtColor(image_diff, cv2.COLOR_BGR2RGB)
+                image_diff = cc.rotate_and_crop_to_bbox(image_diff, bbox)[0]
                 image_diff = image_diff.reshape(image_diff.shape[2], image_diff.shape[0], image_diff.shape[1])
             
             if self.greyscale:
                 image_gray = cv2.cvtColor(decode_binary_image(new_frame['image'][...]), code=cv2.COLOR_BGR2GRAY)
+                image_gray = cc.rotate_and_crop_to_bbox(image_gray, bbox)[0]
                 image_gray = image_gray.reshape(1, image_gray.shape[0], image_gray.shape[1])
             
             if running_mean is None:
@@ -700,12 +706,25 @@ if __name__ == '__main__':
     # train_set.plot_data(frame_idx=9)
     
     print("---- STRAW DETECTION DATASET ----")
-    data_path = f'/work3/{os.getlogin()}/data/train.hdf5'
+    print("Extracting statistics for straw dataset with heatmaps and greyscale images")
+    # data_path = f'/work3/davos/data/train.hdf5'
+    data_path = 'data/processed/train.hdf5'
     train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=True, inc_edges=True,
                          random_state=42, force_update_statistics=True, data_purpose='straw', image_size=(384, 384), 
                          num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=0.5, greyscale=True)
-    # train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
-    # for i, (data, target) in enumerate(train_loader):
+    
+    print('Testing normalizing')
+    train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
+    for i, (data, target) in enumerate(train_loader):
+        # Print the data shape
+        print(f'Data shape: {data.shape}')
+        print(f'Target shape: {target.shape}')
+        
+        # Print the mean and std of the data
+        print(f'Mean: {data.mean()}')
+        print(f'Std: {data.std()}')
+        print(f'Min: {data.min()}')
+        print(f'Max: {data.max()}')
     #     plot_batch(data, target, i*8, train_set.train_mean, train_set.train_std, grey=train_set.greyscale)
     
     
