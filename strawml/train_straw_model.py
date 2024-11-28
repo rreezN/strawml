@@ -518,18 +518,18 @@ if __name__ == '__main__':
     
     # Is this how we want to do it?
     if args.hpc:
-        path_to_data = f'/work3/{os.getlogin()}/data/'
+        path_to_data = f'/work3/davos/data/'
         if not os.path.exists(path_to_data):
             raise FileNotFoundError(f'Path to data not found: {path_to_data}')
         os.makedirs(f'{path_to_data}', exist_ok=True)
         args.data_path = path_to_data + args.data_path
         if not os.path.exists(args.data_path):
             raise FileNotFoundError(f'Data path not found: {args.data_path}')
-        args.save_path = f'/work3/{os.getlogin()}/models/'
+        args.save_path = f'/work3/davos/models/'
         os.makedirs(args.save_path, exist_ok=True)
         if not os.path.exists(args.save_path):
             raise FileNotFoundError(f'Save path not found: {args.save_path}')
-        sensor_path = f'/work3/{os.getlogin()}/data/sensors.hdf5'
+        sensor_path = f'/work3/davos/data/sensors.hdf5'
         if not os.path.exists(sensor_path):
             raise FileNotFoundError(f'Sensor data path not found: {sensor_path}')
         
