@@ -190,13 +190,13 @@ def combine_and_correct_hdf5(data_path: str,
                 if image.shape[0] != desired_resolution[1] or image.shape[1] != desired_resolution[0]:
                     tqdm.write(f'[!{frame_nr}!] Warning: The resolution of the image is incorrect. Performing resize...')
                     image_diff = decode_binary_image(f1[frame_nr]['image_diff'][()])
-                    image = cv2.resize(image, desired_resolution)
-                    image_diff = cv2.resize(image_diff, desired_resolution)
+                    resized_image = cv2.resize(image, desired_resolution)
+                    resized_image_diff = cv2.resize(image_diff, desired_resolution)
                     # drop the old image and image_diff and replace with the new ones
                     del f1[frame_nr]['image']
                     del f1[frame_nr]['image_diff']
-                    f1[frame_nr].create_dataset('image', data=cv2.imencode('.jpg', image)[1])
-                    f1[frame_nr].create_dataset('image_diff', data=cv2.imencode('.jpg', image_diff)[1])
+                    f1[frame_nr].create_dataset('image', data=cv2.imencode('.jpg', resized_image)[1])
+                    f1[frame_nr].create_dataset('image_diff', data=cv2.imencode('.jpg', resized_image_diff)[1])
                     bbox_chute, bbox_straw = fix_bbox(image.shape[:2], desired_resolution, f1[frame_nr]['annotations']['bbox_chute'][()], f1[frame_nr]['annotations']['bbox_straw'][()])
                     try:
                         del f1[frame_nr]['annotations']['bbox_chute']
@@ -219,7 +219,7 @@ def combine_and_correct_hdf5(data_path: str,
     else:
         print('All frames are present.')
     print(f'Number of resized images:                         {nr_of_resized_images}')
-    print(f'Direct copy from f2 to f1 (f1 has no annotation): {len(case1)}')
+    print(f'Direct copy from f2 to f1 (f1 has no annotation): {sum([len(case1[key]) for key in case1])}')
     for key in case1:
         print(f'--- {key}: {len(case1[key])}')    
     print(f'Missing annotation in both files:                 {sum([len(case2[key]) for key in case2])}')
@@ -259,64 +259,6 @@ def check_missing_frames(annotated_file: str, original_file: str):
                     print(f'{group} is missing the "bbox_straw" dataset.')
         
     print("Check complete. If no output, then all frames are present.")
-
-def correct_hdf5(data_path: str, file: str, resolution: tuple = (2560, 1440)):
-    """
-    File that ensures that the HDF5 file is correct, meaning we account for
-        - resolution of the image
-        - Missing images i.e. frame_nr is not continuous from 0 to n, then report the missing frames
-
-    Parameters
-    ----------
-    data_path : str
-        The path to the directory containing the HDF5 file.
-    file : str
-        The hdf5 filename
-    resolution : tuple
-        The resolution of the images in the hdf5 file, i.e. (width, height) e.g. (1920, 1080) or (2560, 1440)
-    """
-    frame_nrs = []
-    nr_of_resized_images = 0
-    with h5py.File(data_path + file, 'r+') as f:
-        pbar = tqdm(f)
-        pbar.set_postfix_str(f'resized images: {nr_of_resized_images}')
-        for group in pbar:
-            frame_nrs.append(int(group.split(".")[0].split("_")[-1]))
-            image = decode_binary_image(f[group]['image'][()])            
-            if image.shape[0] != resolution[1] or image.shape[1] != resolution[0]:
-                print(f'The resolution of the image "{group}" is incorrect. Performing resize...')
-                image_diff = decode_binary_image(f[group]['image_diff'][()])
-                image = cv2.resize(image, resolution)
-                image_diff = cv2.resize(image_diff, resolution)
-                # drop the old image and image_diff and replace with the new ones
-                del f[group]['image']
-                del f[group]['image_diff']
-                f[group].create_dataset('image', data=cv2.imencode('.jpg', image)[1])
-                f[group].create_dataset('image_diff', data=cv2.imencode('.jpg', image_diff)[1])
-                bbox_chute, bbox_straw = fix_bbox(image.shape[:2], resolution, f[group]['annotations']['bbox_chute'][()], f[group]['annotations']['bbox_straw'][()])
-                
-                try:
-                    del f[group]['annotations']['bbox_chute']
-                    f[group]['annotations'].create_dataset('bbox_chute', data=bbox_chute)
-                except KeyError:
-                    print(f'No bbox_chute in {group}')
-                
-                try:
-                    del f[group]['annotations']['bbox_straw']
-                    f[group]['annotations'].create_dataset('bbox_straw', data=bbox_straw)
-                except KeyError:
-                    print(f'No bbox_straw in {group}')
-                print(f'Resized the image "{group}" to the correct resolution.')
-                nr_of_resized_images += 1
-                pbar.set_postfix_str(f'resized images: {nr_of_resized_images}')
-
-    frame_nrs = sorted(frame_nrs)
-    missing_frames = [i for i in range(frame_nrs[0], frame_nrs[-1]+1) if i not in frame_nrs]
-    if missing_frames:
-        print(f'Missing frames: {missing_frames}')
-    else:
-        print('All frames are present.')
-    print(f'Number of resized images: {nr_of_resized_images}')
 
 def fix_bbox(old_resolution: tuple, new_resolution: tuple, bbox_chute: list, bbox_straw: list):
     """
@@ -365,15 +307,15 @@ def plot_annotations(frame: int, data_path: str, file: str):
         if len(bbox_straw) == 0:
             print(f'No bbox_straw in {group}')
         else:
-            x_coords = bbox_straw[::2] + [bbox_straw[0]]
-            y_coords = bbox_straw[1::2] + [bbox_straw[1]]
+            x_coords = list(bbox_straw[::2]) + [bbox_straw[0]]
+            y_coords = list(bbox_straw[1::2]) + [bbox_straw[1]]
             ax.plot(x_coords, y_coords, 'r')
             
         if len(bbox_chute) == 0:
             print(f'No bbox_chute in {group}')
         else:
-            x_coords = bbox_chute[::2] + [bbox_chute[0]]
-            y_coords = bbox_chute[1::2] + [bbox_chute[1]]
+            x_coords = list(bbox_chute[::2]) + [bbox_chute[0]]
+            y_coords = list(bbox_chute[1::2]) + [bbox_chute[1]]
             ax.plot(x_coords, y_coords, 'g')
         title = f'Frame {frame}' if f[group]['annotations']['fullness'][()] == -1 else f'Frame {frame} - Fullness: {f[group]["annotations"]["fullness"][()]}'
         plt.title(title)
@@ -408,4 +350,4 @@ if __name__ == '__main__':
     elif args.mode == 'check_missing':
         check_missing_frames(file1, file2)
     elif args.mode == 'plot':
-        plot_annotations(10100, data_path, file1)
+        plot_annotations(8204, data_path, file1)

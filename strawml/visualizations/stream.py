@@ -247,7 +247,7 @@ class TagGraphWithPositionsCV:
 
         # Apply the perspective warp to create a square cutout
         cutout = cv2.warpPerspective(image, M, (width, height))
-
+        print(width, height)
         return np.array(cutout)
     
     def draw_overlay(self, image):
@@ -1256,4 +1256,4 @@ if __name__ == "__main__":
             rtsp=True , # Only used when the stream is from an RTSP source
             make_cutout=True, use_cutout=True, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
             detect_april=True,
-            with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
+            with_predictor=False, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
