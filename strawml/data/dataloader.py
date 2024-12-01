@@ -71,6 +71,20 @@ class Chute(torch.utils.data.Dataset):
             
         self.indices = frame_names[:int(len(frame_names)*self.subsample)]
         
+        class_counts = {}
+        for idx in self.indices:
+            fullness = self.frames[idx]['annotations']['fullness'][...]
+            fullness = fullness.item()
+            if fullness in class_counts:
+                class_counts[fullness] += 1
+            else:
+                class_counts[fullness] = 1
+        
+        # Sort the class counts by key:
+        class_counts = dict(sorted(class_counts.items()))
+        
+        self.class_counts = class_counts
+        
         # Set the indices based on the data type
         # if data_type == 'train':
         #     self.indices = self.train_indices
@@ -570,6 +584,12 @@ class Chute(torch.utils.data.Dataset):
                     Data Type:                {self.data_type}\n \
                     Data size:                {dataset_size}\n \
                     Number of straw classes:  {self.num_classes_straw}\n \
+                    Image size:               {self.image_size}\n \
+                    Greyscale:                {self.greyscale}\n \
+                    Augment Probability:      {self.augment_probability}\n \
+                    Subsample:                {self.subsample}\n \
+                    Continuous:               {self.continuous}\n \
+                    Class counts:             {self.class_counts}\n \
                         ')
 
 def plot_batch(data, labels, frame_start=0, mean=None, std=None, grey=False):
@@ -710,7 +730,7 @@ if __name__ == '__main__':
     # data_path = f'/work3/davos/data/train.hdf5'
     data_path = 'data/processed/train.hdf5'
     train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=True, inc_edges=True,
-                         random_state=42, force_update_statistics=True, data_purpose='straw', image_size=(384, 384), 
+                         random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
                          num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=0.5, greyscale=True)
     
     print('Testing normalizing')

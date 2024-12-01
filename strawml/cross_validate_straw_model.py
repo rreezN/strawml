@@ -56,12 +56,16 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
         best_accuracy = np.inf
     else:
         if args.use_wce:
-            ce_weights = torch.ones(args.num_classes_straw)
-            # TODO: Update weights based on data distribution
-            ce_weights[0, 1, 2] = 2.0
-            ce_weights[-3, -2, -1] = 2.0
+            total = len(train_loader.dataset)
+            class_counts = np.array(list(train_loader.dataset.class_counts.values()))
+            # Using CW_i = N / C_i 
+            ce_weights = torch.Tensor([total/class_counts])
+            # Using CW_i = N / (C_i * K)
+            # ce_weights = torch.Tensor([total/(class_counts * train_set.num_classes_straw)])
+        else:
+            ce_weights = None
 
-        loss_fn = torch.nn.functional.cross_entropy
+        loss_fn = torch.nn.functional.cross_entropy(weight=ce_weights)
         best_accuracy = -1.0
     
     epoch_train_losses = []

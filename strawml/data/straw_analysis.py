@@ -48,14 +48,16 @@ def get_frames_by_class(frames: h5py.File) -> dict:
         else:
             current_class = float(frames[frame_name]['annotations']['fullness'][...])
             frames_by_class['original'][current_class] = frames_by_class['original'].get(current_class, []) + [frame_name]
-            current_class = float(frames[frame_name]['annotations']['sensor_fullness'][...])
-            current_class = round(round(current_class/0.05)*0.05, 2)
-            frames_by_class['sensors'][current_class] = frames_by_class['sensors'].get(current_class, []) + [frame_name]
+            if 'sensor_fullness' in frames[frame_name]['annotations']:
+                current_class = float(frames[frame_name]['annotations']['sensor_fullness'][...])
+                current_class = round(round(current_class/0.05)*0.05, 2)
+                frames_by_class['sensors'][current_class] = frames_by_class['sensors'].get(current_class, []) + [frame_name]
     
     
     frames_by_class['augmented'] = dict(sorted(frames_by_class['augmented'].items()))
     frames_by_class['original'] = dict(sorted(frames_by_class['original'].items()))
-    frames_by_class['sensors'] = dict(sorted(frames_by_class['sensors'].items()))
+    if 'sensors' in frames_by_class:
+        frames_by_class['sensors'] = dict(sorted(frames_by_class['sensors'].items()))
     
     return frames_by_class
 
@@ -112,22 +114,26 @@ def plot_class_distribution_and_examples(class_dict: dict, frames: h5py.File) ->
     
     classes_original = list([int(x*100) for x in class_dict['original'].keys()])
     classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
-    classes_sensors = list(int(x*100) for x in class_dict['sensors'].keys())
+    if 'sensors' in class_dict:
+        classes_sensors = list(int(x*100) for x in class_dict['sensors'].keys())
     classes = list(set(classes_original) | set(classes_augmented) | set(classes_sensors))
     
     counts_original = [len(class_dict['original'].get(float(key/100), [])) for key in classes]
     counts_augmented = [len(class_dict['augmented'].get(float(key/100), [])) for key in classes]
-    counts_sensors = [len(class_dict['sensors'].get(float(key/100), [])) for key in classes]
+    if 'sensors' in class_dict:
+        counts_sensors = [len(class_dict['sensors'].get(float(key/100), [])) for key in classes]
     
     counts = {
         'original': counts_original, 
         'augmented': counts_augmented,
-        'sensors': counts_sensors
         }
+    if 'sensors' in class_dict:
+        counts['sensors'] = counts_sensors
     
     total_original = sum(counts_original)
     total_augmented = sum(counts_augmented)
-    total_sensors = sum(counts_sensors)
+    if 'sensors' in class_dict:
+        total_sensors = sum(counts_sensors)
     total_frames = total_original + total_augmented
     
     # Create a 2x11 figure with bar chart in top left corner, and examples from each class in the remaining slots
@@ -196,24 +202,31 @@ def plot_class_distribution(class_dict: dict, frames: h5py.File, direction: str 
     
     classes_original = list([int(x*100) for x in class_dict['original'].keys()])
     classes_augmented = list(int(x*100) for x in class_dict['augmented'].keys())
-    classes_sensors = list(int(x*100) for x in class_dict['sensors'].keys())
+    if 'sensors' in class_dict:
+        classes_sensors = list(int(x*100) for x in class_dict['sensors'].keys())
     classes = list(set(classes_original) | set(classes_augmented) | set(classes_sensors))
     
     counts_original = [len(class_dict['original'].get(float(key/100), [])) for key in classes]
     counts_augmented = [len(class_dict['augmented'].get(float(key/100), [])) for key in classes]
-    counts_sensors = [len(class_dict['sensors'].get(float(key/100), [])) for key in classes]
+    if 'sensors' in class_dict:
+        counts_sensors = [len(class_dict['sensors'].get(float(key/100), [])) for key in classes]
     
     counts = {
         'original': counts_original, 
         'augmented': counts_augmented,
-        'sensors': counts_sensors
         }
+    if 'sensors' in class_dict:
+        counts['sensors'] = counts_sensors
     
     total_original = sum(counts_original)
     total_augmented = sum(counts_augmented)
-    total_sensors = sum(counts_sensors)
+    if 'sensors' in class_dict:
+        total_sensors = sum(counts_sensors)
     total_frames = total_original + total_augmented
     
+    for key in class_dict['original']:
+        print(f'Class {round(key*100)}: {len(class_dict["original"][key])} original frames')
+        
     if direction == 'vertical':
         plt.figure(figsize=(5,10))
         plt.grid(axis='x', linestyle='--', alpha=0.5)
@@ -265,7 +278,7 @@ def plot_class_distribution(class_dict: dict, frames: h5py.File, direction: str 
         plt.xlabel('Class')
     
     plt.title(f'Straw Class Distribution ({frames.filename})')
-    plt.savefig('reports/figures/straw_analysis/data/class_distribution.png', dpi=300)
+    plt.savefig('reports/figures/class_distribution.png', dpi=300)
     plt.show()
 
 def load_image_by_class(class_dict, classes, class_number) -> np.ndarray:
@@ -712,7 +725,7 @@ def plot_tsne(frames: h5py.File, class_dict: dict) -> None:
 
 
 if __name__ == '__main__':
-    frames = h5py.File('data/interim/sensors.hdf5', 'r')
+    frames = h5py.File('data/processed/train.hdf5', 'r')
     class_dictionary = get_frames_by_class(frames)
     
     ## These functions create plots of the dataset for the straw level monitoring model ##
