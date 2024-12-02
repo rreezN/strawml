@@ -318,9 +318,12 @@ class AprilDetector:
             self.mean, self.std = self.load_normalisation_constants()
             self.img_unnormalize = transforms.Normalize(mean = [-m/s for m, s in zip(self.mean, self.std)],
                                                         std = [1/s for s in self.std])
-            self.transform = transforms.Compose([transforms.ToImage(), 
-                                                 transforms.ToDtype(torch.float32, scale=True),
-                                                 transforms.Normalize(mean=self.mean, std=self.std)])
+            # self.transform = transforms.Compose([transforms.ToImage(), 
+            #                                      transforms.ToDtype(torch.float32, scale=False),
+            #                                      transforms.Normalize(mean=self.mean, std=self.std)])
+            self.transform = transforms.Compose([#transforms.ToImage(), 
+                                        transforms.ToDtype(torch.float32, scale=False),
+                                        transforms.Normalize(mean=self.mean, std=self.std)])
             num_classes = 1 if regressor else 11
             input_channels = 3
             if edges: input_channels += 1
@@ -333,7 +336,7 @@ class AprilDetector:
                     self.model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=num_classes)
                 case 'convnextv2':
                     image_size = (224, 224)
-                    self.model = timm.create_model('convnextv2_atto', pretrained=False, in_chans=input_channels, num_classes=num_classes)
+                    self.model = timm.create_model('convnext_small.in12k_ft_in1k_384', pretrained=False, in_chans=input_channels, num_classes=num_classes)
                 case 'vit':
                     image_size = (384, 384)
                     self.model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', pretrained=False, in_chans=input_channels, num_classes=num_classes)
@@ -363,11 +366,12 @@ class AprilDetector:
             self.model.to(self.device)
 
     def load_normalisation_constants(self):
-        # Loads the normalisation constants from 
-        # TODO: Figure out where to save this file
-        with h5py.File("data/processed/augmented/chute_detection.hdf5", 'r') as f:
-            mean = f.attrs['mean']
-            std = f.attrs['std']
+        import yaml
+        # Loads the normalisation constants from data/processed/statistics.yaml
+        with open("data/processed/statistics.yaml", 'r') as file:
+            data = yaml.safe_load(file)
+            mean = data['mean']
+            std = data['std']
         return mean, std
         
     def load_camera_params(self):
@@ -525,7 +529,9 @@ class AprilDetector:
                 refined_tag.corners[:,0] += x_start
                 refined_tag.corners[:,1] += y_start
 
-                if refined_tag.tag_id not in self.tag_ids:  
+                if refined_tag.tag_id not in self.tag_ids:
+                    if refined_tag.tag_id in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
+                        self.chute_numbers[refined_tag.tag_id] = refined_tag.center 
                     # Append to the tags and tag_ids arrays if not already present
                     self.tags[refined_tag.tag_id] = refined_tag
                     self.tag_ids = np.append(self.tag_ids, int(refined_tag.tag_id))
@@ -803,10 +809,12 @@ class AprilDetector:
         cv2.waitKey(1)
 
         # stack the images together
-        cutout_image = np.concatenate((frame_data, edges), axis=0)
-
+        if self.edges:
+            cutout_image = np.concatenate((frame_data, edges), axis=0)
+        else:
+            cutout_image = frame_data
         # reshape to 4, 384, 384
-        cutout_image = self.resize(torch.from_numpy(cutout_image))
+        cutout_image = self.resize(cutout_image)
 
         # cv2.imshow("resized_frame", cutout_image[:3].permute(1,2,0).numpy())
         # cv2.waitKey(1)
@@ -937,8 +945,27 @@ class RTSPStream(AprilDetector):
         y_second = self.chute_numbers[second_closest_tag_id][1]
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
         straw_level = ((y_first-straw_top) / (y_first-y_second) + first_closest_tag_id)*10
-
         return straw_level
+    
+    def get_pixel_straw_level(self, straw_level):
+        # We know that the self.chute_numbers are ordered from 0 to 10. We can use this to calculate the pixel value of the straw level
+        # we know that each tag is 10% of the chute, meaning that the distance between each tag is 10% of the chute height. We can use 
+        # this to calculate the pixel value of the straw level.
+        # We can use the distance between the two closest tags to calculate the pixel value of the straw level.
+        if len(self.chute_numbers) != 11:
+            return 0
+        # First we divide the straw level by 10 to get it on the same scale as the tag ids
+        straw_level = straw_level / 10
+        # We then get the two closest tags
+        first_closest_tag_id, second_closest_tag_id = int(straw_level), int(straw_level) + 1
+        # get the distance between the two closest tags
+        y_first = self.chute_numbers[first_closest_tag_id][1]
+        y_second = self.chute_numbers[second_closest_tag_id][1]
+        # get the pixel value of the straw level
+        excess = straw_level - int(straw_level)
+        pixel_straw_level_y = y_first - (y_first - y_second) * excess
+        pixel_straw_level_x = (self.chute_numbers[first_closest_tag_id][0] + self.chute_numbers[second_closest_tag_id][0]) / 2
+        return pixel_straw_level_y, pixel_straw_level_x
     
     @staticmethod
     def time_function(func, *args, **kwargs):
@@ -1081,7 +1108,10 @@ class RTSPStream(AprilDetector):
                                 output = output.detach().cpu()
                                 _, predicted = torch.max(output, 1)
                                 straw_level = predicted[0]*10
-
+                            y_pixel, x_pixel = self.get_pixel_straw_level(straw_level)
+                            # draw line on the frame with straw_level as the text
+                            cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel)+100, int(y_pixel)), (0, 0, 255), 2)
+                            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel)+110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)                     
                             # Add the time taken for inference to the text
                             self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
                             self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
@@ -1089,8 +1119,8 @@ class RTSPStream(AprilDetector):
                     if self.object_detect:
                         frame_drawn = self.plot_boxes(results, frame_drawn)
                 elif self.yolo_straw:
-                    print("Using YOLO for straw detection")
                     output, inference_time = self.time_function(self.model.score_frame, frame)
+                    print(output)
                     if len(output[0]) != 0:
                         straw_level = self.get_straw_level(frame, output)
                         frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level)
@@ -1361,7 +1391,7 @@ if __name__ == "__main__":
     
     RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
             rtsp=True , # Only used when the stream is from an RTSP source
-            make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-            detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
-            with_predictor=False , predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
+            make_cutout=False, use_cutout=False, object_detect=True, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
+            detect_april=True, yolo_straw=False, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
+            with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     

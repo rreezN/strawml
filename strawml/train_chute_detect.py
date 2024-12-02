@@ -1,19 +1,17 @@
 from __init__ import *
 from ultralytics import YOLO
-import wandb
-from wandb.integration.ultralytics import add_wandb_callback
+# import wandb
+# from wandb.integration.ultralytics import add_wandb_callback
 
 
 # Load a pre-trained YOLOv10n model
 model = YOLO("models/yolo11n-obb.pt")
 model.to("cuda")
 # wandb.init(project="strawml", entity='meliora')
-add_wandb_callback(model)
-# Load a pre-trained YOLOv10n model
-# model.to("cuda")
+# add_wandb_callback(model)
 if __name__ == '__main__':
     # train the model on our own dataset
-    results = model.train(data="data/processed/chute_data.yaml", imgsz=256, epochs=50, device="cuda", optimizer='ADOPT', augment=True)
+    results = model.train(data="data/processed/0_chute_and_straw_data.yaml", imgsz=256, epochs=50, device="cuda", optimizer='Adam', augment=True)
 
     # results = model.val()  # evaluate model performance on the validation set
     # results = model("data/chute_digit.jpg")  # predict on an image
