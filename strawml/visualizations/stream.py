@@ -1089,6 +1089,7 @@ class RTSPStream(AprilDetector):
                     if self.object_detect:
                         frame_drawn = self.plot_boxes(results, frame_drawn)
                 elif self.yolo_straw:
+                    print("Using YOLO for straw detection")
                     output, inference_time = self.time_function(self.model.score_frame, frame)
                     if len(output[0]) != 0:
                         straw_level = self.get_straw_level(frame, output)
@@ -1352,15 +1353,15 @@ if __name__ == "__main__":
     #            detect_april=False,
     #            with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
     
-    RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-            rtsp=False , # Only used when the stream is from an RTSP source
-            make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-            detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
-            with_predictor=False , predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
-    
     # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-    #         rtsp=True , # Only used when the stream is from an RTSP source
+    #         rtsp=False , # Only used when the stream is from an RTSP source
     #         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
     #         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
-    #         with_predictor=False , predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
+    #         with_predictor=False , predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
+    
+    RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+            rtsp=True , # Only used when the stream is from an RTSP source
+            make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
+            detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
+            with_predictor=False , predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
     
