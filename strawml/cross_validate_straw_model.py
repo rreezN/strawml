@@ -552,8 +552,10 @@ def plot_example(info, frame_data, prediction, target):
         prediction = prediction * increment
         target = target * increment
     
-    cmap = 'gray' if args.greyscale else None
-    plt.imshow(frame_data, cmap=cmap)
+    if args.greyscale:
+        plt.imshow(frame_data, cmap="gray")
+    else:
+        plt.imshow(frame_data)
     plt.title(f'{info["data_type"]} Epoch: {info["epoch"]} it: {info["current_iteration"]} Prediction: {prediction} Target: {target}')
     
     # plt.show()
