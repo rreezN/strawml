@@ -17,6 +17,7 @@ class ObjectDetect:
         Loads a local .pt model file and returns the model.
         :return: Trained Pytorch model.
         """
+        print(model_name)
         if model_name:
             model = YOLO(model_name)
         else:

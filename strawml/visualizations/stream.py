@@ -13,6 +13,7 @@ import h5py
 import psutil
 from sklearn.linear_model import LinearRegression
 import keyboard
+import copy
 
 from strawml.models.straw_classifier import chute_cropper as cc
 from strawml.models.chute_finder.yolo import ObjectDetect
@@ -247,7 +248,6 @@ class TagGraphWithPositionsCV:
 
         # Apply the perspective warp to create a square cutout
         cutout = cv2.warpPerspective(image, M, (width, height))
-        print(width, height)
         return np.array(cutout)
     
     def draw_overlay(self, image):
@@ -279,7 +279,8 @@ class AprilDetector:
     provides methods to detect AprilTags in a frame, draw the detected tags on the frame, and given a predicted straw level
     value performs inverse linear interpolation to get the corresponding pixel value on the frame.
     """
-    def __init__(self, detector: pupil_apriltags.bindings.Detector, ids: dict, window: bool=False, od_model_name=None, object_detect=True, yolo_threshold=0.5, device="cuda", frame_shape: tuple = (1440, 2560), with_predictor: bool =False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
+    def __init__(self, detector: pupil_apriltags.bindings.Detector, ids: dict, window: bool=False, od_model_name=None, object_detect=True, yolo_threshold=0.5, device="cuda", frame_shape: tuple = (1440, 2560), yolo_straw=False, yolo_straw_model="models/yolov11-straw-detect-obb.pt", with_predictor: bool =False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
+        self.lock = threading.Lock()
         self.detector = detector
         self.window = window
         self.ids = ids
@@ -289,19 +290,21 @@ class AprilDetector:
         self.device = device
         self.edges = edges
         self.heatmap = heatmap
+        self.yolo_straw = yolo_straw
         if self.object_detect:
             self.OD = ObjectDetect(self.model_name, yolo_threshold=yolo_threshold, device=device, verbose=False)
 
         # Initialize a queue to store the frames from the video stream
         self.q = queue.Queue()
         # Initialize the tags and tag_ids arrays to store the detected tags and their corresponding IDs
-        self.tags = np.array([])
-        self.tag_ids = np.array([])
         self.fx = None
         self.fy = None
         self.cx = None
         self.cy = None
         self.camera_params = self.load_camera_params()
+        self.tags = {}
+        self.tag_ids = np.array([])
+        self.chute_numbers = {}
         self.tag_connections = [(11, 12), (12, 13), (13, 14), (14, 19), (19, 20), (20, 21), 
                                 (21, 22), (22, 26), (26, 25), (25, 24), (24, 23), (23, 18), 
                                 (18, 17), (17, 16), (16, 15), (15, 11)]
@@ -309,7 +312,9 @@ class AprilDetector:
         self.detected_tags = []  # Store all detected tags during each frame
         self.with_predictor = with_predictor
         self.model = None
-        if with_predictor:
+        if yolo_straw:
+            self.model = ObjectDetect(model_name=yolo_straw_model, yolo_threshold=yolo_threshold, device=device, verbose=False)
+        elif with_predictor:
             self.mean, self.std = self.load_normalisation_constants()
             self.img_unnormalize = transforms.Normalize(mean = [-m/s for m, s in zip(self.mean, self.std)],
                                                         std = [1/s for s in self.std])
@@ -379,7 +384,7 @@ class AprilDetector:
         self.cy = cameraMatrix[1, 2]
         return {"cameraMatrix": cameraMatrix, "distCoeffs": distCoeffs, "rvecs": rvecs, "tvecs": tvecs}
     
-    def plot_boxes(self, results, frame):
+    def plot_boxes(self, results, frame, straw=False, straw_lvl=None):
         """
         Takes a frame and its results as input, and plots the bounding boxes and label on to the frame.
         :param results: contains labels and coordinates predicted by model on the given frame.
@@ -400,13 +405,18 @@ class AprilDetector:
             if 'obb' in self.model_name:
                 x1, y1, x2, y2, x3, y3, x4, y4 = cord[i].flatten()
                 x1, y1, x2, y2, x3, y3, x4, y4 = int(x1), int(y1), int(x2), int(y2), int(x3), int(y3), int(x4), int(y4)
-                # draw lines between the corners
-                cv2.line(frame, (x1, y1), (x2, y2), (138,43,226), 2)
-                cv2.line(frame, (x2, y2), (x3, y3), (138,43,226), 2)
-                cv2.line(frame, (x3, y3), (x4, y4), (138,43,226), 2)
-                cv2.line(frame, (x4, y4), (x1, y1), (138,43,226), 2)
-                # plot label on the object
-                cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                if straw:
+                    # Only plot the upper vertical line
+                    cv2.line(frame, (x1, y1), (x4, y4), (0,155,0), 2)
+                    cv2.putText(frame, f"{straw_lvl:.2f} %", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                else:                        
+                    # draw lines between the corners
+                    cv2.line(frame, (x1, y1), (x2, y2), (138,43,226), 2)
+                    cv2.line(frame, (x2, y2), (x3, y3), (138,43,226), 2)
+                    cv2.line(frame, (x3, y3), (x4, y4), (138,43,226), 2)
+                    cv2.line(frame, (x4, y4), (x1, y1), (138,43,226), 2)
+                    # plot label on the object
+                    cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
             else:
                 x1, y1, x2, y2 = cord[i].flatten()
                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
@@ -476,15 +486,16 @@ class AprilDetector:
         detected_tags = []  # This will hold tags with original coordinates
         unique_tag_ids = set()  # Set to track unique tags in detected_tags
         for tag in tags:
-            if tag.tag_id not in self.tag_ids:  
+            if tag.tag_id not in self.tag_ids:
+                if tag.tag_id in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
+                    self.chute_numbers[tag.tag_id] = tag.center
                 # Append to the tags and tag_ids arrays if not already present
-                self.tags = np.append(self.tags, tag)
-                self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
-            
+                self.tags[tag.tag_id]= tag
+                self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))            
             # Check if this tag has already been used as a re-centered detection
             if tag.tag_id in self.processed_tags:
                 continue  # Skip if we've already re-centered on this tag
-            
+
             # Mark the tag as processed to prevent re-centering on it again
             self.processed_tags.add(tag.tag_id)
             
@@ -516,16 +527,34 @@ class AprilDetector:
 
                 if refined_tag.tag_id not in self.tag_ids:  
                     # Append to the tags and tag_ids arrays if not already present
-                    self.tags = np.append(self.tags, refined_tag)
+                    self.tags[refined_tag.tag_id] = refined_tag
                     self.tag_ids = np.append(self.tag_ids, int(refined_tag.tag_id))
                 
                 # Only add unique tags to detected_tags
                 if refined_tag.tag_id not in unique_tag_ids:
                     unique_tag_ids.add(refined_tag.tag_id)
                     detected_tags.append(refined_tag)
+        self.account_for_missing_tags_in_chute_numbers()  # Infer missing tags
         self.check_for_changes(detected_tags)
         self.processed_tags.clear()  # Clear the set of processed tags
 
+    def account_for_missing_tags_in_chute_numbers(self):
+        # first we sort based on the tag id
+        sorted_chute_numbers = {k: v for k, v in sorted(self.chute_numbers.items(), key=lambda item: item[0])}
+        # we run through the sorted chute numbers and check if there are any missing tags. All mising tags with a tag id between the two tags can be inferred.
+        prev_tag_id = 0
+        for i, (tag_id, center) in enumerate(sorted_chute_numbers.items()):
+            if i == 0:
+                continue
+            if tag_id - prev_tag_id == 2:
+                print(f"Missing tag between {prev_tag_id} and {tag_id} ---- {tag_id - 1}")
+                # Infer the position of the missing tag by taking the mean of the two neighboring tags
+                inferred_position = (np.array(sorted_chute_numbers[prev_tag_id]) + np.array(center)) / 2
+                self.lock.acquire()
+                self.chute_numbers[tag_id-1] = inferred_position
+                self.lock.release()
+            prev_tag_id = tag_id
+        
     def check_for_changes(self, tags: list) -> None:
         """
         Check if the camera has moved and the chute tags have changed position. If so, reset the tags and tag_ids arrays.
@@ -543,18 +572,18 @@ class AprilDetector:
         """
         tag_ids = np.array([int(tag.tag_id) for tag in tags])
         accumulated_error = 0
-        for i, t in enumerate(self.tag_ids):
+        for t in self.tag_ids:
             mask = np.where(tag_ids == t)[0]
             if mask.size == 0:
                 continue
             t1 = tags[mask[0]]
-            t2 = self.tags[i]
+            t2 = self.tags[t]
             # calculate absolute distance between the two tags
             accumulated_error += np.linalg.norm(np.array(t1.center) - np.array(t2.center))
 
         # If the camera moves and the chute tags change position, reset the tags
         if accumulated_error/len(self.tag_ids) > 0.1:
-            self.tags = []
+            self.tags = {}
             self.tag_ids = []
 
     def order_corners(self, points, centroid):
@@ -653,7 +682,7 @@ class AprilDetector:
         chute_tags = []
         if len(tags) == 0:
             return frame, None
-        for t in tags:
+        for t in tags.values():
             if t.tag_id in self.wanted_tags.values():
                 corners = self.order_corners(t.corners, t.center)
                 if t.tag_id in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
@@ -719,8 +748,9 @@ class AprilDetector:
                     line_end = (int(closest_right_chute[0] + np.abs(closest_left_chute[0] - level_center_right[0])), int(level_center_right[1]))
                     line_begin, line_end = self.rotate_line(line_begin, line_end, -tag_angle)
                     cv2.line(frame, tuple(line_begin), tuple(line_end), (0, 255, 0), 2)
-                    cv2.putText(frame, f"{int(tag.tag_id) * 10}%", (int(closest_right_chute[0] + (closest_left_chute[0] - level_center_right[0]))+35, int(level_center_right[1]-5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-
+                    cv2.putText(frame, f"{int(tag.tag_id) * 10}%", (int(closest_right_chute[0] + (closest_left_chute[0] - level_center_right[0]))+35, int(level_center_right[1]-5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA) 
+                
+                
             if make_cutout:
                 # combine the left and right chutes
                 chutes = chute_left + chute_right
@@ -795,9 +825,10 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
-        super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
+    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cpu", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
+        super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, yolo_straw=yolo_straw, yolo_straw_model=yolo_straw_model, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         self.rtsp = rtsp
+        self.yolo_straw = yolo_straw
         self.wanted_tags = ids
         if rtsp:
             self.cap = self.create_capture(credentials_path)
@@ -854,6 +885,60 @@ class RTSPStream(AprilDetector):
         cap.set(cv2.CAP_PROP_FPS, 25)
         cap.open(f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101")
         return cap
+    
+    def get_straw_level(self, frame, straw_bbox):
+        
+        # make sure that all the tags are detected
+        if len(self.chute_numbers) != 11:
+            return 0
+        _, straw_cord,_ , _ = straw_bbox
+        straw_cord = straw_cord[0].flatten()
+        
+        # Get angle of self.chute_numbers
+        tag0_center = list(self.chute_numbers.values())[0]
+        tag1_center = list(self.chute_numbers.values())[1]
+        # Get angle of the two tags
+        angle = np.arctan((tag1_center[1] - tag0_center[1]) / (tag1_center[0] - tag0_center[0]))
+        
+        # Taking image height and width 
+        height, width = frame.shape[:2]
+        # get the image centers
+        image_center = (width/2, height/2)
+
+        rotation_arr = cv2.getRotationMatrix2D(image_center, float(angle), 1)
+
+        abs_cos = abs(rotation_arr[0,0])
+        abs_sin = abs(rotation_arr[0,1])
+
+        bound_w = int(height * abs_sin + width * abs_cos)
+        bound_h = int(height * abs_cos + width * abs_sin)
+
+        rotation_arr[0, 2] += bound_w/2 - image_center[0]
+        rotation_arr[1, 2] += bound_h/2 - image_center[1]
+
+        affine_warp = np.vstack((rotation_arr, np.array([0,0,1])))
+        bbox_ = np.expand_dims(straw_cord.reshape(-1, 2), 1)
+        bbox_ = cv2.perspectiveTransform(bbox_, affine_warp)
+        straw_top = (bbox_[0][0][1] + bbox_[3][0][1])/2
+        
+        # Given the straw bbox, we need to calculate the straw level based on the center of each tag in the chute. We know that the id of each tag corresponds to the level of the chute, meaning 1 is 10%, 2 is 20% and so on. We need to find the two closest tags in the y-axis to the straw bbox and calculate the straw level based on the distance between the two tags.
+        # We can do this by calculating the distance between the straw bbox and the center of each tag in the chute. We then sort the distances and find the two closest tags. We then calculate the distance between the straw bbox and the two closest tags and use this to calculate the straw level.
+        distance_dict = {}
+        for key, values in self.chute_numbers.items():
+            distance = abs(straw_top - values[1])
+            distance_dict[distance] = key
+        
+        # sort the dictionary by key
+        distance_dict = dict(sorted(distance_dict.items()))
+        # get the two closest tags
+        first_closest_tag_id, second_closest_tag_id = list(distance_dict.values())[:2]
+        # get the distance between the two closest tags
+        y_first = self.chute_numbers[first_closest_tag_id][1]
+        y_second = self.chute_numbers[second_closest_tag_id][1]
+        # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
+        straw_level = ((y_first-straw_top) / (y_first-y_second) + first_closest_tag_id)*10
+
+        return straw_level
     
     @staticmethod
     def time_function(func, *args, **kwargs):
@@ -941,6 +1026,7 @@ class RTSPStream(AprilDetector):
                 frame = self.q.get() # Get the frame from the queue
                 # Update the frame in the class instance to be used in other methods and ensure thread safety
                 if frame is None: # check if the frame is none. If it is, skip the iteration
+                    print("Frame is None. Skipping...")
                     continue
                 self.lock.acquire()
                 try:
@@ -957,7 +1043,8 @@ class RTSPStream(AprilDetector):
 
                 if self.detect_april and (self.tags is not None):
                     # # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
-                    frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags, make_cutout=self.make_cutout, use_cutout=self.use_cutout)
+                    frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
+
                 else:
                     frame_drawn = frame
                     cutout = None
@@ -973,8 +1060,9 @@ class RTSPStream(AprilDetector):
                         results = "NA"
                     self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
                 else:
-                    raise ValueError("The cutout image is None and the object detection is not used.")
-
+                    results = "NA"
+                # else:
+                #     print("The cutout image is None and the object detection is not used.")
                 if not results == "NA":
                     if self.with_predictor:
                         cutout_image, prep_time = self.time_function(self.prepare_for_inference, frame, results)
@@ -997,13 +1085,20 @@ class RTSPStream(AprilDetector):
                             # Add the time taken for inference to the text
                             self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
                             self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
-                            self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
-
+                            self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'                           
                     if self.object_detect:
                         frame_drawn = self.plot_boxes(results, frame_drawn)
+                elif self.yolo_straw:
+                    output, inference_time = self.time_function(self.model.score_frame, frame)
+                    if len(output[0]) != 0:
+                        straw_level = self.get_straw_level(frame, output)
+                        frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level)
+                        self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
+                    self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
                 else:
                     frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
                     cv2.imshow('Video', frame_drawn) # Display the frame
+                    cv2.waitKey(1)
                     continue
                 frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
 
@@ -1032,7 +1127,7 @@ class RTSPStream(AprilDetector):
                     cv2.putText(frame_drawn, val["text"], pos, font, font_scale, color, font_thickness, cv2.LINE_AA) # Draw the text over the box
                 
                 cv2.imshow('Video', frame_drawn) # Display the frame
-
+                cv2.waitKey(1)
                 # flush everything from memory to prevent memory leak
                 frame = None
                 results = None
@@ -1056,38 +1151,41 @@ class RTSPStream(AprilDetector):
         while True:
             frame_time = time.time()
             success, frame = self.cap.read() # Get the frame from the queue
-
             if not success: # check if the frame is none. If it is, skip the iteration
                 continue
+                
             self.lock.acquire()
             try:
                 self.frame = frame
             finally:
                 self.lock.release()
+
             # # Fix the frame by undistorting it
             # frame, undistort_time = self.time_function(self.fix_frame, frame) # NOTE this cant be used since undistort crops the top and bottom of the chute too much
             # self.information["undistort_time"]["text"] = f'Undistort Time: {undistort_time:.2f} s'
 
             if self.detect_april and (self.tags is not None):
                 # # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
-                frame_drawn, cutout = self.draw(frame.copy(), self.tags, self.make_cutout, self.use_cutout)
+                frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
+
             else:
                 frame_drawn = frame
                 cutout = None
             # We initialise results to None to avoid errors when the model is not used -> only when OD is used do we need
             # the results to crop the bbox from the frame. However, with the apriltrags from self.draw, we simply make the 
             # cutout from the frame and do not need the results.
-            results = None
             if cutout is not None:
                 frame = cutout
-            elif self.object_detect:
+                results = None
+            elif cutout is None and self.object_detect:
                 results, OD_time = self.time_function(self.OD.score_frame, frame) # This takes a lot of time if ran on CPU
                 if len(results[0]) == 0:
                     results = "NA"
                 self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
             else:
-                raise ValueError("The cutout image is None and the object detection is not used.")
-
+                results = "NA"
+            # else:
+            #     print("The cutout image is None and the object detection is not used.")
             if not results == "NA":
                 if self.with_predictor:
                     cutout_image, prep_time = self.time_function(self.prepare_for_inference, frame, results)
@@ -1110,16 +1208,20 @@ class RTSPStream(AprilDetector):
                         # Add the time taken for inference to the text
                         self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
                         self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
-                        self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
-
+                        self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'                           
                 if self.object_detect:
                     frame_drawn = self.plot_boxes(results, frame_drawn)
+            elif self.yolo_straw:
+                output, inference_time = self.time_function(self.model.score_frame, frame)
+                if len(output[0]) != 0:
+                    straw_level = self.get_straw_level(frame, output)
+                    frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level)
+                    self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
+                self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
             else:
                 frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
                 cv2.imshow('Video', frame_drawn) # Display the frame
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    self.close_threads()
-                    break
+                cv2.waitKey(1)
                 continue
             frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
 
@@ -1148,20 +1250,14 @@ class RTSPStream(AprilDetector):
                 cv2.putText(frame_drawn, val["text"], pos, font, font_scale, color, font_thickness, cv2.LINE_AA) # Draw the text over the box
             
             cv2.imshow('Video', frame_drawn) # Display the frame
+            cv2.waitKey(1)
             # flush everything from memory to prevent memory leak
             frame = None
-            gray = None
             results = None
             cutout_image = None
             output = None
             torch.cuda.empty_cache()
-
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                self.close_threads()
-                break
-        self.cap.release()
-        cv2.destroyAllWindows()
-
+            
     def close_threads(self):
         print("END: Threads and resources...")
         self.lock.acquire()
@@ -1195,6 +1291,10 @@ class RTSPStream(AprilDetector):
             if video_path:
                 self.cap = cv2.VideoCapture(video_path)
                 print("START: Videofile loaded")
+                if self.detect_april:
+                    self.thread3 = threading.Thread(target=self.find_tags)
+                    self.thread3.start()
+                    self.threads.append(self.thread3)
                 self.display_frame_from_videofile()
             else:
                 if cap is not None:
@@ -1244,7 +1344,7 @@ if __name__ == "__main__":
         debug=config["debug"]
     )
 
-    # video_path = "data/raw/stream-2024-09-23-10h11m28s.mp4"
+    video_path = "data/raw/Pin drum Chute 2_HKVision_HKVision_20241102105959_20241102112224_1532587042.mp4"
 
     # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
     #            rtsp=False, # Only used when the stream is from an RTSP source
@@ -1253,7 +1353,14 @@ if __name__ == "__main__":
     #            with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
     
     RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-            rtsp=True , # Only used when the stream is from an RTSP source
-            make_cutout=True, use_cutout=True, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
-            detect_april=True,
-            with_predictor=False, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
+            rtsp=False , # Only used when the stream is from an RTSP source
+            make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
+            detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
+            with_predictor=False , predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
+    
+    # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    #         rtsp=True , # Only used when the stream is from an RTSP source
+    #         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
+    #         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
+    #         with_predictor=False , predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)()
+    

@@ -194,7 +194,7 @@ def SpecialRotate(image, image_diff, bbox, angle):
     # get the image centers
     image_center = (width/2, height/2)
 
-    rotation_arr = cv2.getRotationMatrix2D(image_center, angle, 1)
+    rotation_arr = cv2.getRotationMatrix2D(image_center, float(angle), 1)
 
     abs_cos = abs(rotation_arr[0,0])
     abs_sin = abs(rotation_arr[0,1])
