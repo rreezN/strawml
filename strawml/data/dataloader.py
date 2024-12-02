@@ -76,7 +76,7 @@ class Chute(torch.utils.data.Dataset):
             fullness = self.frames[idx]['annotations']['fullness'][...]
             fullness = fullness.item()
             increment = 1/(self.num_classes_straw-1)
-            possible_fullness = np.arange(0, 1, increment)
+            possible_fullness = np.arange(0, 1.01, increment)
             fullness_converted = self.get_closest_value(fullness, possible_fullness)
             if fullness_converted in class_counts:
                 class_counts[fullness_converted] += 1
@@ -289,7 +289,7 @@ class Chute(torch.utils.data.Dataset):
         
         increment = 1/(self.num_classes_straw-1)
         
-        possible_fullness = np.arange(0, 1, increment)
+        possible_fullness = np.arange(0, 1.01, increment)
         fullness_converted = self.get_closest_value(fullness, possible_fullness)
         
         idx = int(round(fullness_converted/increment))
