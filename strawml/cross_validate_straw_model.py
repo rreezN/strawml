@@ -59,7 +59,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             total = len(train_loader.dataset)
             class_counts = np.array(list(train_loader.dataset.class_counts.values()))
             # Using CW_i = N / C_i 
-            ce_weights = torch.Tensor([total/class_counts])
+            ce_weights = torch.Tensor([total/class_counts]).flatten()
             ce_weights = ce_weights.cuda() if torch.cuda.is_available() else ce_weights
             # Using CW_i = N / (C_i * K)
             # ce_weights = torch.Tensor([total/(class_counts * train_set.num_classes_straw)])
