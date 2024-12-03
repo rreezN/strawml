@@ -16,7 +16,7 @@ from strawml.models.straw_classifier import chute_cropper as cc
 class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True, inc_edges: bool = False,
                  random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21,
-                 continuous: bool = False, subsample: float = 1.0, augment_probability: float = 0.5, override_statistics: tuple = (), greyscale: bool = False) -> torch.utils.data.Dataset:
+                 continuous: bool = False, subsample: float = 1.0, augment_probability: float = 0.5, override_statistics: tuple = (), greyscale: bool = False, sensor: bool = False) -> torch.utils.data.Dataset:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
@@ -30,6 +30,7 @@ class Chute(torch.utils.data.Dataset):
         self.subsample = subsample
         self.augment_probability = augment_probability
         self.greyscale = greyscale
+        self.sensor = sensor
         
         if len(override_statistics) > 0:
             self.train_mean, self.train_std = override_statistics
@@ -272,6 +273,11 @@ class Chute(torch.utils.data.Dataset):
         if self.inc_edges:
             frame_data = torch.vstack([frame_data, edges])
         
+        if self.sensor and self.data_purpose == "straw":
+            sensor_fullness = frame['annotations']['sensor_fullness'][...]
+            sensor_fullness = torch.Tensor(sensor_fullness)
+            return frame_data, fullness, sensor_fullness
+            
         if self.data_purpose == "straw":
             return frame_data, fullness
         
