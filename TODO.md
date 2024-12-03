@@ -7,15 +7,15 @@ These experiments should be done as barebones as possible. No additional fancy f
 Also figure out what is the model param size we are aiming for?
 
 MODEL - top1 acc - img_size - param_count
-- [ ] ConvNeXt - 86.2% - 224 - 50.22
-- [ ] ConvNeXt - 384
-- [ ] ViT - 86.6% - 384 - 60.60
+- [X] ConvNeXt - 86.2% - 224 - 50.22
+- [X] ConvNeXt - 384
+- [X] ViT - 86.6% - 384 - 60.60
 
 
 #### Regressor vs Classifier
-- [ ] Regressor
-- [ ] Classifier
-- [ ] Classifier w. weighted CE
+- [X] Regressor
+- [X] Classifier
+- [X] Classifier w. weighted CE
 
 #### Class amount
 - [ ] 5%
