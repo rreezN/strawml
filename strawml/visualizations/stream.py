@@ -71,7 +71,6 @@ class AprilDetector:
         elif with_predictor:
             self.setup_predictor()
 
-
     def setup_object_detection(self, od_model_name: str) -> None:
         """Setup object detection model."""
         self.OD = ObjectDetect(od_model_name, yolo_threshold=self.yolo_threshold, device=self.device, verbose=False)
@@ -201,7 +200,7 @@ class AprilDetector:
         unique_tag_ids = set()  # Set to track unique tags in detected_tags
         tags = self.detector.detect(frame)
 
-        detected_tags, unique_tag_ids = self.process_tags(tags, detected_tags, unique_tag_ids)
+        detected_tags, unique_tag_ids = self.helpers._process_tags(tags, detected_tags, unique_tag_ids)
 
         # Perform refined detection in parallel regions
         for tag in tags:
@@ -210,9 +209,9 @@ class AprilDetector:
             # Mark the tag as processed to prevent re-centering on it again
             self.processed_tags.add(tag.tag_id)
             # Define crop region
-            refined_tags, x_start, y_start = self.refine_detection(frame, tag, margin=150)
+            refined_tags, x_start, y_start = self.helpers._refine_detection(frame, tag, margin=150)
             # Process the refined tags and update state
-            detected_tags, unique_tag_ids = self.process_tags(refined_tags, detected_tags, unique_tag_ids, offsets=(x_start, y_start))
+            detected_tags, unique_tag_ids = self.helpers._process_tags(refined_tags, detected_tags, unique_tag_ids, offsets=(x_start, y_start))
         
         # Infer missing tags and update state
         self.helpers._account_for_missing_tags_in_chute_numbers()
@@ -221,99 +220,6 @@ class AprilDetector:
         # Clear the processed tags set for the next frame
         self.processed_tags.clear()
 
-    def process_tags(self, tags: list, detected_tags: list, unique_tag_ids: set, offsets: Tuple[int, int] = (0, 0)) -> Tuple[list, set]:
-        """
-        Process detected tags, adjust their coordinates, and update relevant attributes.
-        
-        Parameters:
-        -----------
-        tags: list
-            List of detected AprilTags to process.
-        frame: np.ndarray (Optional)
-            Frame in which the tags were detected, used for optional operations.
-        detected_tags: list
-            List to store tags with original coordinates.
-        unique_tag_ids: set
-            Set to track unique tags in detected_tags.
-        offsets: tuple
-            Tuple (x_offset, y_offset) to adjust tag coordinates if detected in a cropped frame.
-        """
-        x_offset, y_offset = offsets
-
-        for tag in tags:
-            tag.center = (tag.center[0] + x_offset, tag.center[1] + y_offset)
-            tag.corners[:, 0] += x_offset
-            tag.corners[:, 1] += y_offset
-
-            if tag.tag_id not in self.tag_ids:
-                if tag.tag_id in range(11):  # Chute numbers assumed to be tag IDs [0-10]
-                    self.chute_numbers[tag.tag_id] = tag.center
-                self.tags[tag.tag_id] = tag
-                self.tag_ids = np.append(self.tag_ids, int(tag.tag_id))
-
-            if tag.tag_id not in unique_tag_ids:
-                unique_tag_ids.add(tag.tag_id)
-                detected_tags.append(tag)
-
-        return detected_tags, unique_tag_ids
-    
-    def refine_detection(self, frame: np.ndarray, tag, margin: int = 150) -> list:
-        """
-        Performs refined detection around a tag's region.
-
-        Args:
-            frame: Frame in which the tag is detected.
-            tag: Tag object with initial detection.
-            margin: Margin around tag's center for refinement.
-
-        Returns:
-            List of tags detected in the refined region.
-        """
-        x_start, x_end = max(0, tag.center[0] - margin), min(frame.shape[1], tag.center[0] + margin)
-        y_start, y_end = max(0, tag.center[1] - margin), min(frame.shape[0], tag.center[1] + margin)
-        cropped_frame = frame[int(y_start):int(y_end), int(x_start):int(x_end)]
-        cropped_frame = self.helpers._fix_frame(cropped_frame, blur=True)
-
-        return self.detector.detect(cropped_frame), x_start, y_start
-    
-    def prepare_for_inference(self, frame, results=None, visualize=False):
-        """
-        Prepare a frame for inference by cropping, normalizing, and optionally detecting edges.
-
-        Parameters:
-        -----------
-        frame: np.ndarray
-            The input image/frame to be processed.
-        results: Optional
-            The results containing bounding box data for cropping. Default is None.
-        visualize: bool
-            Whether to visualize intermediate results for debugging. Default is False.
-
-        Returns:
-        --------
-        torch.Tensor
-            The preprocessed frame ready for inference.
-        """
-        # Crop the frame based on results, if provided
-        frame_data = self.helpers._crop_to_bbox(frame, results)
-        
-        # Detect edges if required
-        edges = self.helpers._detect_edges(frame_data) if self.edges else None
-
-        # Normalize the frame
-        frame_data = self.transform(torch.from_numpy(frame_data).permute(2, 0, 1).float())
-
-        # Visualize intermediate results if requested
-        if visualize:
-            self.helpers._visualize_frame(frame_data, edges)
-
-        # Stack edges with the frame if required
-        cutout_image = self.helpers._combine_with_edges(frame_data, edges)
-
-        # Resize and add batch dimension
-        cutout_image = self.resize(cutout_image).unsqueeze(0)
-
-        return cutout_image
 
     def draw(self, frame: np.ndarray, tags: list, make_cutout: bool = False, straw_level: float = 25, use_cutout=False) -> np.ndarray:
         """

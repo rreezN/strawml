@@ -354,6 +354,100 @@ class AprilDetectorHelpers:
         self.ADI.tag_ids = []
         self.ADI.chute_numbers = {}
 
+    def _process_tags(self, tags: list, detected_tags: list, unique_tag_ids: set, offsets: Tuple[int, int] = (0, 0)) -> Tuple[list, set]:
+        """
+        Process detected tags, adjust their coordinates, and update relevant attributes.
+        
+        Parameters:
+        -----------
+        tags: list
+            List of detected AprilTags to process.
+        frame: np.ndarray (Optional)
+            Frame in which the tags were detected, used for optional operations.
+        detected_tags: list
+            List to store tags with original coordinates.
+        unique_tag_ids: set
+            Set to track unique tags in detected_tags.
+        offsets: tuple
+            Tuple (x_offset, y_offset) to adjust tag coordinates if detected in a cropped frame.
+        """
+        x_offset, y_offset = offsets
+
+        for tag in tags:
+            tag.center = (tag.center[0] + x_offset, tag.center[1] + y_offset)
+            tag.corners[:, 0] += x_offset
+            tag.corners[:, 1] += y_offset
+
+            if tag.tag_id not in self.ADI.tag_ids:
+                if tag.tag_id in range(11):  # Chute numbers assumed to be tag IDs [0-10]
+                    self.ADI.chute_numbers[tag.tag_id] = tag.center
+                self.ADI.tags[tag.tag_id] = tag
+                self.ADI.tag_ids = np.append(self.ADI.tag_ids, int(tag.tag_id))
+
+            if tag.tag_id not in unique_tag_ids:
+                unique_tag_ids.add(tag.tag_id)
+                detected_tags.append(tag)
+
+        return detected_tags, unique_tag_ids
+    
+    def _refine_detection(self, frame: np.ndarray, tag, margin: int = 150) -> list:
+        """
+        Performs refined detection around a tag's region.
+
+        Args:
+            frame: Frame in which the tag is detected.
+            tag: Tag object with initial detection.
+            margin: Margin around tag's center for refinement.
+
+        Returns:
+            List of tags detected in the refined region.
+        """
+        x_start, x_end = max(0, tag.center[0] - margin), min(frame.shape[1], tag.center[0] + margin)
+        y_start, y_end = max(0, tag.center[1] - margin), min(frame.shape[0], tag.center[1] + margin)
+        cropped_frame = frame[int(y_start):int(y_end), int(x_start):int(x_end)]
+        cropped_frame = self._fix_frame(cropped_frame, blur=True)
+
+        return self.ADI.detector.detect(cropped_frame), x_start, y_start
+    
+    def _prepare_for_inference(self, frame, results=None, visualize=False):
+        """
+        Prepare a frame for inference by cropping, normalizing, and optionally detecting edges.
+
+        Parameters:
+        -----------
+        frame: np.ndarray
+            The input image/frame to be processed.
+        results: Optional
+            The results containing bounding box data for cropping. Default is None.
+        visualize: bool
+            Whether to visualize intermediate results for debugging. Default is False.
+
+        Returns:
+        --------
+        torch.Tensor
+            The preprocessed frame ready for inference.
+        """
+        # Crop the frame based on results, if provided
+        frame_data = self._crop_to_bbox(frame, results)
+        
+        # Detect edges if required
+        edges = self._detect_edges(frame_data) if self.ADI.edges else None
+
+        # Normalize the frame
+        frame_data = self.ADI.transform(torch.from_numpy(frame_data).permute(2, 0, 1).float())
+
+        # Visualize intermediate results if requested
+        if visualize:
+            self._visualize_frame(frame_data, edges)
+
+        # Stack edges with the frame if required
+        cutout_image = self._combine_with_edges(frame_data, edges)
+
+        # Resize and add batch dimension
+        cutout_image = self.ADI.resize(cutout_image).unsqueeze(0)
+
+        return cutout_image
+    
 class TagGraphWithPositionsCV:
     """
     A class to represent a graph of connected tags with inferred positions for missing tags. This class is designed to be used
