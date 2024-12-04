@@ -39,67 +39,112 @@ def predict_model(args, model: torch.nn.Module, dataloader: DataLoader, feature_
         losses = np.array([])
         outputs = np.array([])
         fullnesses = np.array([])
+        sensor_data = np.array([])
         
-        for (frame_data, target) in data_iterator:
-            fullness = target
-            
-            if torch.cuda.is_available():
-                frame_data = frame_data.cuda()
-                fullness = fullness.cuda()
-
-            # Forward pass
-                if args.cont and args.model != 'cnn':
-                    features = model.forward_features(frame_data)
-                    output = features
-                else:
-                    output = model(frame_data)
-                # print("features shape:", features.shape)
-                # print("output shape (post squeeze, before feature_regressor):", output.shape)
-                if feature_regressor is not None:
-                    output = output.flatten(1)
-                    output = feature_regressor(output)
-                    # output = torch.clamp(output, 0, 1)
+        if dataloader.dataset.sensor:
+            for (frame_data, target, sensor_fullness) in data_iterator:
+                fullness = target
                 
-            loss = loss_fn(output, fullness)
-            losses = np.append(losses, loss.item())
+                if torch.cuda.is_available():
+                    frame_data = frame_data.cuda()
+                    fullness = fullness.cuda()
+
+                # Forward pass
+                    if args.cont and args.model != 'cnn':
+                        features = model.forward_features(frame_data)
+                        output = features
+                    else:
+                        output = model(frame_data)
+                    # print("features shape:", features.shape)
+                    # print("output shape (post squeeze, before feature_regressor):", output.shape)
+                    if feature_regressor is not None:
+                        output = output.flatten(1)
+                        output = feature_regressor(output)
+                        # output = torch.clamp(output, 0, 1)
+                    
+                loss = loss_fn(output, fullness)
+                losses = np.append(losses, loss.item())
+                
+                if not args.cont:
+                    output = torch.nn.functional.softmax(output, dim=1)
+                    _, predicted = torch.max(output, 1)
+                    _, target_fullness = torch.max(fullness, 1)
+                    correct = sum(predicted == target_fullness)
+                    accuracy = 100 * correct / args.batch_size
+                    accuracies = np.append(accuracies, accuracy.item())
+                    output = predicted
+                    fullness = target_fullness
+                outputs = np.append(outputs, output.cpu().numpy())
+                fullnesses = np.append(fullnesses, fullness.cpu().numpy())
+                sensor_data = np.append(sensor_data, sensor_fullness.cpu().numpy())
             
-            if not args.cont:
-                output = torch.nn.functional.softmax(output, dim=1)
-                _, predicted = torch.max(output, 1)
-                _, target_fullness = torch.max(fullness, 1)
-                correct = sum(predicted == target_fullness)
-                accuracy = 100 * correct / args.batch_size
-                accuracies = np.append(accuracies, accuracy.item())
-                output = predicted
-                fullness = target_fullness
-            outputs = np.append(outputs, output.cpu().numpy())
-            fullnesses = np.append(fullnesses, fullness.cpu().numpy())
+            return outputs, fullnesses, accuracies, losses, sensor_data
+        else:
+            for (frame_data, target) in data_iterator:
+                fullness = target
+                
+                if torch.cuda.is_available():
+                    frame_data = frame_data.cuda()
+                    fullness = fullness.cuda()
+
+                # Forward pass
+                    if args.cont and args.model != 'cnn':
+                        features = model.forward_features(frame_data)
+                        output = features
+                    else:
+                        output = model(frame_data)
+                    # print("features shape:", features.shape)
+                    # print("output shape (post squeeze, before feature_regressor):", output.shape)
+                    if feature_regressor is not None:
+                        output = output.flatten(1)
+                        output = feature_regressor(output)
+                        # output = torch.clamp(output, 0, 1)
+                    
+                loss = loss_fn(output, fullness)
+                losses = np.append(losses, loss.item())
+                
+                if not args.cont:
+                    output = torch.nn.functional.softmax(output, dim=1)
+                    _, predicted = torch.max(output, 1)
+                    _, target_fullness = torch.max(fullness, 1)
+                    correct = sum(predicted == target_fullness)
+                    accuracy = 100 * correct / args.batch_size
+                    accuracies = np.append(accuracies, accuracy.item())
+                    output = predicted
+                    fullness = target_fullness
+                outputs = np.append(outputs, output.cpu().numpy())
+                fullnesses = np.append(fullnesses, fullness.cpu().numpy())
     
-    return outputs, fullnesses, accuracies, losses
+            return outputs, fullnesses, accuracies, losses
 
 
-def plot_cont_predictions(outputs, fullnesses):
+def plot_cont_predictions(outputs, fullnesses, sensor_data=None):
     """Plot the continuous predictions.
     """
     
     outputs = np.array(outputs)
     fullnesses = np.array(fullnesses)
+    if sensor_data is not None:
+        sensor_data = np.array(sensor_data)
     
-    MSE = np.square(np.subtract(outputs, fullnesses)).mean()
-    MAE = np.abs(np.subtract(outputs, fullnesses)).mean()
-    RMSE = np.sqrt(MSE)
-    PRMSE = np.sqrt(np.mean(np.sum(np.square(np.subtract(outputs, fullnesses)))) / np.sum(np.square(fullnesses)))
+    # MSE = np.square(np.subtract(outputs, fullnesses)).mean()
+    # MAE = np.abs(np.subtract(outputs, fullnesses)).mean()
+    # RMSE = np.sqrt(MSE)
+    # PRMSE = np.sqrt(np.mean(np.sum(np.square(np.subtract(outputs, fullnesses)))) / np.sum(np.square(fullnesses)))
     
     # Calculate accuracy of the model
     # Any prediction within x% of the true value is considered correct
     acceptable = 0.1
     accuracy = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
+    sensor_accuracy = np.sum(np.abs(sensor_data - fullnesses) < acceptable) / len(sensor_data)
     
     model_name = f'{args.model}_reg' if args.cont else f'{args.model}_cls'
     
     plt.figure(figsize=(10, 5))
-    plt.plot(outputs, label='Predicted')
-    plt.plot(fullnesses, label='True')
+    plt.plot(outputs, label='Predicted', color='indianred', linestyle='--')
+    if sensor_data is not None:
+        plt.plot(sensor_data, label='Sensor', color='darkgreen', linestyle='-.')
+    plt.plot(fullnesses, label='True', color='royalblue', alpha=0.75)
     
     # Plot acceptable range
     plt.fill_between(np.arange(len(outputs)), fullnesses-acceptable, fullnesses+acceptable, color='gray', alpha=0.5, label=f'threshold={acceptable*100:.0f}%')
@@ -109,7 +154,11 @@ def plot_cont_predictions(outputs, fullnesses):
     plt.grid()
     plt.xlabel('Frame')
     plt.ylabel('Fullness')
-    plt.title(f'{model_name} Predicted vs True Fullness, MSE: {MSE:.3f}, MAE: {MAE:.3f}, RMSE: {RMSE:.3f}, PRMSE: {PRMSE:.3f}, accuracy: {accuracy*100:.1f}%')
+    # plt.title(f'{model_name} Predicted vs True Fullness, MSE: {MSE:.3f}, MAE: {MAE:.3f}, RMSE: {RMSE:.3f}, PRMSE: {PRMSE:.3f}, accuracy: {accuracy*100:.1f}%')
+    if sensor_data is not None:
+        plt.title(f'{model_name} Predicted vs True Fullness, model accuracy: {accuracy*100:.1f}%, sensor accuracy: {sensor_accuracy*100:.1f}%')
+    else:
+        plt.title(f'{model_name} Predicted vs True Fullness, model accuracy: {accuracy*100:.1f}%')
     plt.tight_layout()
     os.makedirs(f'reports/figures/model_results/{args.model}_regressor/', exist_ok=True)
     plt.savefig(f'reports/figures/model_results/{args.model}_regressor/cont_predictions.png', dpi=300)
@@ -199,10 +248,10 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--model_path', type=str, default='models/', help='Path to load the model from')
     parser.add_argument('--data_path', type=str, default='data/processed/sensors.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
-    parser.add_argument('--inc_edges', type=bool, default=True, help='Include edges in the training data')
+    parser.add_argument('--inc_edges', type=bool, default=False, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
-    parser.add_argument('--model', type=str, default='caformer', help='Model to use for predicting', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
-    parser.add_argument('--image_size', type=tuple, default=(1370, 204), help='Image size for the model (only for CNN)')
+    parser.add_argument('--model', type=str, default='convnextv2', help='Model to use for predicting', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
+    parser.add_argument('--image_size', type=tuple, default=(224, 224), help='Image size for the model (only for CNN)')
     parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
     parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class (only for CNN model currently)')
     return parser.parse_args()
@@ -220,8 +269,9 @@ if __name__ == '__main__':
             image_size = (384, 384)
         case 'eva02':
             image_size = (448, 448)
+    image_size = args.image_size
     
-    temp_set = dl.Chute(data_path='data/interim/chute_detection.hdf5', data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, image_size=image_size,
+    temp_set = dl.Chute(data_path='data/processed/train.hdf5', data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, image_size=image_size,
                         random_state=args.seed, force_update_statistics=False, data_purpose='straw',
                         num_classes_straw=args.num_classes_straw, continuous=args.cont)
     mean, std = temp_set.train_mean, temp_set.train_std
@@ -232,7 +282,7 @@ if __name__ == '__main__':
     
     test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, image_size=image_size,
                         random_state=args.seed, force_update_statistics=False, data_purpose='straw',
-                        num_classes_straw=args.num_classes_straw, continuous=args.cont, override_statistics=statistics)
+                        num_classes_straw=args.num_classes_straw, continuous=args.cont, override_statistics=statistics, sensor=True)
     
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
     
@@ -249,7 +299,7 @@ if __name__ == '__main__':
         case 'cnn':
             model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw)
         case 'convnextv2':
-            model = timm.create_model('convnextv2_atto', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
+            model = timm.create_model('convnext_small.in12k_ft_in1k_384', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
         case 'vit':
             model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
         case 'eva02':
@@ -272,7 +322,7 @@ if __name__ == '__main__':
         feature_regressor = None
         model.load_state_dict(torch.load(f'{model_path}/{args.model}_classifier_best', weights_only=True))
     
-    outputs, fullnesses, accuracies, losses = predict_model(args, model, test_loader, feature_regressor=feature_regressor)
+    outputs, fullnesses, accuracies, losses, sensor_data = predict_model(args, model, test_loader, feature_regressor=feature_regressor)
     
     print(f"Mean loss: {sum(losses) / len(losses)}")
     if not args.cont:
@@ -284,6 +334,6 @@ if __name__ == '__main__':
     print("Done predicting.")
     
     if args.cont:
-        plot_cont_predictions(outputs, fullnesses)
+        plot_cont_predictions(outputs, fullnesses, sensor_data)
     else:
         plot_confusion_matrix(outputs, fullnesses, args.num_classes_straw)

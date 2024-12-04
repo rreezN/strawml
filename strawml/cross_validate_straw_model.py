@@ -59,13 +59,14 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             total = len(train_loader.dataset)
             class_counts = np.array(list(train_loader.dataset.class_counts.values()))
             # Using CW_i = N / C_i 
-            ce_weights = torch.Tensor([total/class_counts])
+            ce_weights = torch.Tensor([total/class_counts]).flatten()
+            ce_weights = ce_weights.cuda() if torch.cuda.is_available() else ce_weights
             # Using CW_i = N / (C_i * K)
             # ce_weights = torch.Tensor([total/(class_counts * train_set.num_classes_straw)])
         else:
             ce_weights = None
 
-        loss_fn = torch.nn.functional.cross_entropy(weight=ce_weights)
+        loss_fn = torch.nn.functional.cross_entropy
         best_accuracy = -1.0
     
     epoch_train_losses = []
@@ -114,7 +115,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 output = feature_regressor(output)
                 # output = torch.clamp(output, 0, 1)
             
-            if args.use_wce:
+            if args.use_wce and not args.cont:
                 loss = loss_fn(output, fullness, weight=ce_weights)
             else:
                 loss = loss_fn(output, fullness)
@@ -551,7 +552,10 @@ def plot_example(info, frame_data, prediction, target):
         prediction = prediction * increment
         target = target * increment
     
-    plt.imshow(frame_data, cmap='gray' if args.greyscale else None)
+    if args.greyscale:
+        plt.imshow(frame_data, cmap="gray")
+    else:
+        plt.imshow(frame_data)
     plt.title(f'{info["data_type"]} Epoch: {info["epoch"]} it: {info["current_iteration"]} Prediction: {prediction} Target: {target}')
     
     # plt.show()
@@ -658,18 +662,18 @@ if __name__ == '__main__':
     
     # Is this how we want to do it?
     if args.hpc:
-        path_to_data = f'/work3/{os.getlogin()}/data/'
+        path_to_data = f'/work3/davos/data/'
         if not os.path.exists(path_to_data):
             raise FileNotFoundError(f'Path to data not found: {path_to_data}')
         os.makedirs(f'{path_to_data}', exist_ok=True)
         args.data_path = path_to_data + args.data_path
         if not os.path.exists(args.data_path):
             raise FileNotFoundError(f'Data path not found: {args.data_path}')
-        args.save_path = f'/work3/{os.getlogin()}/models/'
+        args.save_path = f'/work3/davos/models/'
         os.makedirs(args.save_path, exist_ok=True)
         if not os.path.exists(args.save_path):
             raise FileNotFoundError(f'Save path not found: {args.save_path}')
-        sensor_path = f'/work3/{os.getlogin()}/data/sensors.hdf5'
+        sensor_path = f'/work3/davos/data/sensors.hdf5'
         if not os.path.exists(sensor_path):
             raise FileNotFoundError(f'Sensor data path not found: {sensor_path}')
     
@@ -706,7 +710,7 @@ if __name__ == '__main__':
     #                     random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont)
     sensor_set = dl.Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
-                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=0.01,
+                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=1.0,
                           augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics, greyscale=args.greyscale)
     
     fold_train_losses = []

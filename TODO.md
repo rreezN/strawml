@@ -5,18 +5,21 @@
 These experiments should be done as barebones as possible. No additional fancy features. No data augmentation. No edges, heatmaps. No LR schedulers, bare minimum LR tuning, ADAM optimizer. The goal is to figure out which overall architecture will best satisfy our needs within both accuracy and inference time.
 
 Also figure out what is the model param size we are aiming for?
-#### No pre-training 
+
 MODEL - top1 acc - img_size - param_count
-- [ ] CNN (own) - ?? - ANY - ??
-- [ ] ConvNeXt - 86.2% - 384 - 50.22
-- [ ] Eva02 - 88.7% - 448 - 87.12
-- [ ] CAFormer - 87.5% - 384 - 56.20
-- [ ] ViT - 86.6% - 384 - 60.60
-#### Pre-trained
-- [ ] ConvNeXt
-- [ ] Eva02
-- [ ] CAFormer
-- [ ] ViT
+- [X] ConvNeXt - 86.2% - 224 - 50.22
+- [X] ConvNeXt - 384
+- [X] ViT - 86.6% - 384 - 60.60
+
+
+#### Regressor vs Classifier
+- [X] Regressor
+- [X] Classifier
+- [X] Classifier w. weighted CE
+
+#### Class amount
+- [ ] 5%
+- [ ] 10%
 
 ### Image size experiments
 Some models (ConvNeXt for example) are fully convolutional, and thus don't depend on image size. Others can manually specify input sizes for. Might be a good idea to test, especially with non-square images.
@@ -33,21 +36,12 @@ The goal of these experiments is to test adjustments in architecture after selec
 - [ ] Nothing
 - [ ] Sigmoid
 - [ ] Clamp
-  
+
 #### TIMM regressor architecture (feature_regressor)
 - [ ] Number of layers
 - [ ] Number of neurons
 - [ ] BatchNorm, etc..
 - [ ] Average pool instead of FCN
-
-#### Regressor vs Classifier
-- [ ] Regressor
-- [ ] Classifier
-- [ ] Classifier w. weighted CE
-
-#### Class amount
-- [ ] 5%
-- [ ] 10%
 
 ### Training Experiments
 These experiments will alter the training by introducing different optimisers, learning rate schedulers and so on.
