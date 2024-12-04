@@ -166,8 +166,8 @@ class AprilDetector:
                 x1, y1, x2, y2, x3, y3, x4, y4 = int(x1), int(y1), int(x2), int(y2), int(x3), int(y3), int(x4), int(y4)
                 if straw:
                     # Only plot the upper vertical line
-                    cv2.line(frame, (x1, y1), (x4, y4), (0,155,0), 2)
-                    cv2.putText(frame, f"{straw_lvl:.2f} %", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                    cv2.line(frame, (x1, y1), (x4, y4), (127,0,255), 2)
+                    cv2.putText(frame, f"{straw_lvl:.2f} %", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
                 else:                        
                     # draw lines between the corners
                     cv2.line(frame, (x1, y1), (x2, y2), (138,43,226), 2)
@@ -322,15 +322,12 @@ class RTSPStream(AprilDetector):
         
         # make sure that all the tags are detected
         if len(self.chute_numbers) != 11:
-            return 0
+            return frame, 0
         _, straw_cord,_ , _ = straw_bbox
         straw_cord = straw_cord[0].flatten()
         
         # Get angle of self.chute_numbers
-        tag0_center = list(self.chute_numbers.values())[0]
-        tag1_center = list(self.chute_numbers.values())[1]
-        # Get angle of the two tags
-        angle = np.arctan((tag1_center[1] - tag0_center[1]) / (tag1_center[0] - tag0_center[0]))
+        angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
         
         # Taking image height and width 
         height, width = frame.shape[:2]
@@ -348,6 +345,7 @@ class RTSPStream(AprilDetector):
         rotation_arr[0, 2] += bound_w/2 - image_center[0]
         rotation_arr[1, 2] += bound_h/2 - image_center[1]
 
+        rotated_frame = cv2.warpAffine(frame, rotation_arr, (bound_w, bound_h))
         affine_warp = np.vstack((rotation_arr, np.array([0,0,1])))
         bbox_ = np.expand_dims(straw_cord.reshape(-1, 2), 1)
         bbox_ = cv2.perspectiveTransform(bbox_, affine_warp)
@@ -363,13 +361,15 @@ class RTSPStream(AprilDetector):
         # sort the dictionary by key
         distance_dict = dict(sorted(distance_dict.items()))
         # get the two closest tags
-        first_closest_tag_id, second_closest_tag_id = list(distance_dict.values())[:2]
+        tag0, tag1 = list(distance_dict.values())[:2]
+        # Wee know that the tag with the lower y-value has to be the current level.
+        first_closest_tag_id, second_closest_tag_id = min(tag0, tag1), max(tag0, tag1)
         # get the distance between the two closest tags
         y_first = self.chute_numbers[first_closest_tag_id][1]
         y_second = self.chute_numbers[second_closest_tag_id][1]
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
         straw_level = ((y_first-straw_top) / (y_first-y_second) + first_closest_tag_id)*10
-        return straw_level
+        return rotated_frame, straw_level
     
     def get_straw_to_pixel_level(self, straw_level):
         # We know that the self.chute_numbers are ordered from 0 to 10. We can use this to calculate the pixel value of the straw level
@@ -544,9 +544,8 @@ class RTSPStream(AprilDetector):
                         frame_drawn = self.plot_boxes(results, frame_drawn, straw=False, straw_lvl=None, model_type="obb")
                 elif self.yolo_straw:
                     output, inference_time = self.time_function(self.model.score_frame, frame)
-                    print(output)
                     if len(output[0]) != 0:
-                        straw_level = self.get_pixel_to_straw_level(frame, output)
+                        frame_drawn, straw_level = self.get_pixel_to_straw_level(frame_drawn, output)
                         frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level, model_type="obb")
                         self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
                     self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
@@ -671,10 +670,9 @@ class RTSPStream(AprilDetector):
                     frame_drawn = self.plot_boxes(results, frame_drawn)
             elif self.yolo_straw:
                 output, inference_time = self.time_function(self.model.score_frame, frame)
-                print(output)
                 if len(output[0]) != 0:
-                    straw_level = self.get_pixel_to_straw_level(frame, output)
-                    frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level)
+                    frame_drawn, straw_level = self.get_pixel_to_straw_level(frame_drawn, output)
+                    frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level, model_type="obb")
                     self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
                 self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
             else:
@@ -809,7 +807,7 @@ if __name__ == "__main__":
     )
 
     # video_path = "data/raw/Pin drum Chute 2_HKVision_HKVision_20241102105959_20241102112224_1532587042.mp4"
-    video_path = "D:/HCAI/msc/strawml/data/special/Pin drum Chute 2_HKVision_HKVision_20241102105959_20241102112224_1532587042.mp4"
+    video_path = "D:/HCAI/msc/strawml/data/special/Pin drum Chute 2_HKVision_HKVision_20241102112224_20241102113000_1532606664.mp4"
     # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
     #            rtsp=False, # Only used when the stream is from an RTSP source
     #            make_cutout=False, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
