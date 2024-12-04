@@ -20,7 +20,9 @@ class AprilDetectorHelpers:
             "prep":             {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 200)},
             "model":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 225)},
             "frame_time":       {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 250)},
-            "GPU":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 275)},
+            "RAM":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 275)},
+            "CPU":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 300)},
+
         }
         return temp
 

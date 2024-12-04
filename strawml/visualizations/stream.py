@@ -1,8 +1,8 @@
 from __init__ import *
 # Misc.
+import os
 import cv2
 import time
-import yaml
 import torch
 import queue
 import psutil
@@ -274,7 +274,7 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cpu", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
+    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, yolo_straw=yolo_straw, yolo_straw_model=yolo_straw_model, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         self.rtsp = rtsp
         self.yolo_straw = yolo_straw
@@ -347,7 +347,7 @@ class RTSPStream(AprilDetector):
 
         rotated_frame = cv2.warpAffine(frame, rotation_arr, (bound_w, bound_h))
         affine_warp = np.vstack((rotation_arr, np.array([0,0,1])))
-        bbox_ = np.expand_dims(straw_cord.reshape(-1, 2), 1)
+        bbox_ = np.expand_dims(straw_cord.cpu().numpy().reshape(-1, 2), 1)
         bbox_ = cv2.perspectiveTransform(bbox_, affine_warp)
         straw_top = (bbox_[0][0][1] + bbox_[3][0][1])/2
         
@@ -566,7 +566,8 @@ class RTSPStream(AprilDetector):
                 # Display the FPS on the frame
                 self.information["FPS"]["text"] = f'(T2) FPS: {fps:.2f}'
                 self.information["frame_time"]["text"] = f'(T2) Total Frame Time: {e - frame_time:.2f} s'
-                self.information["GPU"]["text"] = f'(TM) GPU Usage: {f"Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}"}'
+                self.information["RAM"]["text"] = f'(TM) Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}'
+                # self.information["CPU"]["text"] = f'(TM) CPU Usage: {f"Total CPU Usage (%): {psutil.Process(os.getpid()).cpu_percent(interval=0)}"}'
                 # Draw the text on the frame
                 for i, (key, val) in enumerate(self.information.items()):
                     # Get the text size
@@ -692,7 +693,8 @@ class RTSPStream(AprilDetector):
             # Display the FPS on the frame
             self.information["FPS"]["text"] = f'(T2) FPS: {fps:.2f}'
             self.information["frame_time"]["text"] = f'(T2) Total Frame Time: {e - frame_time:.2f} s'
-            self.information["GPU"]["text"] = f'(TM) GPU Usage: {f"Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}"}'
+            self.information["RAM"]["text"] = f'(TM) Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}'
+            self.information["CPU"]["text"] = f'(TM) Total CPU Usage (%):  {psutil.Process(os.getpid()).cpu_percent(interval=0)}'
             # Draw the text on the frame
             for i, (key, val) in enumerate(self.information.items()):
                 # Get the text size
@@ -833,7 +835,8 @@ if __name__ == "__main__":
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
-        with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
+        with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False
+        device='cuda')()
 
 
 # TODO: look into why the tags are found, but not plottet for the chute-numbers.
