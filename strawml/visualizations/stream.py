@@ -567,7 +567,7 @@ class RTSPStream(AprilDetector):
                 self.information["FPS"]["text"] = f'(T2) FPS: {fps:.2f}'
                 self.information["frame_time"]["text"] = f'(T2) Total Frame Time: {e - frame_time:.2f} s'
                 self.information["RAM"]["text"] = f'(TM) Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}'
-                # self.information["CPU"]["text"] = f'(TM) CPU Usage: {f"Total CPU Usage (%): {psutil.Process(os.getpid()).cpu_percent(interval=0)}"}'
+                self.information["CPU"]["text"] = f'(TM) CPU Usage: {f"Total CPU Usage (%): {psutil.cpu_percent()}"}'
                 # Draw the text on the frame
                 for i, (key, val) in enumerate(self.information.items()):
                     # Get the text size
@@ -835,7 +835,7 @@ if __name__ == "__main__":
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
-        with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False
+        with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
         device='cuda')()
 
 
