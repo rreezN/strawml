@@ -373,7 +373,7 @@ class RTSPStream(AprilDetector):
         straw_level = (tag_diff * (y_under-straw_top) / (y_under-y_over) + tag_under)*10
         
         if self.record and self.recording_req:
-            self.prediction_dict["yolo"] = {straw_level: (straw_top, x_mean)}
+            self.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
             self.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
         
         return rotated_frame, straw_level
@@ -403,7 +403,7 @@ class RTSPStream(AprilDetector):
         pixel_straw_level_y = y_first - (y_first - y_second) * excess
         pixel_straw_level_x = (chute_numbers[first_closest_tag_id][0] + chute_numbers[second_closest_tag_id][0]) / 2
         
-        return (pixel_straw_level_y, pixel_straw_level_x)
+        return (pixel_straw_level_x, pixel_straw_level_y)
     
     @staticmethod
     def time_function(func, *args, **kwargs):
@@ -645,7 +645,7 @@ class RTSPStream(AprilDetector):
 
             y_pixel, x_pixel = self.get_straw_to_pixel_level(straw_level)      
             if self.record and self.recording_req:
-                self.prediction_dict["predicted"] = {straw_level: (y_pixel, x_pixel)}
+                self.prediction_dict["predicted"] = {straw_level: (x_pixel, y_pixel)}
             # Draw line and text for straw level
             cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 100, int(y_pixel)), (205, 92, 92), 2)
             cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel) + 110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (205, 92, 92), 1, cv2.LINE_AA)
