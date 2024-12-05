@@ -542,7 +542,7 @@ def plot_example(info, frame_data, prediction, target):
     means = train_set.train_mean
     stds = train_set.train_std
     frame_data = frame_data * stds + means
-    frame_data = np.clip(frame_data, 0, 1)
+    frame_data = np.clip(frame_data, 0, 255)
     
     if args.cont:
         prediction = int(prediction*100)
