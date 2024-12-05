@@ -555,7 +555,7 @@ class RTSPStream(AprilDetector):
             time_group.create_dataset('image', data=encoded_frame)
             for key, value in self.prediction_dict.items():
                 predict_group = time_group.create_group(key)
-                percent, pixel = value.items()
+                percent, pixel = list(value.items())[0]
                 predict_group.create_dataset('percent', data=percent)
                 predict_group.create_dataset('pixel', data=pixel)
 
