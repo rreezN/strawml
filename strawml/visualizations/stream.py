@@ -385,23 +385,41 @@ class RTSPStream(AprilDetector):
         # We can use the distance between the two closest tags to calculate the pixel value of the straw level.
         chute_numbers = self.chute_numbers.copy()
 
-        if len(chute_numbers) != 11:
-            return 0, 0
-
         # First we divide the straw level by 10 to get it on the same scale as the tag ids
         straw_level = straw_level / 10
 
         # We then get the two closest tags
-        first_closest_tag_id, second_closest_tag_id = int(straw_level), int(straw_level) + 1
+        tag_under, tag_over = int(straw_level), int(straw_level) + 1
+        
+        # next we find the two closest tags in chute_numbers based on the tag ids
+        # First we create a list for the values that are less or equal to the tag_under and greater than the tag_over
+        tag_under_list = [key for key, _ in chute_numbers.items() if key <= tag_under]
+        tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
+
+        # next we order them
+        tag_under_list = sorted(tag_under_list, reverse=True)
+        tag_over_list = sorted(tag_over_list)
+        
+        # Then we see if the tag_under_closest is above or below the straw level
+        tag_under_closest = tag_under_list[0]
+        tag_over_closest = tag_over_list[0]
+
+        # calculate difference between tag ids
+        tag_diff = tag_over_closest - tag_under_closest
+        if tag_diff > 1:
+            interpolated = True
+        else:
+            interpolated = False
         
         # get the distance between the two closest tags
-        y_first = chute_numbers[first_closest_tag_id][1]
-        y_second = chute_numbers[second_closest_tag_id][1]
+        y_under = chute_numbers[tag_under_closest][1]
+        y_over = chute_numbers[tag_over_closest][1]
         
         # get the pixel value of the straw level
-        excess = straw_level - int(straw_level)
-        pixel_straw_level_y = y_first - (y_first - y_second) * excess
-        pixel_straw_level_x = (chute_numbers[first_closest_tag_id][0] + chute_numbers[second_closest_tag_id][0]) / 2
+        excess = straw_level - y_under
+        pixel_straw_level_x = (chute_numbers[tag_under_closest][0] + chute_numbers[tag_over_closest][0]) / 2
+        pixel_straw_level_y = y_under - (y_under - y_over) * excess/tag_diff
+
         
         return (pixel_straw_level_x, pixel_straw_level_y)
     
