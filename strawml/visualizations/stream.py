@@ -3,6 +3,7 @@ from __init__ import *
 import os
 import cv2
 import time
+import h5py
 import torch
 import queue
 import psutil
@@ -402,7 +403,7 @@ class RTSPStream(AprilDetector):
         pixel_straw_level_y = y_first - (y_first - y_second) * excess
         pixel_straw_level_x = (chute_numbers[first_closest_tag_id][0] + chute_numbers[second_closest_tag_id][0]) / 2
         
-        return pixel_straw_level_y, pixel_straw_level_x
+        return (pixel_straw_level_y, pixel_straw_level_x)
     
     @staticmethod
     def time_function(func, *args, **kwargs):
@@ -554,11 +555,29 @@ class RTSPStream(AprilDetector):
         path = "data/recording/"
         if not os.path.exists(path):
             os.makedirs(path)
+        path += 'recording.hdf5'
+        if os.path.exists(path):
+            file_stats = os.stat(path)
+            if file_stats.st_size / 1e9 > 100:
+                return
         timestamp = time.time()
-        cv2.imwrite(f"{path}{timestamp}.jpg", self.frame)
-        # Save the prediction dictionary
-        with open(f"{path}{timestamp}.json", "w") as f:
-            json.dump(self.prediction_dict, f)
+        encoded_frame = cv2.imencode('.jpg', self.frame)[1]
+        encoded_frame = np.asarray(encoded_frame)
+        with h5py.File(path, 'a') as hf:
+            time_group = hf.create_group(f'{timestamp}')
+            time_group.create_dataset('image', data=encoded_frame)
+            for key, value in self.prediction_dict.items():
+                predict_group = time_group.create_group(key)
+                t1, t2 = list(value.items())[0]
+                if key == 'attr.':
+                    t1_name = 'interpolated'
+                    t2_name = 'tags'
+                else:
+                    t1_name = 'percent'
+                    t2_name = 'pixel'
+                predict_group.create_dataset(t1_name, data=t1)
+                predict_group.create_dataset(t2_name, data=t2)
+            hf.close()
 
     def _reset_information(self) -> None:
         """Reset the information dictionary for each frame."""
