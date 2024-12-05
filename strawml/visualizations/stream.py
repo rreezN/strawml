@@ -554,7 +554,10 @@ class RTSPStream(AprilDetector):
             time_group = hf.create_group(f'{timestamp}')
             time_group.create_dataset('image', data=encoded_frame)
             for key, value in self.prediction_dict.items():
-                time_group.create_dataset(key, data=value)
+                predict_group = time_group.create_group(key)
+                percent, pixel = value.items()
+                predict_group.create_dataset('percent', data=percent)
+                predict_group.create_dataset('pixel', data=pixel)
 
     def _reset_information(self) -> None:
         """Reset the information dictionary for each frame."""
