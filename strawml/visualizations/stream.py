@@ -403,7 +403,7 @@ class RTSPStream(AprilDetector):
         pixel_straw_level_y = y_first - (y_first - y_second) * excess
         pixel_straw_level_x = (chute_numbers[first_closest_tag_id][0] + chute_numbers[second_closest_tag_id][0]) / 2
         
-        return (pixel_straw_level_y, pixel_straw_level_x)
+        return (pixel_straw_level_x, pixel_straw_level_y)
     
     @staticmethod
     def time_function(func, *args, **kwargs):
@@ -518,20 +518,26 @@ class RTSPStream(AprilDetector):
             self.q.queue.clear()
         frame_time = time.time()
         
-        # Record sensor data if enabled
+        display_scada_line = False
         if self.record:
-            self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
-            if self.recording_req:
-                # Init recording file
-                self.prediction_dict = {}
+            try:
                 # Get scada
                 sensor_scada_data = self.scada_thread.get_recent_value()
                 # Get pixel values for scada
                 scada_pixel_values = self.get_straw_to_pixel_level(sensor_scada_data)
-                # Save the scada data and pixel values
-                self.prediction_dict["scada"] = {sensor_scada_data: scada_pixel_values}
-                # Reset the time
-                self.since_last_save = time.time()
+                # Record sensor data if enabled
+                self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
+                if self.recording_req:
+                    # Init recording file
+                    self.prediction_dict = {}
+                    # Save the scada data and pixel values
+                    self.prediction_dict["scada"] = {sensor_scada_data: scada_pixel_values}
+                    # Reset the time
+                    self.since_last_save = time.time()
+                display_scada_line = True
+            except Exception as e:
+                print(f'Error while trying to get scada data: {e}')
+                
             
         # Lock and set the frame for thread safety
         with self.lock:
@@ -544,8 +550,9 @@ class RTSPStream(AprilDetector):
         self._update_information(frame_time)
 
         # Draw sensor_scada_data on frame based on scada_pixel_values
-        cv2.line(frame_drawn, (int(scada_pixel_values[0]), int(scada_pixel_values[1])), (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1])), (65, 105, 225), 2)
-        cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (65, 105, 225), 1, cv2.LINE_AA)
+        if display_scada_line and self.record:
+            cv2.line(frame_drawn, (int(scada_pixel_values[0]), int(scada_pixel_values[1])), (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1])), (65, 105, 225), 2)
+            cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (65, 105, 225), 1, cv2.LINE_AA)
 
         # Display frame and overlay text
         self._display_frame(frame_drawn)
@@ -807,7 +814,7 @@ if __name__ == "__main__":
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     ### YOLO PREDICTOR
-    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
