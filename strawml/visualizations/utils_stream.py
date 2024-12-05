@@ -20,7 +20,9 @@ class AprilDetectorHelpers:
             "prep":             {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 200)},
             "model":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 225)},
             "frame_time":       {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 250)},
-            "GPU":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 275)},
+            "RAM":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 275)},
+            "CPU":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 300)},
+
         }
         return temp
 
@@ -91,7 +93,11 @@ class AprilDetectorHelpers:
     
     def _get_tag_angle(self, chute_tags: list) -> float:
         # extract all the centers for the tags in chute_tags
-        tags = np.array([tag.center for tag in chute_tags]).reshape(-1, 2)
+        # first see if tags is a list of tuples or a list of objects
+        if isinstance(chute_tags[0], tuple) or isinstance(chute_tags[0], np.ndarray):
+            tags = np.array(chute_tags).reshape(-1, 2)
+        else:
+            tags = np.array([tag.center for tag in chute_tags]).reshape(-1, 2)
         x = tags[:, 0]
         y = tags[:, 1]
         model = LinearRegression()
