@@ -539,16 +539,18 @@ class RTSPStream(AprilDetector):
         torch.cuda.empty_cache()
     
     def _save_frame(self) -> None:
-        path = "data/recording/recording.hdf5"
+        path = "data/recording/"
         if not os.path.exists(path):
             os.makedirs(path)
-        file_stats = os.stat(path)
-        if file_stats.st_size / 1e9 > 100:
-            return
+        path += 'recording.hdf5'
+        if os.path.exists(path):
+            file_stats = os.stat(path)
+            if file_stats.st_size / 1e9 > 100:
+                return
         timestamp = time.time()
         encoded_frame = cv2.imencode('.jpg', self.frame)[1]
         encoded_frame = np.asarray(encoded_frame)
-        with h5py.File(path, 'r+') as hf:
+        with h5py.File(path, 'a') as hf:
             time_group = hf.create_group(f'{timestamp}')
             time_group.create_dataset('image', data=encoded_frame)
             for key, value in self.prediction_dict.items():
