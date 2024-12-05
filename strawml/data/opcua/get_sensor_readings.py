@@ -27,6 +27,7 @@ async def process_sensor_values(queue):
 
 def handle_sensor_value(value):
     print(f'Value: {value}')
+    # can plot and save the value to a file here
 
 if __name__ == '__main__':
     data_path = 'data/opcua_server.txt'
