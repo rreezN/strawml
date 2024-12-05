@@ -319,11 +319,8 @@ class RTSPStream(AprilDetector):
         return cap
     
     def get_pixel_to_straw_level(self, frame, straw_bbox):
-        
+        """ Finds the straw level based on the detected tags in the chute. """
         chute_numbers = self.chute_numbers.copy()
-        # make sure that all the tags are detected
-        if len(chute_numbers) != 11:
-            return frame, 0        
             
         _, straw_cord,_ , _ = straw_bbox
         straw_cord = straw_cord[0].flatten()
@@ -339,29 +336,45 @@ class RTSPStream(AprilDetector):
         
         # Given the straw bbox, we need to calculate the straw level based on the center of each tag in the chute. We know that the id of each tag corresponds to the level of the chute, meaning 1 is 10%, 2 is 20% and so on. We need to find the two closest tags in the y-axis to the straw bbox and calculate the straw level based on the distance between the two tags.
         # We can do this by calculating the distance between the straw bbox and the center of each tag in the chute. We then sort the distances and find the two closest tags. We then calculate the distance between the straw bbox and the two closest tags and use this to calculate the straw level.
-        distance_dict = {}
+        distance_dict_under = {}
+        distance_dict_above = {}
         for key, values in chute_numbers.items():
-            distance = abs(straw_top - values[1])
-            distance_dict[distance] = key
-        
+            distance = straw_top - values[1]
+            if distance < 0:
+                distance_dict_under[distance] = key
+            else:
+                distance_dict_above[distance] = key
+
+        # there are three cases to consider, no detected tags under, no detected tags above, and detected tags both above and under
+        if len(distance_dict_under) == 0 or len(distance_dict_above) == 0:
+            return frame, 0
+          
         # sort the dictionary by key
-        distance_dict = dict(sorted(distance_dict.items()))
+        distance_dict_under = dict(sorted(distance_dict_under.items(), reverse=True))
+        distance_dict_above = dict(sorted(distance_dict_above.items()))
         
         # get the two closest tags
-        tag0, tag1 = list(distance_dict.values())[:2]
+        tag_under, tag_above = list(distance_dict_under.values())[0], list(distance_dict_above.values())[0]
+
+        # we get the difference between the two tags ids to see if we are missing tags inbetween
+        tag_diff = tag_above - tag_under
+        if tag_diff > 1:
+            interpolated = True
+        else:
+            interpolated = False
         
-        # We know that the tag with the lower y-value has to be the current level.
-        first_closest_tag_id, second_closest_tag_id = min(tag0, tag1), max(tag0, tag1)
+        # If the tag_diff is greateer than one, then we need to perform a linear interpolation between the points to get the straw level
+        y_under = chute_numbers[tag_under][1]
+        y_over = chute_numbers[tag_above][1]
+        x_mean = (chute_numbers[tag_under][0] + chute_numbers[tag_above][0]) / 2
         
-        # get the distance between the two closest tags
-        y_first = chute_numbers[first_closest_tag_id][1]
-        y_second = chute_numbers[second_closest_tag_id][1]
-        x_mean = (chute_numbers[first_closest_tag_id][0] + chute_numbers[second_closest_tag_id][0]) / 2
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
-        straw_level = ((y_first-straw_top) / (y_first-y_second) + first_closest_tag_id)*10
+        straw_level = (tag_diff * (y_under-straw_top) / (y_under-y_over) + tag_under)*10
+        
         if self.record and self.recording_req:
-            # TODO: TypeError: Object of type float32 is not JSON serializable
-            self.prediction_dict["yolo"] = {straw_level: [straw_top, x_mean]}
+            self.prediction_dict["yolo"] = {straw_level: (straw_top, x_mean)}
+            self.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
+        
         return rotated_frame, straw_level
     
     def get_straw_to_pixel_level(self, straw_level):
@@ -770,7 +783,7 @@ if __name__ == "__main__":
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     ### YOLO PREDICTOR
-    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",

@@ -1,3 +1,4 @@
+from __init__ import *
 import numpy as np
 import cv2
 from sklearn.linear_model import LinearRegression
@@ -8,7 +9,7 @@ import yaml
 import threading
 import asyncio
 from asyncua import Client
-
+import copy
 
 class AprilDetectorHelpers:
     def __init__(self, april_detector_instance):
@@ -252,12 +253,15 @@ class AprilDetectorHelpers:
 
     def _account_for_missing_tags_in_chute_numbers(self):
         # first we sort based on the tag id
-        temp = self.ADI.chute_numbers.copy()
+        temp = copy.deepcopy(self.ADI.chute_numbers)
         sorted_chute_numbers = {k: v for k, v in sorted(temp.items(), key=lambda item: item[0])}
-        prev_tag_id = 0
+        prev_tag_id = None
 
         # we run through the sorted chute numbers and check if there are any missing tags. All mising tags with a tag id between the two tags can be inferred.
         for tag_id, center in sorted_chute_numbers.items():
+            if prev_tag_id is None:
+                prev_tag_id = tag_id
+                continue
             if tag_id - prev_tag_id == 2:
                 print(f"Missing tag between {prev_tag_id} and {tag_id} ---- {tag_id - 1}")
                 # Infer the position of the missing tag by taking the mean of the two neighboring tags
