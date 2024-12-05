@@ -20,7 +20,7 @@ import pupil_apriltags
 from strawml.models.chute_finder.yolo import ObjectDetect
 import strawml.models.straw_classifier.cnn_classifier as cnn
 import strawml.models.straw_classifier.feature_model as feature_model
-from strawml.visualizations.utils_stream import AprilDetectorHelpers
+from strawml.visualizations.utils_stream import AprilDetectorHelpers, AsyncStreamThread
 from strawml.data.image_utils import SpecialRotate
 
 class AprilDetector:
@@ -51,7 +51,7 @@ class AprilDetector:
         self.predictor_model = predictor_model
         self.frame_shape = frame_shape
         self.model = None
-        self.q = queue.Queue()
+        self.q = queue.LifoQueue()
         self.fx, self.fy, self.cx, self.cy = None, None, None, None
         self.camera_params = self.helpers._load_camera_params()
         self.tags = {}
@@ -273,8 +273,12 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
+    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, yolo_straw=yolo_straw, yolo_straw_model=yolo_straw_model, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
+        self.record = record
+        self.record_threshold = record_threshold
+        if record:
+            self.recording_queue = queue.Queue()
         self.rtsp = rtsp
         self.yolo_straw = yolo_straw
         self.wanted_tags = ids
@@ -352,10 +356,11 @@ class RTSPStream(AprilDetector):
         # get the distance between the two closest tags
         y_first = chute_numbers[first_closest_tag_id][1]
         y_second = chute_numbers[second_closest_tag_id][1]
-        
+        x_mean = (chute_numbers[first_closest_tag_id][0] + chute_numbers[second_closest_tag_id][0]) / 2
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
         straw_level = ((y_first-straw_top) / (y_first-y_second) + first_closest_tag_id)*10
-
+        if self.record and self.recording_req:
+            self.prediction_dict["yolo"] = {straw_level: (straw_top, x_mean)}
         return rotated_frame, straw_level
     
     def get_straw_to_pixel_level(self, straw_level):
@@ -468,6 +473,8 @@ class RTSPStream(AprilDetector):
         self.box_color = (255, 255, 255)  # White color for box
         self.frame_count = 0
         self.start_time = time.time()
+        if self.record:
+            self.since_last_save = time.time()
 
     def _process_frames_from_queue(self) -> None:
         """Process frames from the queue for display."""
@@ -491,16 +498,29 @@ class RTSPStream(AprilDetector):
         if frame is None:
             print("Frame is None. Skipping...")
             return
-        
-        frame_time = time.time()
-
-        # Lock and set the frame for thread safety
-        with self.lock:
-            self.frame = frame
-
         # Clear the queue in RTSP mode to avoid lag
         if not from_videofile and self.rtsp:
             self.q.queue.clear()
+        frame_time = time.time()
+        
+        # Record sensor data if enabled
+        if self.record:
+            self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
+            if self.recording_req:
+                # Init recording file
+                self.prediction_dict = {}
+                # Get scada
+                sensor_scada_data = self.scada_thread.get_recent_value()
+                # Get pixel values for scada
+                pixel_values = self.get_straw_to_pixel_level(sensor_scada_data)
+                # Save the scada data and pixel values
+                self.prediction_dict["scada"] = {sensor_scada_data: pixel_values}
+                # Reset the time
+                self.since_last_save = time.time()
+            
+        # Lock and set the frame for thread safety
+        with self.lock:
+            self.frame = frame
 
         # Process frame (AprilTags, Object Detection, Predictor, etc.)
         frame_drawn = self._process_frame_content(frame)
@@ -510,10 +530,22 @@ class RTSPStream(AprilDetector):
 
         # Display frame and overlay text
         self._display_frame(frame_drawn)
-
+        
+        if self.record and self.recording_req:
+            self._save_frame()
         # Clean up resources
         torch.cuda.empty_cache()
     
+    def _save_frame(self) -> None:
+        path = "data/recording/"
+        if not os.path.exists(path):
+            os.makedirs(path)
+        timestamp = time.time()
+        cv2.imwrite(f"{path}{timestamp}.jpg", self.frame)
+        # Save the prediction dictionary
+        with open(f"{path}{timestamp}.json", "w") as f:
+            json.dump(self.prediction_dict, f)
+
     def _reset_information(self) -> None:
         """Reset the information dictionary for each frame."""
         for key in self.information.keys():
@@ -574,7 +606,8 @@ class RTSPStream(AprilDetector):
                 straw_level = predicted[0]*10
 
             y_pixel, x_pixel = self.get_straw_to_pixel_level(straw_level)      
-
+            if self.record and self.recording_req:
+                self.prediction_dict["predicted"] = {straw_level: (y_pixel, x_pixel)}
             # Draw line and text for straw level
             cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 100, int(y_pixel)), (0, 0, 255), 2)
             cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel) + 110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
@@ -653,9 +686,13 @@ class RTSPStream(AprilDetector):
                 self.cap = cv2.VideoCapture(video_path)
                 print("START: Videofile loaded")
                 if self.detect_april:
-                    self.thread3 = threading.Thread(target=self.find_tags)
-                    self.thread3.start()
-                    self.threads.append(self.thread3)
+                    self.thread1 = threading.Thread(target=self.find_tags)
+                    self.thread1.start()
+                    self.threads.append(self.thread1)
+                if self.record:
+                    self.scada_thread = AsyncStreamThread(server_keys='data/opcua_server.txt')
+                    self.scada_thread.start()
+                    self.threads.append(self.scada_thread)
                 self.display_frame_from_videofile()
             else:
                 if cap is not None:
@@ -670,6 +707,10 @@ class RTSPStream(AprilDetector):
                     self.thread3 = threading.Thread(target=self.find_tags)
                     self.thread3.start()
                     self.threads.append(self.thread3)
+                if self.record:
+                    self.scada_thread = AsyncStreamThread(server_keys='data/opcua_server.txt')
+                    self.scada_thread.start()
+                    self.threads.append(self.scada_thread)
                 while True:
                     if keyboard.is_pressed('q'):
                         self.close_threads()
@@ -728,7 +769,7 @@ if __name__ == "__main__":
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     ### YOLO PREDICTOR
-    RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",

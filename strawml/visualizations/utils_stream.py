@@ -5,6 +5,10 @@ from typing import Tuple, Optional, Any
 import torch
 from strawml.models.straw_classifier import chute_cropper as cc
 import yaml
+import threading
+import asyncio
+from asyncua import Client
+
 
 class AprilDetectorHelpers:
     def __init__(self, april_detector_instance):
@@ -454,6 +458,15 @@ class AprilDetectorHelpers:
 
         return cutout_image
     
+    def _grab_scada_url_n_id(self):
+        # Read the url from the scada.txt file
+        data_path = 'data/opcua_server.txt'
+        txt_file = open(data_path, 'r')
+        url = txt_file.readline().strip()
+        print(f'Read url: {url} from: {data_path}')
+        sensor_node_id = txt_file.readline().strip()
+        return url, sensor_node_id
+
 class TagGraphWithPositionsCV:
     """
     A class to represent a graph of connected tags with inferred positions for missing tags. This class is designed to be used
@@ -702,3 +715,52 @@ class TagGraphWithPositionsCV:
                 cv2.line(image, (int(pos1[0]), int(pos1[1])), (int(pos2[0]), int(pos2[1])), (255, 0, 0), 2)
 
         return image
+
+class AsyncStreamThread:
+    def __init__(self, server_keys: str):
+        self.server_keys = server_keys
+        self.recent_value = None  # Shared variable for the most recent value
+        self.lock = threading.Lock()  # Lock for thread-safe access
+        self.loop = asyncio.new_event_loop()  # Create a new event loop
+        self.thread = threading.Thread(target=self._start_event_loop, daemon=True)  # Worker thread
+
+    def _start_event_loop(self):
+        """Start the event loop in the thread."""
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_until_complete(self._stream_values())
+
+    async def _stream_values(self):
+        """Async function to open the stream and update the recent value."""
+        async with Client(self.url) as client:
+            print(f'Connected to {self.url}!')
+            sensor_node = client.get_node(self.sensor_node_id)
+            while True:
+                value = await sensor_node.get_value()
+                # Update the recent value in a thread-safe manner
+                with self.lock:
+                    self.recent_value = value
+                await asyncio.sleep(0.5)
+    
+    def grab_keys(self):
+        data_path = 'data/opcua_server.txt'
+        txt_file = open(data_path, 'r')
+        self.url = txt_file.readline().strip()
+        print(f'Read url: {self.url} from: {data_path}')
+        self.sensor_node_id = txt_file.readline().strip()
+        print(f'Read sensor node id: {self.sensor_node_id} from: {data_path}')
+
+    def start(self):
+        """Start the thread."""
+        self.thread.start()
+
+    def get_recent_value(self) -> Optional[float]:
+        """Get the most recent value in a thread-safe manner."""
+        with self.lock:
+            return self.recent_value
+
+    def join(self):
+        """Stop the event loop and thread."""
+        self.loop.call_soon_threadsafe(self.loop.stop)
+        self.thread.join()
+
+
