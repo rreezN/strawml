@@ -555,9 +555,16 @@ class RTSPStream(AprilDetector):
             time_group.create_dataset('image', data=encoded_frame)
             for key, value in self.prediction_dict.items():
                 predict_group = time_group.create_group(key)
-                percent, pixel = list(value.items())[0]
-                predict_group.create_dataset('percent', data=percent)
-                predict_group.create_dataset('pixel', data=pixel)
+                t1, t2 = list(value.items())[0]
+                if key == 'attr.':
+                    t1_name = 'interpolated'
+                    t2_name = 'tags'
+                else:
+                    t1_name = 'percent'
+                    t2_name = 'pixel'
+                predict_group.create_dataset(t1_name, data=t1)
+                predict_group.create_dataset(t2_name, data=t2)
+            hf.close()
 
     def _reset_information(self) -> None:
         """Reset the information dictionary for each frame."""
