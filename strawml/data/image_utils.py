@@ -184,7 +184,7 @@ def internal_image_operations(image: np.ndarray) -> np.ndarray:
     image = image[y:y+500, x:x+500]
     return image 
 
-def SpecialRotate(image, image_diff, bbox, angle): 
+def SpecialRotate(image, image_diff=None, bbox=None, angle=None): 
     """
     Rotate image without cutting off sides and make borders transparent.
     Inspiration from: https://www.geeksforgeeks.org/rotate-image-without-cutting-off-sides-using-python-opencv/
@@ -206,11 +206,13 @@ def SpecialRotate(image, image_diff, bbox, angle):
     rotation_arr[1, 2] += bound_h/2 - image_center[1]
 
     rotated_image = cv2.warpAffine(image, rotation_arr, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255, 255))
-    rotated_image_diff = cv2.warpAffine(image_diff, rotation_arr, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255, 255))
     affine_warp = np.vstack((rotation_arr, np.array([0,0,1])))
     bbox_ = np.expand_dims(bbox.reshape(-1, 2), 1)
     bbox_ = cv2.perspectiveTransform(bbox_, affine_warp)
     rotated_bbox = np.squeeze(bbox_, 1).flatten()
+    if image_diff is None:
+        return rotated_image, None, rotated_bbox
+    rotated_image_diff = cv2.warpAffine(image_diff, rotation_arr, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255, 255))
     # get the new bounding box coordinates
     return rotated_image, rotated_image_diff, rotated_bbox
 

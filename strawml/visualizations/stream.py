@@ -21,7 +21,7 @@ from strawml.models.chute_finder.yolo import ObjectDetect
 import strawml.models.straw_classifier.cnn_classifier as cnn
 import strawml.models.straw_classifier.feature_model as feature_model
 from strawml.visualizations.utils_stream import AprilDetectorHelpers
-
+from strawml.data.image_utils import SpecialRotate
 
 class AprilDetector:
     """
@@ -126,7 +126,6 @@ class AprilDetector:
                 model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=num_classes, pretrained=False)
         
         model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_overall_best.pth', weights_only=True))
-        model.to(self.device)
         return model, image_size
 
     def setup_regressor(self, image_size: tuple, input_channels: int) -> None:
@@ -308,67 +307,55 @@ class RTSPStream(AprilDetector):
             The video capture object to receive frames from the RTSP stream
         """
         with open(credentials_path, 'r') as f:
-            credentials = f.read().splitlines()
-            username = credentials[0]
-            password = credentials[1]
-            ip = credentials[2]
-            rtsp_port = credentials[3]
-        cap = cv2.VideoCapture()
+            username, password, ip, rtsp_port = f.read().splitlines()
+        rtsp_url = f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101"
+        cap = cv2.VideoCapture(rtsp_url)
         cap.set(cv2.CAP_PROP_FPS, 25)
-        cap.open(f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101")
+        # cap.open(f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101")
         return cap
     
     def get_pixel_to_straw_level(self, frame, straw_bbox):
         
+        chute_numbers = self.chute_numbers.copy()
         # make sure that all the tags are detected
-        if len(self.chute_numbers) != 11:
-            return frame, 0
+        if len(chute_numbers) != 11:
+            return frame, 0        
+            
         _, straw_cord,_ , _ = straw_bbox
         straw_cord = straw_cord[0].flatten()
         
         # Get angle of self.chute_numbers
-        angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+        angle = self.helpers._get_tag_angle(list(chute_numbers.values()))
         
-        # Taking image height and width 
-        height, width = frame.shape[:2]
-        # get the image centers
-        image_center = (width/2, height/2)
+        # Rotate the frame to the angle of the chute and the bbox
+        rotated_frame, _, bbox_ = SpecialRotate(image=frame, bbox=straw_bbox[1][0].cpu().numpy(), angle=angle)
 
-        rotation_arr = cv2.getRotationMatrix2D(image_center, float(angle), 1)
-
-        abs_cos = abs(rotation_arr[0,0])
-        abs_sin = abs(rotation_arr[0,1])
-
-        bound_w = int(height * abs_sin + width * abs_cos)
-        bound_h = int(height * abs_cos + width * abs_sin)
-
-        rotation_arr[0, 2] += bound_w/2 - image_center[0]
-        rotation_arr[1, 2] += bound_h/2 - image_center[1]
-
-        rotated_frame = cv2.warpAffine(frame, rotation_arr, (bound_w, bound_h))
-        affine_warp = np.vstack((rotation_arr, np.array([0,0,1])))
-        bbox_ = np.expand_dims(straw_cord.cpu().numpy().reshape(-1, 2), 1)
-        bbox_ = cv2.perspectiveTransform(bbox_, affine_warp)
-        straw_top = (bbox_[0][0][1] + bbox_[3][0][1])/2
+        # Extract the top of the straw bbox
+        straw_top = (bbox_[1] + bbox_[-1])/2
         
         # Given the straw bbox, we need to calculate the straw level based on the center of each tag in the chute. We know that the id of each tag corresponds to the level of the chute, meaning 1 is 10%, 2 is 20% and so on. We need to find the two closest tags in the y-axis to the straw bbox and calculate the straw level based on the distance between the two tags.
         # We can do this by calculating the distance between the straw bbox and the center of each tag in the chute. We then sort the distances and find the two closest tags. We then calculate the distance between the straw bbox and the two closest tags and use this to calculate the straw level.
         distance_dict = {}
-        for key, values in self.chute_numbers.items():
+        for key, values in chute_numbers.items():
             distance = abs(straw_top - values[1])
             distance_dict[distance] = key
         
         # sort the dictionary by key
         distance_dict = dict(sorted(distance_dict.items()))
+        
         # get the two closest tags
         tag0, tag1 = list(distance_dict.values())[:2]
-        # Wee know that the tag with the lower y-value has to be the current level.
+        
+        # We know that the tag with the lower y-value has to be the current level.
         first_closest_tag_id, second_closest_tag_id = min(tag0, tag1), max(tag0, tag1)
+        
         # get the distance between the two closest tags
-        y_first = self.chute_numbers[first_closest_tag_id][1]
-        y_second = self.chute_numbers[second_closest_tag_id][1]
+        y_first = chute_numbers[first_closest_tag_id][1]
+        y_second = chute_numbers[second_closest_tag_id][1]
+        
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
         straw_level = ((y_first-straw_top) / (y_first-y_second) + first_closest_tag_id)*10
+
         return rotated_frame, straw_level
     
     def get_straw_to_pixel_level(self, straw_level):
@@ -376,19 +363,26 @@ class RTSPStream(AprilDetector):
         # we know that each tag is 10% of the chute, meaning that the distance between each tag is 10% of the chute height. We can use 
         # this to calculate the pixel value of the straw level.
         # We can use the distance between the two closest tags to calculate the pixel value of the straw level.
-        if len(self.chute_numbers) != 11:
-            return 0,0
+        chute_numbers = self.chute_numbers.copy()
+
+        if len(chute_numbers) != 11:
+            return 0, 0
+
         # First we divide the straw level by 10 to get it on the same scale as the tag ids
         straw_level = straw_level / 10
+
         # We then get the two closest tags
         first_closest_tag_id, second_closest_tag_id = int(straw_level), int(straw_level) + 1
+        
         # get the distance between the two closest tags
-        y_first = self.chute_numbers[first_closest_tag_id][1]
-        y_second = self.chute_numbers[second_closest_tag_id][1]
+        y_first = chute_numbers[first_closest_tag_id][1]
+        y_second = chute_numbers[second_closest_tag_id][1]
+        
         # get the pixel value of the straw level
         excess = straw_level - int(straw_level)
         pixel_straw_level_y = y_first - (y_first - y_second) * excess
-        pixel_straw_level_x = (self.chute_numbers[first_closest_tag_id][0] + self.chute_numbers[second_closest_tag_id][0]) / 2
+        pixel_straw_level_x = (chute_numbers[first_closest_tag_id][0] + chute_numbers[second_closest_tag_id][0]) / 2
+        
         return pixel_straw_level_y, pixel_straw_level_x
     
     @staticmethod
@@ -457,244 +451,153 @@ class RTSPStream(AprilDetector):
         """
         Display the frames with the detected AprilTags.
         """
-        # Define text properties
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        color = (255, 0, 0)  # Blue color for text
-        box_color = (255, 255, 255)  # White color for box
-        
-        # Define variables for FPS calculation
-        frame_count = 0
-        start_time = time.time()
-
-        while not self.should_abort_immediately:
-            frame_time = time.time()
-            # empty information
-            for key in self.information.keys():
-                if key == "april":
-                    continue
-                self.information[key]["text"] = ""
-            if not self.q.empty():
-                frame = self.q.get() # Get the frame from the queue
-                # Update the frame in the class instance to be used in other methods and ensure thread safety
-                if frame is None: # check if the frame is none. If it is, skip the iteration
-                    print("Frame is None. Skipping...")
-                    continue
-                self.lock.acquire()
-                try:
-                    self.frame = frame
-                finally:
-                    self.lock.release()
-
-                if self.rtsp:
-                    self.q.queue.clear() # Clear the queue to account for any lag and prevent the queue from getting too large
-                
-                # # Fix the frame by undistorting it
-                # frame, undistort_time = self.time_function(self.fix_frame, frame) # NOTE this cant be used since undistort crops the top and bottom of the chute too much
-                # self.information["undistort_time"]["text"] = f'Undistort Time: {undistort_time:.2f} s'
-
-                if self.detect_april and (self.tags is not None):
-                    # # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
-                    frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
-
-                else:
-                    frame_drawn = frame
-                    cutout = None
-                # We initialise results to None to avoid errors when the model is not used -> only when OD is used do we need
-                # the results to crop the bbox from the frame. However, with the apriltrags from self.draw, we simply make the 
-                # cutout from the frame and do not need the results.
-                if cutout is not None:
-                    frame = cutout
-                    results = None
-                elif cutout is None and self.object_detect:
-                    results, OD_time = self.time_function(self.OD.score_frame, frame) # This takes a lot of time if ran on CPU
-                    if len(results[0]) == 0:
-                        results = "NA"
-                    self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
-                else:
-                    results = "NA"
-                # else:
-                #     print("The cutout image is None and the object detection is not used.")
-                if not results == "NA":
-                    if self.with_predictor:
-                        cutout_image, prep_time = self.time_function(self.prepare_for_inference, frame, results)
-                        if cutout_image is not None:
-                            if self.regressor:
-                                if self.predictor_model != 'cnn':
-                                    output, inference_time = self.time_function([self.model, self.regressor_model], cutout_image.to(self.device))
-                                else:
-                                    output, inference_time = self.time_function(self.model, cutout_image.to(self.device))
-                                # detach the output from the device and get the predicted value
-                                output = output.detach().cpu()
-                                straw_level = output[0].item()*100
-                            else:
-                                output, inference_time = self.time_function(self.model, cutout_image.to(self.device)) 
-                                # detach the output from the device and get the predicted value
-                                output = output.detach().cpu()
-                                _, predicted = torch.max(output, 1)
-                                straw_level = predicted[0]*10
-                            y_pixel, x_pixel = self.get_straw_to_pixel_level(straw_level)
-                            # draw line on the frame with straw_level as the text
-                            cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel)+100, int(y_pixel)), (0, 0, 255), 2)
-                            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel)+110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)                     
-                            # Add the time taken for inference to the text
-                            self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
-                            self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
-                            self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'                           
-                    if self.object_detect:
-                        frame_drawn = self.plot_boxes(results, frame_drawn, straw=False, straw_lvl=None, model_type="obb")
-                elif self.yolo_straw:
-                    output, inference_time = self.time_function(self.model.score_frame, frame)
-                    if len(output[0]) != 0:
-                        frame_drawn, straw_level = self.get_pixel_to_straw_level(frame_drawn, output)
-                        frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level, model_type="obb")
-                        self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
-                    self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
-                else:
-                    frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
-                    cv2.imshow('Video', frame_drawn) # Display the frame
-                    cv2.waitKey(1)
-                    continue
-                frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
-
-                frame_count += 1 # Increment frame count
-                
-                # Calculate FPS
-                e = time.time()
-                elapsed_time = e - start_time
-                fps = frame_count / elapsed_time
-                
-                # Display the FPS on the frame
-                self.information["FPS"]["text"] = f'(T2) FPS: {fps:.2f}'
-                self.information["frame_time"]["text"] = f'(T2) Total Frame Time: {e - frame_time:.2f} s'
-                self.information["RAM"]["text"] = f'(TM) Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}'
-                self.information["CPU"]["text"] = f'(TM) CPU Usage: {f"Total CPU Usage (%): {psutil.cpu_percent()}"}'
-                # Draw the text on the frame
-                for i, (key, val) in enumerate(self.information.items()):
-                    # Get the text size
-                    if val["text"] == "":
-                        continue
-                    font_scale = val["font_scale"]
-                    font_thickness = val["font_thicknesss"]
-                    (text_width, text_height), baseline = cv2.getTextSize(val["text"], font, font_scale, font_thickness)
-                    pos = val["position"]
-                    box_coords = ((pos[0], pos[1] - text_height - baseline), (pos[0] + text_width, pos[1] + baseline)) # Calculate the box coordinates
-                    cv2.rectangle(frame_drawn, box_coords[0], box_coords[1], box_color, cv2.FILLED) # Draw the white box                    
-                    cv2.putText(frame_drawn, val["text"], pos, font, font_scale, color, font_thickness, cv2.LINE_AA) # Draw the text over the box
-                
-                cv2.imshow('Video', frame_drawn) # Display the frame
-                cv2.waitKey(1)
-                # flush everything from memory to prevent memory leak
-                frame = None
-                results = None
-                cutout_image = None
-                output = None
-                torch.cuda.empty_cache()
+        self._setup_display()
+        self._process_frames_from_queue()
 
     def display_frame_from_videofile(self) -> None:
         """
         Display the frames with the detected AprilTags.
         """
-        # Define text properties
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        color = (255, 0, 0)  # Blue color for text
-        box_color = (255, 255, 255)  # White color for box
-        
-        # Define variables for FPS calculation
-        frame_count = 0
-        start_time = time.time()
+        self._setup_display()
+        self._process_frames_from_videofile()
 
+    def _setup_display(self) -> None:
+        """Set up display settings and initialize variables for both modes."""
+        self.font = cv2.FONT_HERSHEY_SIMPLEX
+        self.text_color = (255, 0, 0)  # Blue color for text
+        self.box_color = (255, 255, 255)  # White color for box
+        self.frame_count = 0
+        self.start_time = time.time()
+
+    def _process_frames_from_queue(self) -> None:
+        """Process frames from the queue for display."""
+        while not self.should_abort_immediately:
+            self._reset_information()
+            if not self.q.empty():
+                frame = self.q.get() 
+                self._process_frame(frame, from_videofile=False)
+
+    def _process_frames_from_videofile(self) -> None:
+        """Process frames from a video file."""
         while True:
-            frame_time = time.time()
-            success, frame = self.cap.read() # Get the frame from the queue
-            if not success: # check if the frame is none. If it is, skip the iteration
+            self._reset_information()
+            success, frame = self.cap.read()
+            if not success:
+                break
+            self._process_frame(frame, from_videofile=True)
+
+    def _process_frame(self, frame: np.ndarray, from_videofile: bool) -> None:
+        """Process a single frame for display."""
+        if frame is None:
+            print("Frame is None. Skipping...")
+            return
+        
+        frame_time = time.time()
+
+        # Lock and set the frame for thread safety
+        with self.lock:
+            self.frame = frame
+
+        # Clear the queue in RTSP mode to avoid lag
+        if not from_videofile and self.rtsp:
+            self.q.queue.clear()
+
+        # Process frame (AprilTags, Object Detection, Predictor, etc.)
+        frame_drawn = self._process_frame_content(frame)
+
+        # Update FPS and resource usage information
+        self._update_information(frame_time)
+
+        # Display frame and overlay text
+        self._display_frame(frame_drawn)
+
+        # Clean up resources
+        torch.cuda.empty_cache()
+    
+    def _reset_information(self) -> None:
+        """Reset the information dictionary for each frame."""
+        for key in self.information.keys():
+            if key == "april":
                 continue
-                
-            self.lock.acquire()
-            try:
-                self.frame = frame
-            finally:
-                self.lock.release()
+            self.information[key]["text"] = ""
 
-            # # Fix the frame by undistorting it
-            # frame, undistort_time = self.time_function(self.fix_frame, frame) # NOTE this cant be used since undistort crops the top and bottom of the chute too much
-            # self.information["undistort_time"]["text"] = f'Undistort Time: {undistort_time:.2f} s'
+    def _process_frame_content(self, frame: np.ndarray) -> np.ndarray:
+        """Handle specific processing like AprilTags, Object Detection, etc."""
+        if self.detect_april and self.tags is not None:
+            frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
+        else:
+            frame_drawn, cutout = frame, None
 
-            if self.detect_april and (self.tags is not None):
-                # # Draw the detected AprilTags on the frame and get the cutout from the frame if make_cutout is True
-                frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
-
-            else:
-                frame_drawn = frame
-                cutout = None
-            # We initialise results to None to avoid errors when the model is not used -> only when OD is used do we need
-            # the results to crop the bbox from the frame. However, with the apriltrags from self.draw, we simply make the 
-            # cutout from the frame and do not need the results.
-            if cutout is not None:
-                frame = cutout
-                results = None
-            elif cutout is None and self.object_detect:
-                results, OD_time = self.time_function(self.OD.score_frame, frame) # This takes a lot of time if ran on CPU
-                if len(results[0]) == 0:
-                    results = "NA"
-                self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
-            else:
+        if cutout is not None:
+            frame = cutout
+            results = None
+        elif self.object_detect:
+            results, OD_time = self.time_function(self.OD.score_frame, frame)
+            # Make sure the results are not empty
+            if len(results[0]) == 0:
                 results = "NA"
-            # else:
-            #     print("The cutout image is None and the object detection is not used.")
-            if not results == "NA":
-                if self.with_predictor:
-                    cutout_image, prep_time = self.time_function(self.prepare_for_inference, frame, results)
-                    if cutout_image is not None:
-                        if self.regressor:
-                            if self.predictor_model != 'cnn':
-                                output, inference_time = self.time_function([self.model, self.regressor_model], cutout_image.to(self.device))
-                            else:
-                                output, inference_time = self.time_function(self.model, cutout_image.to(self.device))
-                            # detach the output from the device and get the predicted value
-                            output = output.detach().cpu()
-                            straw_level = output[0].item()*100
-                        else:
-                            output, inference_time = self.time_function(self.model, cutout_image.to(self.device)) 
-                            # detach the output from the device and get the predicted value
-                            output = output.detach().cpu()
-                            _, predicted = torch.max(output, 1)
-                            straw_level = predicted[0]*10
-                        y_pixel, x_pixel = self.get_straw_to_pixel_level(straw_level)
-                        # draw line on the frame with straw_level as the text
-                        cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel)+100, int(y_pixel)), (0, 0, 255), 2)
-                        cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel)+110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)                     
-                        # Add the time taken for inference to the text
-                        self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
-                        self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
-                        self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'                           
-                if self.object_detect:
-                    frame_drawn = self.plot_boxes(results, frame_drawn)
-            elif self.yolo_straw:
-                output, inference_time = self.time_function(self.model.score_frame, frame)
-                if len(output[0]) != 0:
-                    frame_drawn, straw_level = self.get_pixel_to_straw_level(frame_drawn, output)
-                    frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level, model_type="obb")
-                    self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
-                self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
-            else:
-                frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
-                cv2.imshow('Video', frame_drawn) # Display the frame
-                cv2.waitKey(1)
-                continue
-            frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=0.6, fy=0.6) # Resize the frame for display
+            self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s' if results else "NA"
+        else:
+            results = "NA"
 
-            frame_count += 1 # Increment frame count
-            
-            # Calculate FPS
-            e = time.time()
-            elapsed_time = e - start_time
-            fps = frame_count / elapsed_time
-            
-            # Display the FPS on the frame
-            self.information["FPS"]["text"] = f'(T2) FPS: {fps:.2f}'
-            self.information["frame_time"]["text"] = f'(T2) Total Frame Time: {e - frame_time:.2f} s'
-            self.information["RAM"]["text"] = f'(TM) Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}'
-            self.information["CPU"]["text"] = f'(TM) Total CPU Usage (%):  {psutil.Process(os.getpid()).cpu_percent(interval=0)}'
+        if results != "NA":
+            if self.with_predictor:
+                frame_drawn = self._process_predictions(frame, results, frame_drawn)
+            if self.object_detect:
+                frame_drawn = self.plot_boxes(results, frame_drawn, straw=False, straw_lvl=None, model_type="obb")
+        elif self.yolo_straw:
+            output, inference_time = self.time_function(self.model.score_frame, frame)
+            if len(output[0]) != 0:
+                frame_drawn, straw_level = self.get_pixel_to_straw_level(frame_drawn, output)
+                frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level, model_type="obb")
+                self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
+                self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
+        return frame_drawn
+
+    def _process_predictions(self, frame, results, frame_drawn):
+        """Run model predictions and update overlay."""
+        cutout_image, prep_time = self.time_function(self.helpers._prepare_for_inference, frame, results)
+        if cutout_image is not None:
+            if self.regressor:
+                if self.predictor_model != 'cnn':
+                    output, inference_time = self.time_function([self.model, self.regressor_model], cutout_image.to(self.device))
+                else:
+                    output, inference_time = self.time_function(self.model, cutout_image.to(self.device))
+                # detach the output from the device and get the predicted value
+                output = output.detach().cpu()
+                straw_level = output[0].item()*100
+            else:
+                output, inference_time = self.time_function(self.model, cutout_image.to(self.device)) 
+                # detach the output from the device and get the predicted value
+                output = output.detach().cpu()
+                _, predicted = torch.max(output, 1)
+                straw_level = predicted[0]*10
+
+            y_pixel, x_pixel = self.get_straw_to_pixel_level(straw_level)      
+
+            # Draw line and text for straw level
+            cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 100, int(y_pixel)), (0, 0, 255), 2)
+            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel) + 110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+            self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
+            self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
+            self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
+        return frame_drawn
+
+    def _update_information(self, frame_time):
+        """Update frame processing information."""
+        elapsed_time = time.time() - self.start_time
+        fps = self.frame_count / elapsed_time
+        self.frame_count += 1
+        self.information["FPS"]["text"] = f'(T2) FPS: {fps:.2f}'
+        self.information["frame_time"]["text"] = f'(T2) Total Frame Time: {time.time() - frame_time:.2f} s'
+        self.information["RAM"]["text"] = f'(TM) Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}'
+        self.information["CPU"]["text"] = f'(TM) Total CPU Usage (%): {psutil.cpu_percent()}'
+
+    def _display_frame(self, frame_drawn, with_text=True, fx=0.6, fy=0.6):
+        """Resize and display the processed frame."""
+        frame_drawn = cv2.resize(frame_drawn, (0, 0), fx=fx, fy=fy)
+
+        if with_text:
             # Draw the text on the frame
             for i, (key, val) in enumerate(self.information.items()):
                 # Get the text size
@@ -702,21 +605,15 @@ class RTSPStream(AprilDetector):
                     continue
                 font_scale = val["font_scale"]
                 font_thickness = val["font_thicknesss"]
-                (text_width, text_height), baseline = cv2.getTextSize(val["text"], font, font_scale, font_thickness)
+                (text_width, text_height), baseline = cv2.getTextSize(val["text"], self.font, font_scale, font_thickness)
                 pos = val["position"]
                 box_coords = ((pos[0], pos[1] - text_height - baseline), (pos[0] + text_width, pos[1] + baseline)) # Calculate the box coordinates
-                cv2.rectangle(frame_drawn, box_coords[0], box_coords[1], box_color, cv2.FILLED) # Draw the white box                    
-                cv2.putText(frame_drawn, val["text"], pos, font, font_scale, color, font_thickness, cv2.LINE_AA) # Draw the text over the box
-            
-            cv2.imshow('Video', frame_drawn) # Display the frame
-            cv2.waitKey(1)
-            # flush everything from memory to prevent memory leak
-            frame = None
-            results = None
-            cutout_image = None
-            output = None
-            torch.cuda.empty_cache()
-            
+                cv2.rectangle(frame_drawn, box_coords[0], box_coords[1], self.box_color, cv2.FILLED) # Draw the white box                    
+                cv2.putText(frame_drawn, val["text"], pos, self.font, font_scale, self.text_color, font_thickness, cv2.LINE_AA) # Draw the text over the box
+
+        cv2.imshow('Video', frame_drawn)
+        cv2.waitKey(1)
+
     def close_threads(self):
         print("END: Threads and resources...")
         self.lock.acquire()
@@ -823,20 +720,17 @@ if __name__ == "__main__":
     #         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
     #         with_predictor=False , predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
     
-    # CONVNEXTV2 PREDICTOR
+    # ### CONVNEXTV2 PREDICTOR
     # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
     #         rtsp=True , # Only used when the stream is from an RTSP source
     #         make_cutout=False, use_cutout=False, object_detect=True, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
     #         detect_april=True, yolo_straw=False, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
-    # YOLO PREDICTOR
+    ### YOLO PREDICTOR
     RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
         with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
         device='cuda')()
-
-
-# TODO: look into why the tags are found, but not plottet for the chute-numbers.
