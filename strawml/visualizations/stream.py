@@ -527,9 +527,9 @@ class RTSPStream(AprilDetector):
                 # Get scada
                 sensor_scada_data = self.scada_thread.get_recent_value()
                 # Get pixel values for scada
-                pixel_values = self.get_straw_to_pixel_level(sensor_scada_data)
+                scada_pixel_values = self.get_straw_to_pixel_level(sensor_scada_data)
                 # Save the scada data and pixel values
-                self.prediction_dict["scada"] = {sensor_scada_data: pixel_values}
+                self.prediction_dict["scada"] = {sensor_scada_data: scada_pixel_values}
                 # Reset the time
                 self.since_last_save = time.time()
             
@@ -543,8 +543,13 @@ class RTSPStream(AprilDetector):
         # Update FPS and resource usage information
         self._update_information(frame_time)
 
+        # Draw sensor_scada_data on frame based on scada_pixel_values
+        cv2.line(frame_drawn, (int(scada_pixel_values[0]), int(scada_pixel_values[1])), (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1])), (65, 105, 225), 2)
+        cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (65, 105, 225), 1, cv2.LINE_AA)
+
         # Display frame and overlay text
         self._display_frame(frame_drawn)
+
         
         if self.record and self.recording_req:
             self._save_frame()
@@ -642,8 +647,8 @@ class RTSPStream(AprilDetector):
             if self.record and self.recording_req:
                 self.prediction_dict["predicted"] = {straw_level: (y_pixel, x_pixel)}
             # Draw line and text for straw level
-            cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 100, int(y_pixel)), (0, 0, 255), 2)
-            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel) + 110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+            cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 100, int(y_pixel)), (205, 92, 92), 2)
+            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel) + 110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (205, 92, 92), 1, cv2.LINE_AA)
             self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
             self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
             self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
