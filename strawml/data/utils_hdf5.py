@@ -320,13 +320,21 @@ def plot_annotations(frame: int, data_path: str, file: str):
         title = f'Frame {frame}' if f[group]['annotations']['fullness'][()] == -1 else f'Frame {frame} - Fullness: {f[group]["annotations"]["fullness"][()]}'
         plt.title(title)
         plt.show()
-    
+
+def print_tree_structure(data_path: str, file: str):
+    with h5py.File(data_path + file, 'r') as f:
+        def print_attrs(name, obj):
+            print(name)
+            for key, val in obj.attrs.items():
+                print("    %s: %s" % (key, val))
+        f.visititems(print_attrs)
+
 
 def get_args() -> Namespace:
     # Create the parser
     parser = ArgumentParser()
     # Add arguments to the parser
-    parser.add_argument('mode', type=str, choices=['combine', 'validate', 'annotate_combine', 'check_missing', 'plot'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
+    parser.add_argument('mode', type=str, choices=['combine', 'validate', 'annotate_combine', 'check_missing', 'plot', 'tree'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
     parser.add_argument('--data_path', type=str, default='D:/HCAI/msc/strawml/data/interim/', help='The folder containing the files.')
     parser.add_argument('--file1', type=str, help='The first file to combine.')
     parser.add_argument('--file2', type=str, help='The second file to combine.')
@@ -351,3 +359,5 @@ if __name__ == '__main__':
         check_missing_frames(file1, file2)
     elif args.mode == 'plot':
         plot_annotations(8204, data_path, file1)
+    elif args.mode == 'tree':
+        print_tree_structure(data_path, file1)
