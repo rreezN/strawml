@@ -718,6 +718,7 @@ class TagGraphWithPositionsCV:
 
 class AsyncStreamThread:
     def __init__(self, server_keys: str):
+        self.grab_keys()
         self.server_keys = server_keys
         self.recent_value = None  # Shared variable for the most recent value
         self.lock = threading.Lock()  # Lock for thread-safe access
