@@ -2,14 +2,31 @@ import asyncio
 from asyncua import Client
 
 async def main(url, sensor_node_id):
-    print(f'Connecting to {url}')
+    queue = asyncio.Queue()
+    await asyncio.gather(
+        read_sensor(url, sensor_node_id, queue),
+        process_sensor_values(queue),
+    )
+
+
+async def read_sensor(url, sensor_node_id, queue):
+    print(f'Connecting to {url}...')
     async with Client(url) as client:
-        print('Connected')
+        print(f'Connected to {url}!')
         sensor_node = client.get_node(sensor_node_id)
         while True:
             value = await sensor_node.get_value()
-            print(f'Sensor value: {value}')
-            await asyncio.sleep(1)
+            await queue.put(value)
+            await asyncio.sleep(0.5)
+
+async def process_sensor_values(queue):
+    while True:
+        value = await queue.get()
+        handle_sensor_value(value)
+
+
+def handle_sensor_value(value):
+    print(f'Value: {value}')
 
 if __name__ == '__main__':
     data_path = 'data/opcua_server.txt'
