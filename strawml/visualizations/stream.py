@@ -360,6 +360,7 @@ class RTSPStream(AprilDetector):
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
         straw_level = ((y_first-straw_top) / (y_first-y_second) + first_closest_tag_id)*10
         if self.record and self.recording_req:
+            # TODO: TypeError: Object of type float32 is not JSON serializable
             self.prediction_dict["yolo"] = {straw_level: [straw_top, x_mean]}
         return rotated_frame, straw_level
     
@@ -769,7 +770,7 @@ if __name__ == "__main__":
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     ### YOLO PREDICTOR
-    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
