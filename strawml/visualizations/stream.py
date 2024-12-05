@@ -3,6 +3,7 @@ from __init__ import *
 import os
 import cv2
 import time
+import h5py
 import torch
 import queue
 import psutil
@@ -361,7 +362,7 @@ class RTSPStream(AprilDetector):
         straw_level = ((y_first-straw_top) / (y_first-y_second) + first_closest_tag_id)*10
         if self.record and self.recording_req:
             # TODO: TypeError: Object of type float32 is not JSON serializable
-            self.prediction_dict["yolo"] = {straw_level: [straw_top, x_mean]}
+            self.prediction_dict["yolo"] = {straw_level: (straw_top, x_mean)}
         return rotated_frame, straw_level
     
     def get_straw_to_pixel_level(self, straw_level):
@@ -389,7 +390,7 @@ class RTSPStream(AprilDetector):
         pixel_straw_level_y = y_first - (y_first - y_second) * excess
         pixel_straw_level_x = (chute_numbers[first_closest_tag_id][0] + chute_numbers[second_closest_tag_id][0]) / 2
         
-        return pixel_straw_level_y, pixel_straw_level_x
+        return (pixel_straw_level_y, pixel_straw_level_x)
     
     @staticmethod
     def time_function(func, *args, **kwargs):
@@ -538,14 +539,20 @@ class RTSPStream(AprilDetector):
         torch.cuda.empty_cache()
     
     def _save_frame(self) -> None:
-        path = "data/recording/"
+        path = "data/recording/recording.hdf5"
         if not os.path.exists(path):
             os.makedirs(path)
+        file_stats = os.stat(path)
+        if file_stats.st_size / 1e9 > 100:
+            return
         timestamp = time.time()
-        cv2.imwrite(f"{path}{timestamp}.jpg", self.frame)
-        # Save the prediction dictionary
-        with open(f"{path}{timestamp}.json", "w") as f:
-            json.dump(self.prediction_dict, f)
+        encoded_frame = cv2.imencode('.jpg', self.frame)[1]
+        encoded_frame = np.asarray(encoded_frame)
+        with h5py.File(path, 'r+') as hf:
+            time_group = hf.create_group(f'{timestamp}')
+            time_group.create_dataset('image', data=encoded_frame)
+            for key, value in self.prediction_dict.items():
+                time_group.create_dataset(key, data=value)
 
     def _reset_information(self) -> None:
         """Reset the information dictionary for each frame."""
