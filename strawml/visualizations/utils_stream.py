@@ -252,7 +252,8 @@ class AprilDetectorHelpers:
 
     def _account_for_missing_tags_in_chute_numbers(self):
         # first we sort based on the tag id
-        sorted_chute_numbers = {k: v for k, v in sorted(self.ADI.chute_numbers.items(), key=lambda item: item[0])}
+        temp = self.ADI.chute_numbers.copy()
+        sorted_chute_numbers = {k: v for k, v in sorted(temp.items(), key=lambda item: item[0])}
         prev_tag_id = 0
 
         # we run through the sorted chute numbers and check if there are any missing tags. All mising tags with a tag id between the two tags can be inferred.
@@ -353,7 +354,7 @@ class AprilDetectorHelpers:
             prev_tag = self.ADI.tags[t]
             accumulated_error += np.linalg.norm(np.array(detected_tag.center) - np.array(prev_tag.center))
 
-        if accumulated_error / len(self.ADI.tag_ids) > 0.2:
+        if accumulated_error / len(self.ADI.tag_ids) > 10: # Threshold for accumulated error is 10 pixels
             self._reset_tags()
 
     def _reset_tags(self) -> None:

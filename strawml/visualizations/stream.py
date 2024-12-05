@@ -360,7 +360,7 @@ class RTSPStream(AprilDetector):
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
         straw_level = ((y_first-straw_top) / (y_first-y_second) + first_closest_tag_id)*10
         if self.record and self.recording_req:
-            self.prediction_dict["yolo"] = {straw_level: (straw_top, x_mean)}
+            self.prediction_dict["yolo"] = {straw_level: [straw_top, x_mean]}
         return rotated_frame, straw_level
     
     def get_straw_to_pixel_level(self, straw_level):
