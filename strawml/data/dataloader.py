@@ -33,7 +33,7 @@ class Chute(torch.utils.data.Dataset):
         self.sensor = sensor
         
         if len(override_statistics) > 0:
-            self.train_mean, self.train_std = override_statistics
+            self.train_mean, self.train_std = override_statistics[:2]
             if self.inc_heatmap:
                 self.train_hm_mean, self.train_hm_std = override_statistics[2:]
         
@@ -100,7 +100,7 @@ class Chute(torch.utils.data.Dataset):
         #     raise ValueError('data_type must be either "train" or "test"')
         
         # Define the transformation to apply to the data
-        self.transform = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=False)]) # transforms.Resize((224, 224)) 
+        self.transform = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]) # transforms.Resize((224, 224)) 
 
         # Store the mean and std of the training data for normalization
         if len(override_statistics) == 0 and self.data_type == 'train':
@@ -192,21 +192,32 @@ class Chute(torch.utils.data.Dataset):
             if np.random.rand() < self.augment_probability:
                 transform_list = [
                                   transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.5, hue=0.05), 
-                                  transforms.Compose([transforms.ToDtype(torch.uint8, scale=False), transforms.JPEG(quality=(1, 100)), transforms.ToDtype(torch.float32, scale=False)]),
+                                  transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.JPEG(quality=(1, 100)), transforms.ToDtype(torch.float32, scale=True)]),
                                   transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 5.0)),
                                   transforms.GaussianNoise(mean=0.0, sigma=0.1),
                                   transforms.RandomEqualize(p=1.0),
-                                  transforms.Compose([transforms.ToDtype(torch.uint8, scale=False), transforms.RandomPosterize(bits=np.random.randint(3, 5), p=1.0), transforms.ToDtype(torch.float32, scale=False)]),
+                                  transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.RandomPosterize(bits=np.random.randint(3, 5), p=1.0), transforms.ToDtype(torch.float32, scale=True)]),
                                   transforms.RandomAdjustSharpness(p=1.0, sharpness_factor=np.random.uniform(1.0, 2.0)),
                                   ]
 
                 augmentation = transforms.RandomChoice(transform_list)
+                # TODO: FIX THIS CUS RIGHT NOW AUGMENTATION IS NOT WORKING AT ALL....
+                print(f'Augmenting frame {self.indices[idx]}')
                 if self.inc_heatmap:
                     img = augmentation(frame_data[0])
                     # heatmap = augmentation(frame_data[1])
                     frame_data = (img, frame_data[1])
                 else:
                     frame_data = augmentation(frame_data)
+        
+        
+        if self.inc_heatmap:
+            img = frame_data[0]
+            img = img*255
+            frame_data = (img, frame_data[1])
+        else:
+            frame_data = frame_data*255
+        
         
         if self.inc_edges:
             if self.inc_heatmap:
@@ -615,7 +626,8 @@ def plot_batch(data, labels, frame_start=0, mean=None, std=None, grey=False):
             frame_data = data[i][:num_channels]
         frame_data = frame_data.permute(1, 2, 0)
         frame_data = frame_data.detach().numpy()
-        frame_data = np.clip(frame_data, 0, 1)
+        frame_data = np.clip(frame_data, 0, 255)
+        frame_data = frame_data.astype(np.uint8)
         ax[i].imshow(frame_data, cmap='gray' if grey else None)
         ax[i].set_title(f"Frame: {frame_start} | Fullness: {int(round(labels[i].item()*100))}%")
         ax[i].set_axis_off()
@@ -738,9 +750,9 @@ if __name__ == '__main__':
     print("Extracting statistics for straw dataset with heatmaps and greyscale images")
     # data_path = f'/work3/davos/data/train.hdf5'
     data_path = 'data/processed/train.hdf5'
-    train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=True, inc_edges=True,
+    train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=False, inc_edges=False,
                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
-                         num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=0.5, greyscale=True)
+                         num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=0.5, greyscale=False)
     
     print('Testing normalizing')
     train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
@@ -754,7 +766,7 @@ if __name__ == '__main__':
         print(f'Std: {data.std()}')
         print(f'Min: {data.min()}')
         print(f'Max: {data.max()}')
-    #     plot_batch(data, target, i*8, train_set.train_mean, train_set.train_std, grey=train_set.greyscale)
+        plot_batch(data, target, i*8, train_set.train_mean, train_set.train_std, grey=train_set.greyscale)
     
     
     # for i in range(10):
