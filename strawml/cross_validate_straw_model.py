@@ -661,6 +661,16 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
     
+    if args.cont:
+        print(f'Training regression model with {args.model}')
+    else:
+        print(f'Training classification model with {args.model}')
+    
+    if args.inc_edges:
+        print('Including edges in the training data')
+    if args.inc_heatmap:
+        print('Including heatmaps in the training data')
+    
     # Is this how we want to do it?
     if args.hpc:
         path_to_data = f'/work3/davos/data/'
