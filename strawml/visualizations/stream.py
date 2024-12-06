@@ -571,8 +571,8 @@ class RTSPStream(AprilDetector):
 
         # Draw sensor_scada_data on frame based on scada_pixel_values
         if display_scada_line and self.record:
-            cv2.line(frame_drawn, (int(scada_pixel_values[0]), int(scada_pixel_values[1])), (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1])), (225, 105, 65), 2)
-            cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (225, 105, 65), 2, cv2.LINE_AA)
+            cv2.line(frame_drawn, (int(scada_pixel_values[0]), int(scada_pixel_values[1])), (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1])), (255, 4, 0), 2)
+            cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 4, 0), 2, cv2.LINE_AA)
 
         # Display frame and overlay text
         self._display_frame(frame_drawn)
@@ -827,16 +827,16 @@ if __name__ == "__main__":
     #         with_predictor=False , predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
     
     ### CONVNEXTV2 PREDICTOR
-    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-            rtsp=True , # Only used when the stream is from an RTSP source
-            make_cutout=False, use_cutout=False, object_detect=True, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-            detect_april=True, yolo_straw=False, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
-            with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
+    # RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    #         rtsp=True , # Only used when the stream is from an RTSP source
+    #         make_cutout=False, use_cutout=False, object_detect=True, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
+    #         detect_april=True, yolo_straw=False, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
+    #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     # ### YOLO PREDICTOR
-    # RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-    #     rtsp=True , # Only used when the stream is from an RTSP source
-    #     make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-    #     detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
-    #     with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
-    #     device='cuda')()
+    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+        rtsp=True , # Only used when the stream is from an RTSP source
+        make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
+        detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
+        with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
+        device='cuda')()
