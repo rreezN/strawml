@@ -247,20 +247,20 @@ class AprilDetector:
         try:
             # Step 1: Classify tags into number tags and chute tags
             number_tags, chute_tags = self.helpers._classify_tags(tags)
-            if not number_tags or not chute_tags:
+            if len(number_tags) == 0 or len(chute_tags) == 0:
                 return frame, None
             
             # Step 2: Draw detected tags on the frame
-            frame = self.helpers._draw_tags(frame, number_tags, chute_tags)
+            frame_drawn = self.helpers._draw_tags(frame, number_tags, chute_tags)
             
             # Step 3: Draw straw level lines between number tags and chute tags
-            frame = self.helpers._draw_level_lines(frame, number_tags, chute_tags, straw_level)
+            frame_drawn = self.helpers._draw_level_lines(frame_drawn, number_tags, chute_tags, straw_level)
             
             # Step 4: Optionally create and return the cutout
             if make_cutout:
-                return self.helpers._handle_cutouts(frame, chute_tags, use_cutout)
+                return self.helpers._handle_cutouts(frame_drawn, chute_tags, use_cutout)
 
-            return frame, None        
+            return frame_drawn, None        
         except Exception as e:
             print(f"ERROR in draw: {e}")
             return frame, None
@@ -824,17 +824,17 @@ if __name__ == "__main__":
     #         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
     #         with_predictor=False , predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
     
-    # ### CONVNEXTV2 PREDICTOR
-    # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-    #         rtsp=True , # Only used when the stream is from an RTSP source
-    #         make_cutout=False, use_cutout=False, object_detect=True, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-    #         detect_april=True, yolo_straw=False, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
-    #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
+    ### CONVNEXTV2 PREDICTOR
+    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+            rtsp=True , # Only used when the stream is from an RTSP source
+            make_cutout=False, use_cutout=False, object_detect=True, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
+            detect_april=True, yolo_straw=False, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
+            with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
-    ### YOLO PREDICTOR
-    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-        rtsp=True , # Only used when the stream is from an RTSP source
-        make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-        detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
-        with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
-        device='cuda')()
+    # ### YOLO PREDICTOR
+    # RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    #     rtsp=True , # Only used when the stream is from an RTSP source
+    #     make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
+    #     detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
+    #     with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
+    #     device='cuda')()
