@@ -17,7 +17,8 @@ class AprilDetectorHelpers:
 
     def _initialize_information_dict(self) -> dict:
         temp = {
-            "FPS":              {"text": "", "font_scale": 1,   "font_thicknesss": 2, "position": (10, 50)},
+            "FPS":              {"text": "", "font_scale": 1,   "font_thicknesss": 2, "position": (10, 40)},
+            "scada_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 75)},
             "straw_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 100)},
             "undistort_time":   {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 125)},
             "april":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 150)},
