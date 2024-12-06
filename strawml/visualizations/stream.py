@@ -542,6 +542,7 @@ class RTSPStream(AprilDetector):
             try:
                 # Get scada
                 sensor_scada_data = self.scada_thread.get_recent_value()
+                self.information["scada_level"]["text"] = f'(TScada) SCADA: {sensor_scada_data:.2f}%'
                 # Get pixel values for scada
                 scada_pixel_values = self.get_straw_to_pixel_level(sensor_scada_data)
                 # Record sensor data if enabled
