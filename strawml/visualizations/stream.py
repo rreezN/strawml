@@ -688,8 +688,8 @@ class RTSPStream(AprilDetector):
         self.frame_count += 1
         self.information["FPS"]["text"] = f'(T2) FPS: {fps:.2f}'
         self.information["frame_time"]["text"] = f'(T2) Total Frame Time: {time.time() - frame_time:.2f} s'
-        self.information["RAM"]["text"] = f'(TM) Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}'
-        self.information["CPU"]["text"] = f'(TM) Total CPU Usage (%): {psutil.cpu_percent()}'
+        self.information["RAM"]["text"] = f'(TM) Total RAM Usage: {np.round(psutil.virtual_memory().used / 1e9, 2)} GB'
+        self.information["CPU"]["text"] = f'(TM) Total CPU Usage: {psutil.cpu_percent()} %'
 
     def _display_frame(self, frame_drawn, with_text=True, fx=0.6, fy=0.6):
         """Resize and display the processed frame."""
