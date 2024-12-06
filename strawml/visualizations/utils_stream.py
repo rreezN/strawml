@@ -115,6 +115,8 @@ class AprilDetectorHelpers:
         """Draws lines between number tags and chute tags indicating straw levels."""
         chute_right = [chute for chute in chute_tags if chute.tag_id not in [11, 12, 13, 14, 19, 20, 21, 22]]
         chute_left = [chute for chute in chute_tags if chute.tag_id in [11, 12, 13, 14, 19, 20, 21, 22]]
+        if len(chute_right) == 0 or len(chute_left) == 0:
+            return frame
         tag_angle = self._get_tag_angle(chute_left) 
 
         for tag in number_tags:
