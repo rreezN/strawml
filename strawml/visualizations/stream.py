@@ -571,6 +571,8 @@ class RTSPStream(AprilDetector):
 
         # Draw sensor_scada_data on frame based on scada_pixel_values
         if display_scada_line and self.record:
+            pix_x = scada_pixel_values[0]
+            scada_pixel_values = (pix_x+100, scada_pixel_values[1])
             cv2.line(frame_drawn, (int(scada_pixel_values[0]), int(scada_pixel_values[1])), (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1])), (255, 4, 0), 2)
             cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 4, 0), 2, cv2.LINE_AA)
 

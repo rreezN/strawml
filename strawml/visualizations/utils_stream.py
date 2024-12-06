@@ -748,7 +748,7 @@ class AsyncStreamThread:
                 # Update the recent value in a thread-safe manner
                 with self.lock:
                     self.recent_value = value
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.1)
     
     def grab_keys(self):
         data_path = 'data/opcua_server.txt'
