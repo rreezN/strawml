@@ -543,6 +543,7 @@ def plot_example(info, frame_data, prediction, target):
     stds = train_set.train_std
     frame_data = frame_data * stds + means
     frame_data = np.clip(frame_data, 0, 255)
+    frame_data = frame_data.astype(np.uint8)
     
     if args.cont:
         prediction = int(prediction*100)
