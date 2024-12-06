@@ -1,3 +1,4 @@
+from __init__ import *
 import numpy as np
 import cv2
 from sklearn.linear_model import LinearRegression
@@ -8,7 +9,7 @@ import yaml
 import threading
 import asyncio
 from asyncua import Client
-
+import copy
 
 class AprilDetectorHelpers:
     def __init__(self, april_detector_instance):
@@ -16,7 +17,8 @@ class AprilDetectorHelpers:
 
     def _initialize_information_dict(self) -> dict:
         temp = {
-            "FPS":              {"text": "", "font_scale": 1,   "font_thicknesss": 2, "position": (10, 50)},
+            "FPS":              {"text": "", "font_scale": 1,   "font_thicknesss": 2, "position": (10, 40)},
+            "scada_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 75)},
             "straw_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 100)},
             "undistort_time":   {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 125)},
             "april":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 150)},
@@ -114,6 +116,8 @@ class AprilDetectorHelpers:
         """Draws lines between number tags and chute tags indicating straw levels."""
         chute_right = [chute for chute in chute_tags if chute.tag_id not in [11, 12, 13, 14, 19, 20, 21, 22]]
         chute_left = [chute for chute in chute_tags if chute.tag_id in [11, 12, 13, 14, 19, 20, 21, 22]]
+        if len(chute_right) == 0 or len(chute_left) == 0:
+            return frame
         tag_angle = self._get_tag_angle(chute_left) 
 
         for tag in number_tags:
@@ -252,12 +256,15 @@ class AprilDetectorHelpers:
 
     def _account_for_missing_tags_in_chute_numbers(self):
         # first we sort based on the tag id
-        temp = self.ADI.chute_numbers.copy()
+        temp = copy.deepcopy(self.ADI.chute_numbers)
         sorted_chute_numbers = {k: v for k, v in sorted(temp.items(), key=lambda item: item[0])}
-        prev_tag_id = 0
+        prev_tag_id = None
 
         # we run through the sorted chute numbers and check if there are any missing tags. All mising tags with a tag id between the two tags can be inferred.
         for tag_id, center in sorted_chute_numbers.items():
+            if prev_tag_id is None:
+                prev_tag_id = tag_id
+                continue
             if tag_id - prev_tag_id == 2:
                 print(f"Missing tag between {prev_tag_id} and {tag_id} ---- {tag_id - 1}")
                 # Infer the position of the missing tag by taking the mean of the two neighboring tags
@@ -741,7 +748,7 @@ class AsyncStreamThread:
                 # Update the recent value in a thread-safe manner
                 with self.lock:
                     self.recent_value = value
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.1)
     
     def grab_keys(self):
         data_path = 'data/opcua_server.txt'

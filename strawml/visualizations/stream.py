@@ -247,20 +247,20 @@ class AprilDetector:
         try:
             # Step 1: Classify tags into number tags and chute tags
             number_tags, chute_tags = self.helpers._classify_tags(tags)
-            if not number_tags or not chute_tags:
+            if len(number_tags) == 0 or len(chute_tags) == 0:
                 return frame, None
             
             # Step 2: Draw detected tags on the frame
-            frame = self.helpers._draw_tags(frame, number_tags, chute_tags)
+            frame_drawn = self.helpers._draw_tags(frame, number_tags, chute_tags)
             
             # Step 3: Draw straw level lines between number tags and chute tags
-            frame = self.helpers._draw_level_lines(frame, number_tags, chute_tags, straw_level)
+            frame_drawn = self.helpers._draw_level_lines(frame_drawn, number_tags, chute_tags, straw_level)
             
             # Step 4: Optionally create and return the cutout
             if make_cutout:
-                return self.helpers._handle_cutouts(frame, chute_tags, use_cutout)
+                return self.helpers._handle_cutouts(frame_drawn, chute_tags, use_cutout)
 
-            return frame, None        
+            return frame_drawn, None        
         except Exception as e:
             print(f"ERROR in draw: {e}")
             return frame, None
@@ -277,6 +277,7 @@ class RTSPStream(AprilDetector):
     def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, yolo_straw=yolo_straw, yolo_straw_model=yolo_straw_model, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         self.record = record
+        self.recording_req = False
         self.record_threshold = record_threshold
         if record:
             self.recording_queue = queue.Queue()
@@ -320,11 +321,8 @@ class RTSPStream(AprilDetector):
         return cap
     
     def get_pixel_to_straw_level(self, frame, straw_bbox):
-        
+        """ Finds the straw level based on the detected tags in the chute. """
         chute_numbers = self.chute_numbers.copy()
-        # make sure that all the tags are detected
-        if len(chute_numbers) != 11:
-            return frame, 0        
             
         _, straw_cord,_ , _ = straw_bbox
         straw_cord = straw_cord[0].flatten()
@@ -340,29 +338,45 @@ class RTSPStream(AprilDetector):
         
         # Given the straw bbox, we need to calculate the straw level based on the center of each tag in the chute. We know that the id of each tag corresponds to the level of the chute, meaning 1 is 10%, 2 is 20% and so on. We need to find the two closest tags in the y-axis to the straw bbox and calculate the straw level based on the distance between the two tags.
         # We can do this by calculating the distance between the straw bbox and the center of each tag in the chute. We then sort the distances and find the two closest tags. We then calculate the distance between the straw bbox and the two closest tags and use this to calculate the straw level.
-        distance_dict = {}
+        distance_dict_under = {}
+        distance_dict_above = {}
         for key, values in chute_numbers.items():
-            distance = abs(straw_top - values[1])
-            distance_dict[distance] = key
-        
+            distance = straw_top - values[1]
+            if distance < 0:
+                distance_dict_under[distance] = key
+            else:
+                distance_dict_above[distance] = key
+
+        # there are three cases to consider, no detected tags under, no detected tags above, and detected tags both above and under
+        if len(distance_dict_under) == 0 or len(distance_dict_above) == 0:
+            return frame, 0
+          
         # sort the dictionary by key
-        distance_dict = dict(sorted(distance_dict.items()))
+        distance_dict_under = dict(sorted(distance_dict_under.items(), reverse=True))
+        distance_dict_above = dict(sorted(distance_dict_above.items()))
         
         # get the two closest tags
-        tag0, tag1 = list(distance_dict.values())[:2]
+        tag_under, tag_above = list(distance_dict_under.values())[0], list(distance_dict_above.values())[0]
+
+        # we get the difference between the two tags ids to see if we are missing tags inbetween
+        tag_diff = tag_above - tag_under
+        if tag_diff > 1:
+            interpolated = True
+        else:
+            interpolated = False
         
-        # We know that the tag with the lower y-value has to be the current level.
-        first_closest_tag_id, second_closest_tag_id = min(tag0, tag1), max(tag0, tag1)
+        # If the tag_diff is greateer than one, then we need to perform a linear interpolation between the points to get the straw level
+        y_under = chute_numbers[tag_under][1]
+        y_over = chute_numbers[tag_above][1]
+        x_mean = (chute_numbers[tag_under][0] + chute_numbers[tag_above][0]) / 2
         
-        # get the distance between the two closest tags
-        y_first = chute_numbers[first_closest_tag_id][1]
-        y_second = chute_numbers[second_closest_tag_id][1]
-        x_mean = (chute_numbers[first_closest_tag_id][0] + chute_numbers[second_closest_tag_id][0]) / 2
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
-        straw_level = ((y_first-straw_top) / (y_first-y_second) + first_closest_tag_id)*10
+        straw_level = (tag_diff * (y_under-straw_top) / (y_under-y_over) + tag_under)*10
+        
         if self.record and self.recording_req:
-            # TODO: TypeError: Object of type float32 is not JSON serializable
-            self.prediction_dict["yolo"] = {straw_level: (straw_top, x_mean)}
+            self.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
+            self.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
+        
         return rotated_frame, straw_level
     
     def get_straw_to_pixel_level(self, straw_level):
@@ -372,25 +386,43 @@ class RTSPStream(AprilDetector):
         # We can use the distance between the two closest tags to calculate the pixel value of the straw level.
         chute_numbers = self.chute_numbers.copy()
 
-        if len(chute_numbers) != 11:
-            return 0, 0
-
         # First we divide the straw level by 10 to get it on the same scale as the tag ids
         straw_level = straw_level / 10
 
         # We then get the two closest tags
-        first_closest_tag_id, second_closest_tag_id = int(straw_level), int(straw_level) + 1
+        tag_under, tag_over = int(straw_level), int(straw_level) + 1
+        
+        # next we find the two closest tags in chute_numbers based on the tag ids
+        # First we create a list for the values that are less or equal to the tag_under and greater than the tag_over
+        tag_under_list = [key for key, _ in chute_numbers.items() if key <= tag_under]
+        tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
+
+        # next we order them
+        tag_under_list = sorted(tag_under_list, reverse=True)
+        tag_over_list = sorted(tag_over_list)
+        
+        # Then we see if the tag_under_closest is above or below the straw level
+        tag_under_closest = tag_under_list[0]
+        tag_over_closest = tag_over_list[0]
+
+        # calculate difference between tag ids
+        tag_diff = tag_over_closest - tag_under_closest
+        if tag_diff > 1:
+            interpolated = True
+        else:
+            interpolated = False
         
         # get the distance between the two closest tags
-        y_first = chute_numbers[first_closest_tag_id][1]
-        y_second = chute_numbers[second_closest_tag_id][1]
+        y_under = chute_numbers[tag_under_closest][1]
+        y_over = chute_numbers[tag_over_closest][1]
         
         # get the pixel value of the straw level
-        excess = straw_level - int(straw_level)
-        pixel_straw_level_y = y_first - (y_first - y_second) * excess
-        pixel_straw_level_x = (chute_numbers[first_closest_tag_id][0] + chute_numbers[second_closest_tag_id][0]) / 2
+        excess = straw_level - tag_under_closest
+        pixel_straw_level_x = (chute_numbers[tag_under_closest][0] + chute_numbers[tag_over_closest][0]) / 2
+        pixel_straw_level_y = y_under - (y_under - y_over) * excess/tag_diff
+
         
-        return (pixel_straw_level_y, pixel_straw_level_x)
+        return (pixel_straw_level_x, pixel_straw_level_y)
     
     @staticmethod
     def time_function(func, *args, **kwargs):
@@ -505,20 +537,27 @@ class RTSPStream(AprilDetector):
             self.q.queue.clear()
         frame_time = time.time()
         
-        # Record sensor data if enabled
+        display_scada_line = False
         if self.record:
-            self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
-            if self.recording_req:
-                # Init recording file
-                self.prediction_dict = {}
+            try:
                 # Get scada
                 sensor_scada_data = self.scada_thread.get_recent_value()
+                self.information["scada_level"]["text"] = f'(TScada) SCADA: {sensor_scada_data:.2f}%'
                 # Get pixel values for scada
-                pixel_values = self.get_straw_to_pixel_level(sensor_scada_data)
-                # Save the scada data and pixel values
-                self.prediction_dict["scada"] = {sensor_scada_data: pixel_values}
-                # Reset the time
-                self.since_last_save = time.time()
+                scada_pixel_values = self.get_straw_to_pixel_level(sensor_scada_data)
+                # Record sensor data if enabled
+                self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
+                if self.recording_req:
+                    # Init recording file
+                    self.prediction_dict = {}
+                    # Save the scada data and pixel values
+                    self.prediction_dict["scada"] = {sensor_scada_data: scada_pixel_values}
+                    # Reset the time
+                    self.since_last_save = time.time()
+                display_scada_line = True
+            except Exception as e:
+                print(f'Error while trying to get scada data: {e}')
+                
             
         # Lock and set the frame for thread safety
         with self.lock:
@@ -530,8 +569,16 @@ class RTSPStream(AprilDetector):
         # Update FPS and resource usage information
         self._update_information(frame_time)
 
+        # Draw sensor_scada_data on frame based on scada_pixel_values
+        if display_scada_line and self.record:
+            pix_x = scada_pixel_values[0]
+            scada_pixel_values = (pix_x+100, scada_pixel_values[1])
+            cv2.line(frame_drawn, (int(scada_pixel_values[0]), int(scada_pixel_values[1])), (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1])), (255, 4, 0), 2)
+            cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 4, 0), 2, cv2.LINE_AA)
+
         # Display frame and overlay text
         self._display_frame(frame_drawn)
+
         
         if self.record and self.recording_req:
             self._save_frame()
@@ -625,12 +672,12 @@ class RTSPStream(AprilDetector):
                 _, predicted = torch.max(output, 1)
                 straw_level = predicted[0]*10
 
-            y_pixel, x_pixel = self.get_straw_to_pixel_level(straw_level)      
+            x_pixel, y_pixel = self.get_straw_to_pixel_level(straw_level)      
             if self.record and self.recording_req:
-                self.prediction_dict["predicted"] = {straw_level: (y_pixel, x_pixel)}
+                self.prediction_dict["predicted"] = {straw_level: (x_pixel, y_pixel)}
             # Draw line and text for straw level
-            cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 100, int(y_pixel)), (0, 0, 255), 2)
-            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel) + 110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+            cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 100, int(y_pixel)), (92, 92, 205), 2)
+            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel) + 110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 1,  (92, 92, 205), 2, cv2.LINE_AA)
             self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
             self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
             self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
@@ -643,8 +690,8 @@ class RTSPStream(AprilDetector):
         self.frame_count += 1
         self.information["FPS"]["text"] = f'(T2) FPS: {fps:.2f}'
         self.information["frame_time"]["text"] = f'(T2) Total Frame Time: {time.time() - frame_time:.2f} s'
-        self.information["RAM"]["text"] = f'(TM) Total RAM Usage (GB): {np.round(psutil.virtual_memory().used / 1e9, 2)}'
-        self.information["CPU"]["text"] = f'(TM) Total CPU Usage (%): {psutil.cpu_percent()}'
+        self.information["RAM"]["text"] = f'(TM) Total RAM Usage: {np.round(psutil.virtual_memory().used / 1e9, 2)} GB'
+        self.information["CPU"]["text"] = f'(TM) Total CPU Usage: {psutil.cpu_percent()} %'
 
     def _display_frame(self, frame_drawn, with_text=True, fx=0.6, fy=0.6):
         """Resize and display the processed frame."""
@@ -781,14 +828,14 @@ if __name__ == "__main__":
     #         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
     #         with_predictor=False , predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
     
-    # ### CONVNEXTV2 PREDICTOR
-    # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    ### CONVNEXTV2 PREDICTOR
+    # RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
     #         rtsp=True , # Only used when the stream is from an RTSP source
     #         make_cutout=False, use_cutout=False, object_detect=True, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
     #         detect_april=True, yolo_straw=False, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
-    ### YOLO PREDICTOR
+    # ### YOLO PREDICTOR
     RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
