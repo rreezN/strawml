@@ -156,7 +156,7 @@ class AprilDetectorHelpers:
     
     def _handle_cutouts(self, frame: np.ndarray, chute_tags: list, use_cutout: bool) -> Tuple[np.ndarray, np.ndarray]:
         """Handles creation of a cutout based on chute tags."""
-        tag_graph = TagGraphWithPositionsCV(self.ADI.tag_connections, chute_tags)
+        tag_graph = TagGraphWithPositionsCV(self.ADI.tag_connections, chute_tags, self)
         tag_graph.account_for_missing_tags()
         overlay_frame = tag_graph.draw_overlay(frame)
         cutout = tag_graph.crop_to_size(frame)
@@ -486,7 +486,7 @@ class TagGraphWithPositionsCV:
     applications without modification as it has hard-coded tag ids and corner tags.
     """
 
-    def __init__(self, connections, detected_tags):
+    def __init__(self, connections, detected_tags, helpers):
         """
         Class to represent a graph of connected tags with inferred positions for missing tags.
 
@@ -501,6 +501,7 @@ class TagGraphWithPositionsCV:
         corner_tags: 
             List of tag ids that are corner points
         """
+        self.helpers = helpers
         self.connections = connections
         self.detected_tags = {tag.tag_id: tuple(map(int, tag.center)) for tag in detected_tags}  # Detected tag positions
         self.inferred_tags = {}  # Store inferred tag positions
@@ -698,11 +699,14 @@ class TagGraphWithPositionsCV:
                             [width - 1, height - 1]]
                             , dtype='float32')
         # Compute the perspective transformation matrix
-        M = cv2.getPerspectiveTransform(pts_src, pts_dst)
-
-        # Apply the perspective warp to create a square cutout
-        cutout = cv2.warpPerspective(image, M, (width, height))
-        return np.array(cutout)
+        if self._is_valid_quadrilateral(pts_src) and self._is_valid_quadrilateral(pts_dst):
+            # Compute the perspective transformation matrix
+            M = cv2.getPerspectiveTransform(pts_src, pts_dst)
+            # Apply the perspective warp to create a square cutout
+            cutout = cv2.warpPerspective(image, M, (width, height))
+            return np.array(cutout)
+        else:
+            return None
     
     def draw_overlay(self, image):
         """
@@ -723,6 +727,20 @@ class TagGraphWithPositionsCV:
                 cv2.line(image, (int(pos1[0]), int(pos1[1])), (int(pos2[0]), int(pos2[1])), (255, 0, 0), 2)
 
         return image
+    
+    def _is_valid_quadrilateral(pts):
+        """Check if the points form a valid quadrilateral."""
+        if len(pts) != 4:
+            return False
+        # Check for collinearity
+        for i in range(4):
+            x1, y1 = pts[i]
+            x2, y2 = pts[(i + 1) % 4]
+            x3, y3 = pts[(i + 2) % 4]
+            if (y2 - y1) * (x3 - x2) == (y3 - y2) * (x2 - x1):
+                return False
+        return True
+
 
 class AsyncStreamThread:
     def __init__(self, server_keys: str):
