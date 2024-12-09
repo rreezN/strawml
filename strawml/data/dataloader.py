@@ -33,7 +33,7 @@ class Chute(torch.utils.data.Dataset):
         self.sensor = sensor
         
         if len(override_statistics) > 0:
-            self.train_mean, self.train_std = override_statistics
+            self.train_mean, self.train_std = override_statistics[:2]
             if self.inc_heatmap:
                 self.train_hm_mean, self.train_hm_std = override_statistics[2:]
         
