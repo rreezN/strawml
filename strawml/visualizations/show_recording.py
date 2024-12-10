@@ -68,7 +68,7 @@ def _smooth_data(sensor_data, model_data):
     :return: np.ndarray: The smoothed model data
     """
     # Define weights for previous points (current has highest weight)
-    weights = np.array([0.4, 0.3, 0.2, 0.1])  # Must sum to 1
+    weights = np.array([0.4, 0.3, 0.1, 0.1, 0.1])  # Must sum to 1
     weights = weights / weights.sum()  # Normalize (in case they don't already sum to 1)
 
 
@@ -77,13 +77,17 @@ def _smooth_data(sensor_data, model_data):
     
     # Now we wish to get the x-axis for the smoothed data accounting for the kernel size and therefore the loss of data points
     x_axis = np.arange(len(sensor_data))
-    x_axis = x_axis[3:]  # We remove the first 3 data points as they are lost due to the kernel size of 4
+    x_axis = x_axis[len(weights)-1:]  # We remove the first 3 data points as they are lost due to the kernel size of 4
 
     return smoothed_sensor_data, smoothed_model_data, x_axis
 
 def _plot_recording(ax, sensor_data, model_data, x_axis, labels=['a', 'b'], c=['b', 'r'], linestyle='-'):
     ax.plot(x_axis, sensor_data, label=labels[0], c=c[0], linestyle=linestyle)
     ax.plot(x_axis, model_data, label=labels[1], c=c[1], linestyle=linestyle)
+
+    # draw confidence intervals of +- 5%
+    ax.fill_between(x_axis, sensor_data - 5, sensor_data + 5, color='lightblue', alpha=0.5)
+    ax.fill_between(x_axis, model_data - 5, model_data + 5, color='lightcoral', alpha=0.5)    
     return ax
 
 def main(file_path:str, time_step:int = 5):  
@@ -116,7 +120,7 @@ def main(file_path:str, time_step:int = 5):
         ax.set_ylabel('Data')
         ax.set_title(f'Recording: {titles[i]}')
         ax.legend()
-        
+
     plt.tight_layout()
     plt.show()
 
