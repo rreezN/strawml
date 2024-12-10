@@ -323,6 +323,8 @@ class RTSPStream(AprilDetector):
     def get_pixel_to_straw_level(self, frame, straw_bbox):
         """ Finds the straw level based on the detected tags in the chute. """
         chute_numbers = self.chute_numbers.copy()
+        if not len(chute_numbers) >= 2:
+            return frame, 0
             
         _, straw_cord,_ , _ = straw_bbox
         straw_cord = straw_cord[0].flatten()
