@@ -191,17 +191,16 @@ class Chute(torch.utils.data.Dataset):
         if self.data_type == 'train' and self.data_purpose == "straw":
             if np.random.rand() < self.augment_probability:
                 transform_list = [
-                                  transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.5, hue=0.05), 
-                                  transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.JPEG(quality=(1, 100)), transforms.ToDtype(torch.float32, scale=True)]),
-                                  transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 5.0)),
-                                  transforms.GaussianNoise(mean=0.0, sigma=0.1),
-                                  transforms.RandomEqualize(p=1.0),
+                                  transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.5, hue=0.05), #0
+                                  transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.JPEG(quality=(1, 100)), transforms.ToDtype(torch.float32, scale=True)]), #1
+                                  transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 5.0)), #2
+                                  transforms.GaussianNoise(mean=0.0, sigma=0.1), #3
+                                  transforms.RandomEqualize(p=1.0), #4
                                   transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.RandomPosterize(bits=np.random.randint(3, 5), p=1.0), transforms.ToDtype(torch.float32, scale=True)]),
-                                  transforms.RandomAdjustSharpness(p=1.0, sharpness_factor=np.random.uniform(1.0, 2.0)),
+                                  transforms.RandomAdjustSharpness(p=1.0, sharpness_factor=np.random.uniform(1.0, 2.0)), #6
                                   ]
 
                 augmentation = transforms.RandomChoice(transform_list)
-                # TODO: FIX THIS CUS RIGHT NOW AUGMENTATION IS NOT WORKING AT ALL....
                 print(f'Augmenting frame {self.indices[idx]}')
                 if self.inc_heatmap:
                     img = augmentation(frame_data[0])
@@ -752,7 +751,7 @@ if __name__ == '__main__':
     data_path = 'data/processed/train.hdf5'
     train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=False, inc_edges=False,
                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
-                         num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=0.5, greyscale=False)
+                         num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=1.0, greyscale=False)
     
     print('Testing normalizing')
     train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
