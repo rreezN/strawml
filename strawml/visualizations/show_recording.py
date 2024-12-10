@@ -87,42 +87,96 @@ def _plot_recording(ax, sensor_data, model_data, x_axis, labels=['a', 'b'], c=['
 
     # draw confidence intervals of +- 5%
     ax.fill_between(x_axis, sensor_data - 5, sensor_data + 5, color='lightblue', alpha=0.5)
-    ax.fill_between(x_axis, model_data - 5, model_data + 5, color='lightcoral', alpha=0.5)    
+    ax.fill_between(x_axis, model_data - 5, model_data + 5, color='lightcoral', alpha=0.5)
+    # add the confidence intervals to the legend
+    ax.plot([], [], color='lightblue', alpha=0.5, label='Data Threshold (+-5%)')
+    ax.plot([], [], color='lightcoral', alpha=0.5)
+
+    # Highlight the areas where the sensor and model data overlap when within 5% of each other
+    overlap = np.where((sensor_data >= model_data - 5) & (sensor_data <= model_data + 5))
+    # Highlight the entire vertical area where the sensor and model data overlap
+    for i in overlap[0]:
+        ax.axvline(x=x_axis[i], color='goldenrod', linestyle='-', alpha=0.2)
+    # add the highlighted area to the legend
+    ax.plot([], [], color='goldenrod', linestyle='-', alpha=0.2, label='Overlap points (w. Threshold)')
+    
     return ax
 
-def main(file_path:str, time_step:int = 5):  
+def _print_summary_statistics(sensor_data, model_data, smooth_sensor_data, smooth_model_data):
+    print(f"\nSummary Statistics:")
+    print(f"  -- Sensor Data: Mean:          {np.mean(sensor_data):.2f}, STD: {np.std(sensor_data):.2f}")
+    print(f"  -- Model Data: Mean:           {np.mean(model_data):.2f}, STD: {np.std(model_data):.2f}")
+    print(f"  -- Delta: Mean:                {np.mean(sensor_data - model_data):.2f}, STD: {np.std(sensor_data - model_data):.2f}")
+    print("\n")
+    print(f"  -- Smoothed Sensor Data: Mean: {np.mean(smooth_sensor_data):.2f}, STD: {np.std(smooth_sensor_data):.2f}")
+    print(f"  -- Smoothed Model Data: Mean:  {np.mean(smooth_model_data):.2f}, STD: {np.std(smooth_model_data):.2f}")
+    print(f"  -- Delta: Mean:                {np.mean(smooth_sensor_data - smooth_model_data):.2f}, STD: {np.std(smooth_sensor_data - smooth_model_data):.2f}")
+    print("NOTE: Negative values in the delta indicate that the model's predictions are higher than the sensor data.")
+
+def main(file_path:str, time_step:int = 5, delta:bool = True):  
     # We first define the figure on which we wish to plot the data
-    fig, axes = plt.subplots(2, 1, figsize=(15, 10))
-    titles = ['Raw Data', 'Smoothed Data']
-    cs = ['royalblue', 'indianred']
+    if delta:
+        fig, axes = plt.subplots(3, 1, figsize=(15, 10))
+        titles = ['Raw Data', 'Smoothed Data', 'Delta']
+        cs = ['royalblue', 'indianred']
+    else:
+        fig, axes = plt.subplots(2, 1, figsize=(15, 10))
+        titles = ['Raw Data', 'Smoothed Data']
+        cs = ['royalblue', 'indianred']
 
     # We then load the data from the file path
     sensor_data, model_data, x_axis = _retreive_data(file_path)
-    x_axis = x_axis * time_step
+    x_axis_data = x_axis * time_step
     # Plot the data on top of the figure
-    axes[0] = _plot_recording(axes[0], sensor_data, model_data, x_axis, 
+    axes[0] = _plot_recording(axes[0], sensor_data, model_data, x_axis_data, 
                               labels=['Sensor Data', 'Model Data'], 
                               c=cs, 
                               linestyle='-')
 
     # Calculate a smoothed version of the data.
     smooth_sensor_data, smooth_model_data, x_axis = _smooth_data(sensor_data, model_data)
-    x_axis = x_axis * time_step
+    x_axis_smooth = x_axis * time_step
     # Plot the data on top of the figure
-    axes[1] = _plot_recording(axes[1], smooth_sensor_data, smooth_model_data, x_axis, 
+    axes[1] = _plot_recording(axes[1], smooth_sensor_data, smooth_model_data, x_axis_smooth, 
                               labels=['Sensor Data (Smooth)', 'Model Data (Smooth)'], 
                               c=cs, 
                               linestyle='--')
+
+    if delta:
+        # draw line through 0 to indicate when the model is over or under predicting
+        axes[2].axhline(0, color='black', linestyle='--')
+        # axes[2].plot(x_axis_data, sensor_data - model_data, label='Delta', c=cs[0], linestyle='-')
+        axes[2].plot(x_axis_smooth, smooth_sensor_data - smooth_model_data, label='Delta (Smooth)', c="mediumseagreen", linestyle='-')
+        # Highlight the areas where the sensor and model data overlap when within 5% of each other, meaning where the delta is within 5% of 0
+        overlap = np.where((smooth_sensor_data - smooth_model_data >= -5) & (smooth_sensor_data - smooth_model_data <= 5))
+        # Highlight the entire vertical area where the sensor and model data overlap
+        for i in overlap[0]:
+            axes[2].axvline(x=x_axis_smooth[i], color='goldenrod', linestyle='-', alpha=0.2)
+        axes[2].plot([], [], color='goldenrod', linestyle='-', alpha=0.2, label='Overlap points (w. Threshold)')
+
+
+    _print_summary_statistics(sensor_data, model_data, smooth_sensor_data, smooth_model_data)
 
     for i, ax in enumerate(axes):
         ax.grid()
         ax.set_xlabel('Time (s)')
         ax.set_ylabel('Data')
         ax.set_title(f'Recording: {titles[i]}')
-        ax.legend()
+        
+        # Shrink current axis's height by 10% on the bottom
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0 + box.height * 0.1,
+                        box.width, box.height * 0.9])
 
-    plt.tight_layout()
+        # Put a legend below current axis
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
+                fancybox=True, shadow=True, ncol=5)
+
+        # ax.legend()
+
+    fig.tight_layout(pad=5.0)
     plt.show()
+
 
 if __name__ == '__main__':
     file_path = "D:/HCAI/msc/strawml/data/predictions/recording.hdf5"
