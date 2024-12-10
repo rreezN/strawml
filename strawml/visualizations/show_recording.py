@@ -40,7 +40,7 @@ def _retreive_data(file_path: str):
     :param file_path: str: The file path to the data
     :return: np.ndarray: The data
     """
-    missing_keys = _validate_data(file_path)
+    # missing_keys = _validate_data(file_path)
 
     # Initialize the dataframes
     sensor_data = np.array([])
@@ -49,11 +49,15 @@ def _retreive_data(file_path: str):
     # We then load the data from the file path
     with h5py.File(file_path, 'r') as f:
         for key in f.keys():
-            sensor_data = np.append(sensor_data, f[key]['scada']['percent'][...])            
-            model_data = np.append(model_data, f[key]['yolo']['percent'][...])
+            sensor_data = np.append(sensor_data, f[key]['scada']['percent'][...])
+            if 'yolo' not in f[key].keys():
+                model_data = np.append(model_data, np.array([0.0]))
+            else:
+                model_data = np.append(model_data, f[key]['yolo']['percent'][...])
     
+    x_axis = np.arange(len(sensor_data))
     # We then return the data
-    return sensor_data, model_data
+    return sensor_data, model_data, x_axis
 
 def _smooth_data(sensor_data, model_data):
     """
@@ -63,47 +67,57 @@ def _smooth_data(sensor_data, model_data):
     :return: np.ndarray: The smoothed sensor data
     :return: np.ndarray: The smoothed model data
     """
-    # We first initialize the smoothed data
-    smoothed_sensor_data = np.array([])
-    smoothed_model_data = np.array([])
-
     # Define weights for previous points (current has highest weight)
     weights = np.array([0.4, 0.3, 0.2, 0.1])  # Must sum to 1
     weights = weights / weights.sum()  # Normalize (in case they don't already sum to 1)
 
-    # We then iterate through the data and smooth it out
-    for i in range(len(sensor_data)):
-        smoothed_sensor_data.append(np.convolve(sensor_data[i], weights[::-1], mode='valid')) # We use valid here to ensure that 
-                                                                                              # the kernel is aligned to consider only past data.
-        smoothed_model_data.append(np.convolve(model_data[i], weights[::-1], mode='valid'))
 
-    return smoothed_sensor_data, smoothed_model_data
+    smoothed_sensor_data = np.convolve(sensor_data, weights[::-1], mode='valid')
+    smoothed_model_data = np.convolve(model_data, weights[::-1], mode='valid')
+    
+    # Now we wish to get the x-axis for the smoothed data accounting for the kernel size and therefore the loss of data points
+    x_axis = np.arange(len(sensor_data))
+    x_axis = x_axis[3:]  # We remove the first 3 data points as they are lost due to the kernel size of 4
 
-def _plot_recording(ax, sensor_data, model_data, labels=['a', 'b'], c=['b', 'r'], linestyle='-'):
-    # We the iteratre through the data and plot it on the figure with lines in between each data point
-    for i in range(len(sensor_data)):
-        ax.plot(sensor_data[i], label=labels[0], c=c[0], linestyle=linestyle)
-        ax.plot(model_data[i], label=labels[1], c=c[1], linestyle=linestyle)
+    return smoothed_sensor_data, smoothed_model_data, x_axis
+
+def _plot_recording(ax, sensor_data, model_data, x_axis, labels=['a', 'b'], c=['b', 'r'], linestyle='-'):
+    ax.plot(x_axis, sensor_data, label=labels[0], c=c[0], linestyle=linestyle)
+    ax.plot(x_axis, model_data, label=labels[1], c=c[1], linestyle=linestyle)
     return ax
 
-def main(file_path):  
+def main(file_path:str, time_step:int = 5):  
     # We first define the figure on which we wish to plot the data
-    fig, ax = plt.subplots()
-    
+    fig, axes = plt.subplots(2, 1, figsize=(15, 10))
+    titles = ['Raw Data', 'Smoothed Data']
+    cs = ['royalblue', 'indianred']
+
     # We then load the data from the file path
-    sensor_data, model_data = _retreive_data(file_path)
+    sensor_data, model_data, x_axis = _retreive_data(file_path)
+    x_axis = x_axis * time_step
     # Plot the data on top of the figure
-    ax = _plot_recording(ax, sensor_data, model_data, labels=['Sensor Data', 'Model Data'], c=['b', 'r'], linestyle='-')
+    axes[0] = _plot_recording(axes[0], sensor_data, model_data, x_axis, 
+                              labels=['Sensor Data', 'Model Data'], 
+                              c=cs, 
+                              linestyle='-')
 
     # Calculate a smoothed version of the data.
-    smooth_sensor_data, smooth_model_data = _smooth_data(sensor_data, model_data)
+    smooth_sensor_data, smooth_model_data, x_axis = _smooth_data(sensor_data, model_data)
+    x_axis = x_axis * time_step
     # Plot the data on top of the figure
-    ax = _plot_recording(ax, smooth_sensor_data, smooth_model_data, labels=['Sensor Data (Smooth)', 'Model Data (Smooth)'], c=['b', 'r'], linestyle='--')
+    axes[1] = _plot_recording(axes[1], smooth_sensor_data, smooth_model_data, x_axis, 
+                              labels=['Sensor Data (Smooth)', 'Model Data (Smooth)'], 
+                              c=cs, 
+                              linestyle='--')
 
-    ax.set_xlabel('Time')
-    ax.set_ylabel('Data')
-    ax.set_title('Recording')
-    ax.legend()
+    for i, ax in enumerate(axes):
+        ax.grid()
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel('Data')
+        ax.set_title(f'Recording: {titles[i]}')
+        ax.legend()
+        
+    plt.tight_layout()
     plt.show()
 
 if __name__ == '__main__':
