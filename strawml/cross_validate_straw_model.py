@@ -542,7 +542,8 @@ def plot_example(info, frame_data, prediction, target):
     means = train_set.train_mean
     stds = train_set.train_std
     frame_data = frame_data * stds + means
-    frame_data = np.clip(frame_data, 0, 1)
+    frame_data = np.clip(frame_data, 0, 255)
+    frame_data = frame_data.astype(np.uint8)
     
     if args.cont:
         prediction = int(prediction*100)
@@ -635,8 +636,8 @@ def get_args():
     parser.add_argument('--model_path', type=str, default='models/pretrained/convnextv2_atto_1k_224_ema.pth', help='Path to load the model from')
     parser.add_argument('--save_path', type=str, default='models/', help='Path to save the model to')
     parser.add_argument('--data_path', type=str, default='data/interim/chute_detection.hdf5', help='Path to the training data')
-    parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
-    parser.add_argument('--inc_edges', type=bool, default=False, help='Include edges in the training data')
+    parser.add_argument('--inc_heatmap', action='store_true', help='Include heatmaps in the training data')
+    parser.add_argument('--inc_edges', action='store_true', help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--no_wandb', action='store_true', help='Do not use Weights and Biases for logging')
     parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
@@ -659,6 +660,16 @@ def get_args():
 
 if __name__ == '__main__':
     args = get_args()
+    
+    if args.cont:
+        print(f'Training regression model with {args.model}')
+    else:
+        print(f'Training classification model with {args.model}')
+    
+    if args.inc_edges:
+        print('Including edges in the training data')
+    if args.inc_heatmap:
+        print('Including heatmaps in the training data')
     
     # Is this how we want to do it?
     if args.hpc:

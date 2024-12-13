@@ -7,19 +7,15 @@ These experiments should be done as barebones as possible. No additional fancy f
 Also figure out what is the model param size we are aiming for?
 
 MODEL - top1 acc - img_size - param_count
-- [ ] ConvNeXt - 86.2% - 224 - 50.22
-- [ ] ConvNeXt - 384
-- [ ] ViT - 86.6% - 384 - 60.60
+- [X] ConvNeXt - 86.2% - 224 - 50.22
+- [X] ConvNeXt - 384
+- [X] ViT - 86.6% - 384 - 60.60
 
 
 #### Regressor vs Classifier
-- [ ] Regressor
-- [ ] Classifier
-- [ ] Classifier w. weighted CE
-
-#### Class amount
-- [ ] 5%
-- [ ] 10%
+- [X] Regressor
+- [X] Classifier
+- [X] Classifier w. weighted CE
 
 ### Image size experiments
 Some models (ConvNeXt for example) are fully convolutional, and thus don't depend on image size. Others can manually specify input sizes for. Might be a good idea to test, especially with non-square images.
@@ -42,6 +38,17 @@ The goal of these experiments is to test adjustments in architecture after selec
 - [ ] Number of neurons
 - [ ] BatchNorm, etc..
 - [ ] Average pool instead of FCN
+
+#### Manual Features
+- [ ] RGB (standard images)
+- [ ] Greyscale only
+- [ ] Include edges
+- [ ] Include heatmaps
+- [ ] Only edges
+- [ ] Only heatmaps
+- [ ] Fourier transform
+- [ ] Scale-space transform
+- [ ] Wavelet transform
 
 ### Training Experiments
 These experiments will alter the training by introducing different optimisers, learning rate schedulers and so on.
@@ -83,17 +90,6 @@ After having selected a model and training procedure, we will try to experiment 
 - [ ] 50% of training data
 - [ ] 75% of training data
 - [ ] 100% of training data
-
-#### Manual Features
-- [ ] RGB (standard images)
-- [ ] Greyscale only
-- [ ] Include edges
-- [ ] Include heatmaps
-- [ ] Only edges
-- [ ] Only heatmaps
-- [ ] Fourier transform
-- [ ] Scale-space transform
-- [ ] Wavelet transform
 
 #### Data Augmentation
 - [ ] RGBShift

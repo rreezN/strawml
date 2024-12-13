@@ -617,6 +617,7 @@ class AprilDetector:
                 
                 # # save cutout image to disk
                 # cv2.imwrite("fiducial_marker/cutout.jpg", cutout)
+                return frame, cutout
             
             center_chute = (chute_right[0][0] + chute_left[0][0]) // 2
             number_tags = sorted(number_tags, key=lambda x: x.tag_id)

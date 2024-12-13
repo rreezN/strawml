@@ -247,7 +247,7 @@ def plot_class_distribution(class_dict: dict, frames: h5py.File, direction: str 
             plt.barh(classes, counts['sensors'], align='center', label='Sensors', height=4, left=left, alpha=0.5)
             plt.xlim(0, max(max(counts['original'])+ 10, max(counts['sensors']) + 10))
         
-        plt.legend(loc='lower center', bbox_to_anchor=(0.5, -0.35), ncol=2)
+        # plt.legend(loc='lower center', bbox_to_anchor=(0.5, -0.35), ncol=2)
         plt.yticks(np.arange(0, max(classes*100) + 1, 10))
         plt.xlabel('Count')
         plt.ylabel('Class')
@@ -272,12 +272,12 @@ def plot_class_distribution(class_dict: dict, frames: h5py.File, direction: str 
             plt.bar(classes, counts['original'], align='center', label='Human', width=4, bottom=bottom, alpha=0.5)
             plt.ylim(0, max(max(counts['original'])+ 10, max(counts['sensors']) + 10))
         
-        plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=2)
+        # plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=2)
         plt.xticks(np.arange(0, max(classes*100) + 1, 10))
         plt.ylabel('Count')
         plt.xlabel('Class')
     
-    plt.title(f'Straw Class Distribution ({frames.filename})')
+    plt.title(f'Straw Class Distribution ({frames.filename}), total: {total_frames} frames')
     plt.savefig('reports/figures/class_distribution.png', dpi=300)
     plt.show()
 

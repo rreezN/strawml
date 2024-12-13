@@ -12,6 +12,9 @@ scikit-image
 timm
 scikit-image
 openpyxl
+keyboard
+pupil-apriltags
+asyncua
 
 --extra-index-url https://download.pytorch.org/whl/cu118
 torch 
