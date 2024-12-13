@@ -327,16 +327,16 @@ class RTSPStream(AprilDetector):
         """ Finds the straw level based on the detected tags in the chute. """
         chute_numbers_ = self.chute_numbers.copy()
         if not len(chute_numbers_) >= 2:
-            return frame, "NA"
+            return "NA"
             
         _, straw_cord,_ , _ = straw_bbox
         straw_cord = straw_cord[0].flatten()
         
         angle = self.helpers._get_tag_angle(list(chute_numbers_.values()))
-
+        # from radians to degrees
+        angle = np.degrees(angle)
         # Rotate the frame to the angle of the chute and the bbox
-
-        frame_rotated, _, bbox_, affine_warp = SpecialRotate(image=frame, bbox=straw_bbox[1][0].cpu().numpy(), angle=angle, return_affine=True)
+        _, _, bbox_, affine_warp = SpecialRotate(image=frame, bbox=straw_bbox[1][0].cpu().numpy(), angle=angle, return_affine=True) # type: ignore
         c_nr = np.expand_dims(np.array(list(chute_numbers_.values())).reshape(-1, 2), 1)
         warped_chute_numbers = cv2.perspectiveTransform(c_nr, affine_warp).squeeze(1)
         # replace the old values in the dict. Remember that the order is the same
@@ -360,7 +360,7 @@ class RTSPStream(AprilDetector):
 
         # there are three cases to consider, no detected tags under, no detected tags above, and detected tags both above and under
         if len(distance_dict_under) == 0 or len(distance_dict_above) == 0:
-            return frame, "NA"
+            return "NA"
           
         # sort the dictionary by key
         distance_dict_under = dict(sorted(distance_dict_under.items(), reverse=True))
@@ -388,7 +388,7 @@ class RTSPStream(AprilDetector):
             self.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
             self.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
         
-        return frame_rotated, straw_level
+        return straw_level
     
     def get_straw_to_pixel_level(self, straw_level):
         # We know that the self.chute_numbers are ordered from 0 to 10. We can use this to calculate the pixel value of the straw level
@@ -662,7 +662,7 @@ class RTSPStream(AprilDetector):
         elif self.yolo_straw:
             output, inference_time = self.time_function(self.model.score_frame, frame)
             if len(output[0]) != 0:
-                frame_drawn, straw_level = self.get_pixel_to_straw_level(frame_drawn, output)
+                straw_level = self.get_pixel_to_straw_level(frame_drawn, output)
                 frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level, model_type="obb")
                 if type(straw_level) == str:
                     self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level}'
@@ -859,4 +859,4 @@ if __name__ == "__main__":
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
         with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
-        device='cuda')()
+        device='cpu')()

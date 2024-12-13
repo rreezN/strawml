@@ -215,8 +215,9 @@ def SpecialRotate(image, image_diff=None, bbox=None, angle=None, return_affine=F
         if return_affine:
             return rotated_image, None, rotated_bbox, affine_warp
         return rotated_image, None, rotated_bbox
+    
     rotated_image_diff = cv2.warpAffine(image_diff, rotation_arr, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255, 255))
-    # get the new bounding box coordinates
+    
     if return_affine:
         return rotated_image, rotated_image_diff, rotated_bbox, affine_warp
     return rotated_image, rotated_image_diff, rotated_bbox
