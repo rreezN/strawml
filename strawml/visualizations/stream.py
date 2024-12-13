@@ -165,9 +165,12 @@ class AprilDetector:
                 x1, y1, x2, y2, x3, y3, x4, y4 = cord[i].flatten()
                 x1, y1, x2, y2, x3, y3, x4, y4 = int(x1), int(y1), int(x2), int(y2), int(x3), int(y3), int(x4), int(y4)
                 if straw:
-                    # Only plot the upper vertical line
                     cv2.line(frame, (x1, y1), (x4, y4), (127,0,255), 2)
-                    cv2.putText(frame, f"{straw_lvl:.2f} %", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
+                    if type(straw_lvl) == str:
+                        cv2.putText(frame, f"{straw_lvl}", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
+
+                    else:                        
+                        cv2.putText(frame, f"{straw_lvl:.2f} %", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
                 else:                        
                     # draw lines between the corners
                     cv2.line(frame, (x1, y1), (x2, y2), (138,43,226), 2)
@@ -322,18 +325,24 @@ class RTSPStream(AprilDetector):
     
     def get_pixel_to_straw_level(self, frame, straw_bbox):
         """ Finds the straw level based on the detected tags in the chute. """
-        chute_numbers = self.chute_numbers.copy()
-        if not len(chute_numbers) >= 2:
-            return frame, 0
+        chute_numbers_ = self.chute_numbers.copy()
+        if not len(chute_numbers_) >= 2:
+            return frame, "NA"
             
         _, straw_cord,_ , _ = straw_bbox
         straw_cord = straw_cord[0].flatten()
         
-        # Get angle of self.chute_numbers
-        angle = self.helpers._get_tag_angle(list(chute_numbers.values()))
-        
+        angle = self.helpers._get_tag_angle(list(chute_numbers_.values()))
+
         # Rotate the frame to the angle of the chute and the bbox
-        rotated_frame, _, bbox_ = SpecialRotate(image=frame, bbox=straw_bbox[1][0].cpu().numpy(), angle=angle)
+
+        frame_rotated, _, bbox_, affine_warp = SpecialRotate(image=frame, bbox=straw_bbox[1][0].cpu().numpy(), angle=angle, return_affine=True)
+        c_nr = np.expand_dims(np.array(list(chute_numbers_.values())).reshape(-1, 2), 1)
+        warped_chute_numbers = cv2.perspectiveTransform(c_nr, affine_warp).squeeze(1)
+        # replace the old values in the dict. Remember that the order is the same
+        chute_numbers = {}
+        for i, (k,_) in enumerate(chute_numbers_.items()):
+            chute_numbers[k] = tuple(warped_chute_numbers[i])
 
         # Extract the top of the straw bbox
         straw_top = (bbox_[1] + bbox_[-1])/2
@@ -351,7 +360,7 @@ class RTSPStream(AprilDetector):
 
         # there are three cases to consider, no detected tags under, no detected tags above, and detected tags both above and under
         if len(distance_dict_under) == 0 or len(distance_dict_above) == 0:
-            return frame, 0
+            return frame, "NA"
           
         # sort the dictionary by key
         distance_dict_under = dict(sorted(distance_dict_under.items(), reverse=True))
@@ -379,7 +388,7 @@ class RTSPStream(AprilDetector):
             self.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
             self.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
         
-        return rotated_frame, straw_level
+        return frame_rotated, straw_level
     
     def get_straw_to_pixel_level(self, straw_level):
         # We know that the self.chute_numbers are ordered from 0 to 10. We can use this to calculate the pixel value of the straw level
@@ -575,6 +584,10 @@ class RTSPStream(AprilDetector):
         if display_scada_line and self.record:
             pix_x = scada_pixel_values[0]
             scada_pixel_values = (pix_x+100, scada_pixel_values[1])
+            
+            # Get angle of self.chute_numbers
+            angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+
             cv2.line(frame_drawn, (int(scada_pixel_values[0]), int(scada_pixel_values[1])), (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1])), (255, 4, 0), 2)
             cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 4, 0), 2, cv2.LINE_AA)
 
@@ -651,7 +664,10 @@ class RTSPStream(AprilDetector):
             if len(output[0]) != 0:
                 frame_drawn, straw_level = self.get_pixel_to_straw_level(frame_drawn, output)
                 frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level, model_type="obb")
-                self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
+                if type(straw_level) == str:
+                    self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level}'
+                else:
+                    self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
                 self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
         return frame_drawn
 
@@ -816,7 +832,7 @@ if __name__ == "__main__":
     )
 
     # video_path = "data/raw/Pin drum Chute 2_HKVision_HKVision_20241102105959_20241102112224_1532587042.mp4"
-    video_path = "D:/HCAI/msc/strawml/data/special/Pin drum Chute 2_HKVision_HKVision_20241102112224_20241102113000_1532606664.mp4"
+    video_path = "C:/Users/ikaos/OneDrive/Desktop/strawml/data/raw/stream-2024-09-23-10h11m28s.mp4"
     # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
     #            rtsp=False, # Only used when the stream is from an RTSP source
     #            make_cutout=False, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
@@ -838,9 +854,9 @@ if __name__ == "__main__":
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     # ### YOLO PREDICTOR
-    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-        detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
+        detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
         with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
         device='cuda')()

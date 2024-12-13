@@ -360,9 +360,11 @@ class AprilDetectorHelpers:
             detected_tag = tags[matching_tags[0]]
             prev_tag = self.ADI.tags[t]
             accumulated_error += np.linalg.norm(np.array(detected_tag.center) - np.array(prev_tag.center))
-
-        if accumulated_error / len(self.ADI.tag_ids) > 10: # Threshold for accumulated error is 10 pixels
-            self._reset_tags()
+        
+        # First we make sure that the tags are not empty
+        if len(self.ADI.tag_ids) != 0:
+            if accumulated_error / len(self.ADI.tag_ids) > 10: # Threshold for accumulated error is 10 pixels
+                self._reset_tags()
 
     def _reset_tags(self) -> None:
         """
