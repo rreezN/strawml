@@ -730,7 +730,7 @@ class TagGraphWithPositionsCV:
 
         return image
     
-    def _is_valid_quadrilateral(pts):
+    def _is_valid_quadrilateral(self, pts):
         """Check if the points form a valid quadrilateral."""
         if len(pts) != 4:
             return False

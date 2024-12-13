@@ -549,7 +549,7 @@ class RTSPStream(AprilDetector):
         frame_time = time.time()
         
         display_scada_line = False
-        if self.record:
+        if self.record: 
             try:
                 # Get scada
                 sensor_scada_data = self.scada_thread.get_recent_value()
@@ -587,8 +587,11 @@ class RTSPStream(AprilDetector):
             
             # Get angle of self.chute_numbers
             angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+            line_start = (int(scada_pixel_values[0]), int(scada_pixel_values[1]))
+            line_end = (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1]))
+            line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
 
-            cv2.line(frame_drawn, (int(scada_pixel_values[0]), int(scada_pixel_values[1])), (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1])), (255, 4, 0), 2)
+            cv2.line(frame_drawn, line_start, line_end, (255, 4, 0), 2)
             cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 4, 0), 2, cv2.LINE_AA)
 
         # Display frame and overlay text
@@ -859,4 +862,4 @@ if __name__ == "__main__":
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
         with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
-        device='cpu')()
+        device='cuda')()
