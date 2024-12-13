@@ -290,7 +290,7 @@ def image_extractor(video_folder: str,
 
 def hdf5_to_yolo(hdf5_file: str, 
                  sizes: list[float] = [0.8,0.1,0.1],
-                 annotation_types = ['bbox_chute', 'bbox_straw']
+                 annotation_types = ['bbox_chute', 'bbox_straw', 'bbox_straw', 'whole']
 ) -> None:
     """
     Accomodates the conversion of the frames in the HDF5 file to the YOLO format. The function
@@ -326,7 +326,8 @@ def hdf5_to_yolo(hdf5_file: str,
         frame_names = list(np.arange(hf.__len__()))
         # check if 'bbox_straw' is in the annotations
         hf_annotations = list(hf['frame_0']['annotations'].keys())
-        if not set(annotation_types).issubset(hf_annotations):
+        anno_set = set(annotation_types) - set(['whole'])
+        if not anno_set.issubset(hf_annotations):
             raise ValueError(f"The HDF5 file does not contain the annotation types {annotation_types}.")
         
     save_path = 'data/processed/yolo_format_' + "_".join(annotation_types)
@@ -408,7 +409,25 @@ def hdf5_to_yolo(hdf5_file: str,
                     with open( f'{save_path}/{key}/{frame}.txt', 'w') as f:
                         f.write(' '.join(map(str, label)) + "\n")
                 ############################
-                # NOTE CASE 2: Either bbox_chute only or both labels are saved
+                # NOTE CASE 2: bbox_straw but with the whole image
+                ############################
+                elif annotation_types[-1] == 'whole':
+                    # Save the image to a file
+                    cv2.imwrite(f'{save_path}/{key}/{frame}.jpg', image)
+                    bbox = hf[f"frame_{frame}"]['annotations'][annotation_types[0]][...]
+                    if len(bbox) == 0:
+                        continue
+                    # normalize the bounding box coordinates to values between 0 and 1 
+                    for j in range(len(bbox)):
+                        bbox[j] /= image.shape[1] if j % 2 == 0 else image.shape[0]
+                    # add the class index to the label
+                    labels += [np.insert(bbox, 0, 0)]
+                    # Save the label to a file
+                    with open( f'{save_path}/{key}/{frame}.txt', 'w') as f:
+                        for label in labels:
+                            f.write(' '.join(map(str, label)) + "\n")
+                ############################
+                # NOTE CASE 3: Either bbox_chute only or both labels are saved
                 ############################
                 else:
                     # Save the image to a file
@@ -799,7 +818,7 @@ def main(args: Namespace) -> None:
     elif args.mode == 'tree':
         print_hdf5_tree(args.hdf5_file)
     elif args.mode == 'h5_to_yolo':
-        hdf5_to_yolo(hdf5_file=args.hdf5_file, annotation_types = ['bbox_straw'])
+        hdf5_to_yolo(hdf5_file=args.hdf5_file, annotation_types = ['bbox_straw', 'whole'])
     elif args.mode == 'place_digits':
         place_digits_on_chute_images()
     elif args.mode == 'timm':
