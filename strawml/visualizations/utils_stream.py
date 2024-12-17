@@ -415,7 +415,7 @@ class AprilDetectorHelpers:
 
         return detected_tags, unique_tag_ids
     
-    def _refine_detection(self, frame: np.ndarray, tag, margin: int = 150) -> list:
+    def _refine_detection(self, frame: np.ndarray, tag, margin: int = 150):
         """
         Performs refined detection around a tag's region.
 
@@ -643,7 +643,9 @@ class TagGraphWithPositionsCV:
         self.detected_tags = {tag.tag_id: tuple(map(int, tag.center)) for tag in detected_tags}  # Detected tag positions
         self.inferred_tags = {}  # Store inferred tag positions
         self.corner_tags = set([11, 15, 26, 22])  # Store corner tags
-    
+        self.left_tags = set([12, 13, 14, 19, 20, 21])  # Store left tags
+        self.right_tags = set([16, 17, 18, 23, 24, 25])  # Store right tags
+        
     def intersection_point(self, x1, y1, x2, y2, x3, y3):
         """
         Finds the intersection between a line created by two points (x1, y1) and (x2, y2) and a 
@@ -719,44 +721,58 @@ class TagGraphWithPositionsCV:
         if not neighbor_positions:
             return None
         
+        detected_tag_ids = set(list(self.detected_tags.keys()))
+
         if is_corner:
             if tag_id == 11:
                 try:
-                    # draw a line between tag 12+13 and find the intersection with a line drawn from 15 such that it is perpendicular to the line between 12+13
-                    x_value, y_value = self.intersection_point(self.detected_tags[12][0], 
-                                                               self.detected_tags[12][1], 
-                                                               self.detected_tags[13][0], 
-                                                               self.detected_tags[13][1], 
+                    intersection = list(detected_tag_ids - (detected_tag_ids - self.left_tags))
+                    p1 = intersection[0]
+                    p2 = intersection[1]
+                    x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
+                                                               self.detected_tags[p1][1], 
+                                                               self.detected_tags[p2][0], 
+                                                               self.detected_tags[p2][1], 
                                                                self.detected_tags[15][0], 
                                                                self.detected_tags[15][1])
                 except KeyError:
                     return None
             if tag_id == 15:
                 try:
-                    x_value, y_value = self.intersection_point(self.detected_tags[16][0], 
-                                                               self.detected_tags[16][1], 
-                                                               self.detected_tags[17][0], 
-                                                               self.detected_tags[17][1], 
+                    intersection = list(detected_tag_ids - (detected_tag_ids - self.right_tags))
+                    p1 = intersection[0]
+                    p2 = intersection[1]
+                    x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
+                                                               self.detected_tags[p1][1], 
+                                                               self.detected_tags[p2][0], 
+                                                               self.detected_tags[p2][1], 
                                                                self.detected_tags[11][0], 
                                                                self.detected_tags[11][1])
                 except KeyError:
                     return None
             if tag_id == 22:
                 try:
-                    x_value, y_value = self.intersection_point(self.detected_tags[20][0], 
-                                                               self.detected_tags[20][1], 
-                                                               self.detected_tags[21][0], 
-                                                               self.detected_tags[21][1], 
+                    intersection = list(detected_tag_ids - (detected_tag_ids - self.left_tags))[::-1]
+                    p1 = intersection[0]
+                    p2 = intersection[1]
+                    x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
+                                                               self.detected_tags[p1][1], 
+                                                               self.detected_tags[p2][0], 
+                                                               self.detected_tags[p2][1], 
                                                                self.detected_tags[26][0], 
                                                                self.detected_tags[26][1])
                 except KeyError:
                     return None
             if tag_id == 26:
                 try:
-                    x_value, y_value = self.intersection_point(self.detected_tags[24][0], 
-                                                               self.detected_tags[24][1], 
-                                                               self.detected_tags[25][0], 
-                                                               self.detected_tags[25][1], 
+                    intersection = list(detected_tag_ids - (detected_tag_ids - self.right_tags))[::-1]
+                    p1 = intersection[0]
+                    p2 = intersection[1]
+
+                    x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
+                                                               self.detected_tags[p1][1], 
+                                                               self.detected_tags[p2][0], 
+                                                               self.detected_tags[p2][1], 
                                                                self.detected_tags[22][0], 
                                                                self.detected_tags[22][1])
                 except KeyError:
@@ -766,7 +782,6 @@ class TagGraphWithPositionsCV:
             # For edge tags, we average the position
             avg_x = np.mean([pos[0] for pos in neighbor_positions])
             avg_y = np.mean([pos[1] for pos in neighbor_positions])
-        
             return (int(avg_x), int(avg_y))
 
     def account_for_missing_tags(self):
