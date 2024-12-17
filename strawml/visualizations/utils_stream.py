@@ -553,6 +553,9 @@ class AprilDetectorHelpers:
         # this to calculate the pixel value of the straw level.
         # We can use the distance between the two closest tags to calculate the pixel value of the straw level.
         chute_numbers = self.ADI.chute_numbers.copy()
+        # make sure there are chute numbers to work with, otherwise we return
+        if not len(chute_numbers) >= 2:
+            return "NA"
 
         # First we divide the straw level by 10 to get it on the same scale as the tag ids
         straw_level = straw_level / 10
@@ -898,10 +901,11 @@ class AsyncStreamThread:
     def __init__(self, server_keys: str):
         self.grab_keys()
         self.server_keys = server_keys
-        self.recent_value = None  # Shared variable for the most recent value
+        self.recent_value = 50  # Shared variable for the most recent value
         self.lock = threading.Lock()  # Lock for thread-safe access
         self.loop = asyncio.new_event_loop()  # Create a new event loop
         self.thread = threading.Thread(target=self._start_event_loop, daemon=True)  # Worker thread
+        self.wait = True
 
     def _start_event_loop(self):
         """Start the event loop in the thread."""
@@ -913,7 +917,7 @@ class AsyncStreamThread:
         async with Client(self.url) as client:
             print(f'Connected to {self.url}!')
             sensor_node = client.get_node(self.sensor_node_id)
-            while True:
+            while self.wait:
                 value = await sensor_node.get_value()
                 # Update the recent value in a thread-safe manner
                 with self.lock:
@@ -936,10 +940,14 @@ class AsyncStreamThread:
         """Get the most recent value in a thread-safe manner."""
         with self.lock:
             return self.recent_value
+        
+    def print_pending_tasks(self):
+        tasks = [t for t in asyncio.all_tasks(self.loop) if t is not asyncio.current_task(self.loop)]
+        print(f"Pending tasks: {tasks}")
 
     def join(self):
         """Stop the event loop and thread."""
-        self.loop.call_soon_threadsafe(self.loop.stop)
+        self.wait = False
         self.thread.join()
 
 def time_function(func, *args, **kwargs):
