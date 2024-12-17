@@ -586,6 +586,7 @@ class RTSPStream(AprilDetector):
             scada_pixel_values = (pix_x+100, scada_pixel_values[1])
             
             # Get angle of self.chute_numbers
+
             angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
             line_start = (int(scada_pixel_values[0]), int(scada_pixel_values[1]))
             line_end = (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1]))
@@ -857,7 +858,7 @@ if __name__ == "__main__":
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     # ### YOLO PREDICTOR
-    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",

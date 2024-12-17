@@ -100,6 +100,8 @@ class AprilDetectorHelpers:
     def _get_tag_angle(self, chute_tags: list) -> float:
         # extract all the centers for the tags in chute_tags
         # first see if tags is a list of tuples or a list of objects
+        if len(chute_tags) == 0:
+            return 0
         if isinstance(chute_tags[0], tuple) or isinstance(chute_tags[0], np.ndarray):
             tags = np.array(chute_tags).reshape(-1, 2)
         else:
