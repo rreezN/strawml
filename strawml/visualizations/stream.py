@@ -1,3 +1,4 @@
+from math import dist
 from __init__ import *
 # Misc.
 import os
@@ -357,11 +358,7 @@ class RTSPStream(AprilDetector):
                 distance_dict_under[distance] = key
             else:
                 distance_dict_above[distance] = key
-
-        # there are three cases to consider, no detected tags under, no detected tags above, and detected tags both above and under
-        if len(distance_dict_under) == 0 or len(distance_dict_above) == 0:
-            return "NA"
-          
+         
         # sort the dictionary by key
         distance_dict_under = dict(sorted(distance_dict_under.items(), reverse=True))
         distance_dict_above = dict(sorted(distance_dict_above.items()))
@@ -369,6 +366,17 @@ class RTSPStream(AprilDetector):
         # get the two closest tags
         tag_under, tag_above = list(distance_dict_under.values())[0], list(distance_dict_above.values())[0]
 
+        # there are three cases to consider, no detected tags under, no detected tags above, and detected tags both above and under
+        # lets first make a check to i see if the closest tag under is 10. Meaning then we should clip it to 10        
+        if len(distance_dict_under) == 0:
+            if tag_above == 0:
+                return 0.0
+            return "NA"
+        elif len(distance_dict_above) == 0:
+            if tag_under == 10:
+                return 100
+            return "NA"
+        
         # we get the difference between the two tags ids to see if we are missing tags inbetween
         tag_diff = tag_above - tag_under
         if tag_diff > 1:
@@ -432,8 +440,7 @@ class RTSPStream(AprilDetector):
         pixel_straw_level_x = (chute_numbers[tag_under_closest][0] + chute_numbers[tag_over_closest][0]) / 2
         pixel_straw_level_y = y_under - (y_under - y_over) * excess/tag_diff
 
-        
-        return (pixel_straw_level_x, pixel_straw_level_y)
+       return (pixel_straw_level_x, pixel_straw_level_y)
     
     @staticmethod
     def time_function(func, *args, **kwargs):
