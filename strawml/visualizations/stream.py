@@ -11,6 +11,7 @@ import psutil
 import keyboard
 import threading
 import numpy as np
+from collections import deque
 from typing import Tuple, Optional, Any
 from torchvision.transforms import v2 as transforms
 
@@ -22,8 +23,7 @@ import pupil_apriltags
 from strawml.models.chute_finder.yolo import ObjectDetect
 import strawml.models.straw_classifier.cnn_classifier as cnn
 import strawml.models.straw_classifier.feature_model as feature_model
-from strawml.visualizations.utils_stream import AprilDetectorHelpers, AsyncStreamThread
-from strawml.data.image_utils import SpecialRotate
+from strawml.visualizations.utils_stream import AprilDetectorHelpers, AsyncStreamThread, time_function
 
 class AprilDetector:
     """
@@ -285,6 +285,8 @@ class RTSPStream(AprilDetector):
         self.record_threshold = record_threshold
         if record:
             self.recording_queue = queue.Queue()
+            self.scada_smoothing_queue = deque(maxlen=5)
+        self.straw_smoothing_queue = deque(maxlen=5)
         self.rtsp = rtsp
         self.yolo_straw = yolo_straw
         self.wanted_tags = ids
@@ -323,161 +325,7 @@ class RTSPStream(AprilDetector):
         cap.set(cv2.CAP_PROP_FPS, 25)
         # cap.open(f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101")
         return cap
-    
-    def get_pixel_to_straw_level(self, frame, straw_bbox):
-        """ Finds the straw level based on the detected tags in the chute. """
-        chute_numbers_ = self.chute_numbers.copy()
-        if not len(chute_numbers_) >= 2:
-            return "NA"
-            
-        _, straw_cord,_ , _ = straw_bbox
-        straw_cord = straw_cord[0].flatten()
-        
-        angle = self.helpers._get_tag_angle(list(chute_numbers_.values()))
-        # from radians to degrees
-        angle = np.degrees(angle)
-        # Rotate the frame to the angle of the chute and the bbox
-        _, _, bbox_, affine_warp = SpecialRotate(image=frame, bbox=straw_bbox[1][0].cpu().numpy(), angle=angle, return_affine=True) # type: ignore
-        c_nr = np.expand_dims(np.array(list(chute_numbers_.values())).reshape(-1, 2), 1)
-        warped_chute_numbers = cv2.perspectiveTransform(c_nr, affine_warp).squeeze(1)
-        # replace the old values in the dict. Remember that the order is the same
-        chute_numbers = {}
-        for i, (k,_) in enumerate(chute_numbers_.items()):
-            chute_numbers[k] = tuple(warped_chute_numbers[i])
-
-        # Extract the top of the straw bbox
-        straw_top = (bbox_[1] + bbox_[-1])/2
-        
-        # Given the straw bbox, we need to calculate the straw level based on the center of each tag in the chute. We know that the id of each tag corresponds to the level of the chute, meaning 1 is 10%, 2 is 20% and so on. We need to find the two closest tags in the y-axis to the straw bbox and calculate the straw level based on the distance between the two tags.
-        # We can do this by calculating the distance between the straw bbox and the center of each tag in the chute. We then sort the distances and find the two closest tags. We then calculate the distance between the straw bbox and the two closest tags and use this to calculate the straw level.
-        distance_dict_under = {}
-        distance_dict_above = {}
-        for key, values in chute_numbers.items():
-            distance = straw_top - values[1]
-            if distance < 0:
-                distance_dict_under[distance] = key
-            else:
-                distance_dict_above[distance] = key
-         
-        # sort the dictionary by key
-        distance_dict_under = dict(sorted(distance_dict_under.items(), reverse=True))
-        distance_dict_above = dict(sorted(distance_dict_above.items()))
-        
-        # get the two closest tags
-        tag_under, tag_above = list(distance_dict_under.values())[0], list(distance_dict_above.values())[0]
-
-        # there are three cases to consider, no detected tags under, no detected tags above, and detected tags both above and under
-        # lets first make a check to i see if the closest tag under is 10. Meaning then we should clip it to 10        
-        if len(distance_dict_under) == 0:
-            if tag_above == 0:
-                return 0.0
-            return "NA"
-        elif len(distance_dict_above) == 0:
-            if tag_under == 10:
-                return 100
-            return "NA"
-        
-        # we get the difference between the two tags ids to see if we are missing tags inbetween
-        tag_diff = tag_above - tag_under
-        if tag_diff > 1:
-            interpolated = True
-        else:
-            interpolated = False
-        
-        # If the tag_diff is greateer than one, then we need to perform a linear interpolation between the points to get the straw level
-        y_under = chute_numbers[tag_under][1]
-        y_over = chute_numbers[tag_above][1]
-        x_mean = (chute_numbers[tag_under][0] + chute_numbers[tag_above][0]) / 2
-        
-        # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
-        straw_level = (tag_diff * (y_under-straw_top) / (y_under-y_over) + tag_under)*10
-        
-        if self.record and self.recording_req:
-            self.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
-            self.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
-        
-        return straw_level
-    
-    def get_straw_to_pixel_level(self, straw_level):
-        # We know that the self.chute_numbers are ordered from 0 to 10. We can use this to calculate the pixel value of the straw level
-        # we know that each tag is 10% of the chute, meaning that the distance between each tag is 10% of the chute height. We can use 
-        # this to calculate the pixel value of the straw level.
-        # We can use the distance between the two closest tags to calculate the pixel value of the straw level.
-        chute_numbers = self.chute_numbers.copy()
-
-        # First we divide the straw level by 10 to get it on the same scale as the tag ids
-        straw_level = straw_level / 10
-
-        # We then get the two closest tags
-        tag_under, tag_over = int(straw_level), int(straw_level) + 1
-        
-        # next we find the two closest tags in chute_numbers based on the tag ids
-        # First we create a list for the values that are less or equal to the tag_under and greater than the tag_over
-        tag_under_list = [key for key, _ in chute_numbers.items() if key <= tag_under]
-        tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
-
-        # next we order them
-        tag_under_list = sorted(tag_under_list, reverse=True)
-        tag_over_list = sorted(tag_over_list)
-        
-        # Then we see if the tag_under_closest is above or below the straw level
-        tag_under_closest = tag_under_list[0]
-        tag_over_closest = tag_over_list[0]
-
-        # calculate difference between tag ids
-        tag_diff = tag_over_closest - tag_under_closest
-        if tag_diff > 1:
-            interpolated = True
-        else:
-            interpolated = False
-        
-        # get the distance between the two closest tags
-        y_under = chute_numbers[tag_under_closest][1]
-        y_over = chute_numbers[tag_over_closest][1]
-        
-        # get the pixel value of the straw level
-        excess = straw_level - tag_under_closest
-        pixel_straw_level_x = (chute_numbers[tag_under_closest][0] + chute_numbers[tag_over_closest][0]) / 2
-        pixel_straw_level_y = y_under - (y_under - y_over) * excess/tag_diff
-        
-        return (pixel_straw_level_x, pixel_straw_level_y)
-    
-    @staticmethod
-    def time_function(func, *args, **kwargs):
-        """
-        Wrapper function to time the execution of any function.
-        
-        Parameters:
-        -----------
-        func : function
-            The function to be timed.
-        *args : tuple
-            The positional arguments to pass to the function.
-        **kwargs : dict
-            The keyword arguments to pass to the function.
-        
-        Returns:
-        --------
-        result : any
-            The result of the function call.
-        elapsed_time : float
-            The time taken to execute the function in seconds.
-        """
-        if isinstance(func, list):
-            start_time = time.time()
-            # TODO: Only works for non-cnn models right now
-            result = func[0].forward_features(*args, **kwargs)
-            # if result.shape[0] == 1: result = result.flatten()
-            # else: result = result.flatten(1)
-            result = func[1](result)
-            elapsed_time = time.time() - start_time
-        else:
-            start_time = time.time()
-            result = func(*args, **kwargs)
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-        return result, elapsed_time
-
+  
     def receive_frame(self, cap: cv2.VideoCapture) -> None:
         ret, frame = cap.read()
         self.q.put(frame)
@@ -560,9 +408,10 @@ class RTSPStream(AprilDetector):
             try:
                 # Get scada
                 sensor_scada_data = self.scada_thread.get_recent_value()
+                sensor_scada_data = self.helpers._smooth_level(sensor_scada_data, 'scada')
                 self.information["scada_level"]["text"] = f'(TScada) SCADA: {sensor_scada_data:.2f}%'
                 # Get pixel values for scada
-                scada_pixel_values = self.get_straw_to_pixel_level(sensor_scada_data)
+                scada_pixel_values = self.helpers._get_straw_to_pixel_level(sensor_scada_data)
                 # Record sensor data if enabled
                 self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
                 if self.recording_req:
@@ -644,16 +493,18 @@ class RTSPStream(AprilDetector):
 
     def _process_frame_content(self, frame: np.ndarray) -> np.ndarray:
         """Handle specific processing like AprilTags, Object Detection, etc."""
+        # Apriltags
         if self.detect_april and self.tags is not None:
             frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
         else:
             frame_drawn, cutout = frame, None
 
+        # Object Detection
         if cutout is not None:
             frame = cutout
             results = None
         elif self.object_detect:
-            results, OD_time = self.time_function(self.OD.score_frame, frame)
+            results, OD_time = time_function(self.OD.score_frame, frame)
             # Make sure the results are not empty
             if len(results[0]) == 0:
                 results = "NA"
@@ -661,16 +512,25 @@ class RTSPStream(AprilDetector):
         else:
             results = "NA"
 
+        # Predictor of the straw level
         if results != "NA":
             if self.with_predictor:
                 frame_drawn = self._process_predictions(frame, results, frame_drawn)
             if self.object_detect:
                 frame_drawn = self.plot_boxes(results, frame_drawn, straw=False, straw_lvl=None, model_type="obb")
         elif self.yolo_straw:
-            output, inference_time = self.time_function(self.model.score_frame, frame)
+            output, inference_time = time_function(self.model.score_frame, frame)
+            # If the output is not empty, we can plot the boxes and get the straw level
             if len(output[0]) != 0:
-                straw_level = self.get_pixel_to_straw_level(frame_drawn, output)
+                # Extract the straw level from the pixel values of the bbox
+                straw_level = self.helpers._get_pixel_to_straw_level(frame_drawn, output)
+                if straw_level == "NA": # If the straw level is not detected, we add None to the previous straw level smoothing predictions
+                    straw_level = self.helpers._smooth_level(None, 'straw')
+                else: # otherwise we add the detected straw level to the smoothing predictions and get the smoothed straw level
+                    straw_level = self.helpers._smooth_level(straw_level, 'straw')
+                # Plot the boxes and straw level on the frame
                 frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level, model_type="obb")
+                
                 if type(straw_level) == str:
                     self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level}'
                 else:
@@ -680,24 +540,27 @@ class RTSPStream(AprilDetector):
 
     def _process_predictions(self, frame, results, frame_drawn):
         """Run model predictions and update overlay."""
-        cutout_image, prep_time = self.time_function(self.helpers._prepare_for_inference, frame, results)
+        cutout_image, prep_time = time_function(self.helpers._prepare_for_inference, frame, results)
         if cutout_image is not None:
             if self.regressor:
                 if self.predictor_model != 'cnn':
-                    output, inference_time = self.time_function([self.model, self.regressor_model], cutout_image.to(self.device))
+                    output, inference_time = time_function([self.model, self.regressor_model], cutout_image.to(self.device))
                 else:
-                    output, inference_time = self.time_function(self.model, cutout_image.to(self.device))
+                    output, inference_time = time_function(self.model, cutout_image.to(self.device))
                 # detach the output from the device and get the predicted value
                 output = output.detach().cpu()
                 straw_level = output[0].item()*100
             else:
-                output, inference_time = self.time_function(self.model, cutout_image.to(self.device)) 
+                output, inference_time = time_function(self.model, cutout_image.to(self.device)) 
                 # detach the output from the device and get the predicted value
                 output = output.detach().cpu()
                 _, predicted = torch.max(output, 1)
                 straw_level = predicted[0]*10
-
-            x_pixel, y_pixel = self.get_straw_to_pixel_level(straw_level)      
+            
+            # We smooth the straw level
+            straw_level = self.helpers._smooth_level(straw_level, 'straw')
+            
+            x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)      
             if self.record and self.recording_req:
                 self.prediction_dict["predicted"] = {straw_level: (x_pixel, y_pixel)}
             # Draw line and text for straw level
