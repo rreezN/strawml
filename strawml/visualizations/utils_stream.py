@@ -927,8 +927,6 @@ class AsyncStreamThread:
         self.loop.call_soon_threadsafe(self.loop.stop)
         self.thread.join()
 
-
-
 def time_function(func, *args, **kwargs):
     """
     Wrapper function to time the execution of any function.
