@@ -29,8 +29,6 @@ def upload_to_cloudinary(cloudinary_txt: str, image_folder: str) -> None:
         id = images_to_upload[i].split('.')[0]
         upload_result = cloudinary.uploader.upload(f'{image_folder}/{images_to_upload[i]}', asset_folder='strawml', public_id=id, overwrite=True, resource_type='image')
         tqdm_images.set_postfix({'url': upload_result["secure_url"]})
-        if i > 10:
-            break
 
 if __name__ == '__main__':
     upload_to_cloudinary('data/cloudinary.txt', 'data/processed/recordings')

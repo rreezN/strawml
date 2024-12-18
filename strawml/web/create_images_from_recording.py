@@ -63,8 +63,13 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
                 image = cv2.line(image, yolo_coords, (yolo_coords[0]+line_offset, yolo_coords[1]), (0, 0, 255), line_thickness)
                 image = cv2.putText(image, f'{yolo_percent:.2f}%', (yolo_coords[0]+line_offset, yolo_coords[1]), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness//2)
             else:
-                yolo_coords = (35, 35)
-                image = cv2.putText(image, f'0.0%', yolo_coords, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness//2)
+                if scada_line is not None:
+                    yolo_coords = scada_coords
+                    yolo_coords = (yolo_coords[0], image.shape[0]-line_thickness-64)
+                else: # If there are no scada or yolo lines, just put the text in the bottom middle
+                    yolo_coords = (int(image.shape[1]//2), image.shape[0]-line_thickness-64)
+                image = cv2.line(image, yolo_coords, (yolo_coords[0]+line_offset, yolo_coords[1]), (0, 0, 255), line_thickness)
+                image = cv2.putText(image, f'0.0%',  (yolo_coords[0]+line_offset, yolo_coords[1]), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness//2)
             
             # Resize the image
             image_width = image.shape[1]
