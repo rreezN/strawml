@@ -473,6 +473,15 @@ class AprilDetectorHelpers:
 
         return cutout_image
     
+    def _save_tag_0(self):
+        """Get the tag with ID 0 from the detected tags."""
+        for tag in self.ADI.detected_tags:
+            if tag.tag_id == 0:
+                x,y = tag.center
+                self.ADI.prediction_dict["yolo"] = {0: (x, y)}
+                self.ADI.prediction_dict["attr."] = {False: sorted(self.ADI.chute_numbers.keys())}
+                break
+
     def _get_pixel_to_straw_level(self, frame, straw_bbox):
         """ Finds the straw level based on the detected tags in the chute. """
         chute_numbers_ = self.ADI.chute_numbers.copy()
@@ -486,7 +495,8 @@ class AprilDetectorHelpers:
         # from radians to degrees
         angle = np.degrees(angle)
         # Rotate the frame to the angle of the chute and the bbox
-        _, _, bbox_, affine_warp = SpecialRotate(image=frame, bbox=straw_bbox[1][0].cpu().numpy(), angle=angle, return_affine=True) # type: ignore
+        bbox = straw_bbox[1][0].cpu().numpy().flatten()
+        _, _, bbox_, affine_warp = SpecialRotate(image=frame, bbox=bbox, angle=angle, return_affine=True) # type: ignore
         c_nr = np.expand_dims(np.array(list(chute_numbers_.values())).reshape(-1, 2), 1)
         warped_chute_numbers = cv2.perspectiveTransform(c_nr, affine_warp).squeeze(1)
         # replace the old values in the dict. Remember that the order is the same
@@ -519,12 +529,26 @@ class AprilDetectorHelpers:
         # lets first make a check to i see if the closest tag under is 10. Meaning then we should clip it to 10        
         if len(distance_dict_under) == 0:
             if tag_above == 0:
-                return 0.0
-            return "NA"
+                x_mean = chute_numbers_[tag_above][0]
+                straw_level = 0.0
+            else:
+                x_mean = 0
+                straw_level = "NA"
+            if self.ADI.recording_req:
+                self.ADI.prediction_dict["yolo"] = {straw_level: [(x_mean+100, bbox[1]), (x_mean+200, bbox[-1])]}
+                self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
+            return straw_level
         elif len(distance_dict_above) == 0:
             if tag_under == 10:
-                return 100
-            return "NA"
+                x_mean = chute_numbers_[tag_under][0]
+                straw_level = 100
+            else:
+                x_mean = 0
+                straw_level = "NA"
+            if self.ADI.recording_req:
+                self.ADI.prediction_dict["yolo"] = {straw_level: [(x_mean+100, bbox[1]), (x_mean+200, bbox[-1])]}
+                self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
+            return straw_level
         
         # we get the difference between the two tags ids to see if we are missing tags inbetween
         tag_diff = tag_above - tag_under
@@ -536,13 +560,13 @@ class AprilDetectorHelpers:
         # If the tag_diff is greateer than one, then we need to perform a linear interpolation between the points to get the straw level
         y_under = chute_numbers[tag_under][1]
         y_over = chute_numbers[tag_above][1]
-        x_mean = (chute_numbers[tag_under][0] + chute_numbers[tag_above][0]) / 2
         
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
         straw_level = (tag_diff * (y_under-straw_top) / (y_under-y_over) + tag_under)*10
         
-        if self.ADI.record and self.ADI.recording_req:
-            self.ADI.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
+        if self.ADI.recording_req:
+            # Get coordiantes for the original data
+            self.ADI.prediction_dict["yolo"] = {straw_level: [(bbox[0], bbox[1]), (bbox[-2], bbox[-1])]}
             self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
         
         return straw_level

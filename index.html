@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StrawML</title>
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+        img {
+            max-width: 80%;
+            height: auto;
+            margin: 20px 0;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 18px;
+            margin: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Choose Red or Green</h1>
+    <img id="random-image" src="" alt="Random Image">
+    <div>
+        <button onclick="submitResponse('A')">A</button>
+        <button onclick="submitResponse('B')">B</button>
+    </div>
+    <script>
+        const cloudinaryBaseUrl = 'https://res.cloudinary.com/dpfaegaqh/image/upload/v1734517453/';
+        const images = [
+            '1733476050.3338053.jpg',
+            '1733476045.2899594.jpg',
+            '1733476075.7039108.jpg',
+            // Add all your image filenames here
+        ];
+
+        function fetchRandomImage() {
+            if (images.length === 0) {
+                document.body.innerHTML = '<h2>No images left!</h2>';
+                return;
+            }
+            const randomIndex = Math.floor(Math.random() * images.length);
+            const imageUrl = cloudinaryBaseUrl + images[randomIndex];
+            document.getElementById('random-image').src = imageUrl;
+            document.getElementById('random-image').dataset.url = imageUrl;
+            images.splice(randomIndex, 1); // Remove the displayed image
+        }
+
+        async function submitResponse(choice) {
+            const imgElement = document.getElementById('random-image');
+            const imageUrl = imgElement.dataset.url;
+
+            // Here, you would send the response to a server. For now, log it in the console.
+            console.log(`Image: ${imageUrl}, Choice: ${choice}`);
+
+            fetchRandomImage(); // Load next image
+        }
+
+        // Load the first random image
+        fetchRandomImage();
+    </script>
+</body>
+</html>
