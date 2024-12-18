@@ -392,7 +392,7 @@ class RTSPStream(AprilDetector):
                 break
 
             # rotate the frame by 30 degrees
-            frame = ndimage.rotate(frame, 30, reshape=True)
+            # frame = ndimage.rotate(frame, 30, reshape=True)
             self._process_frame(frame, from_videofile=True)
 
     def _process_frame(self, frame: np.ndarray, from_videofile: bool) -> None:
@@ -417,6 +417,7 @@ class RTSPStream(AprilDetector):
                 # Record sensor data if enabled
                 self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
                 if self.recording_req:
+                    self.prediction_dict = {}
                     scada_pixel_values_ = (scada_pixel_values[0]+100, scada_pixel_values[1])
                     # Get angle of self.chute_numbers
                     angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
@@ -450,7 +451,7 @@ class RTSPStream(AprilDetector):
                 line_start = (int(scada_pixel_values[0]), int(scada_pixel_values[1]))
                 line_end = (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1]))
                 line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-
+                print(1, line_start, line_end)
                 cv2.line(frame_drawn, line_start, line_end, (255, 4, 0), 2)
                 cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 4, 0), 2, cv2.LINE_AA)
 
@@ -458,7 +459,7 @@ class RTSPStream(AprilDetector):
         self._display_frame(frame_drawn)
 
         
-        if self.record and self.recording_req:
+        if self.recording_req:
             self._save_frame()
         # Clean up resources
         torch.cuda.empty_cache()
@@ -487,6 +488,7 @@ class RTSPStream(AprilDetector):
                 else:
                     t1_name = 'percent'
                     t2_name = 'pixel'
+                    print(2, t2)
                 predict_group.create_dataset(t1_name, data=t1)
                 predict_group.create_dataset(t2_name, data=t2)
             hf.close()
@@ -545,7 +547,7 @@ class RTSPStream(AprilDetector):
                 self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
             else:
                 straw_level = self.helpers._smooth_level(0, 'straw')
-                if self.record and self.recording_req:
+                if self.recording_req:
                     # if no bbox is detected, we add 0 to the previous straw level smoothing predictions
                     self.helpers._save_tag_0()
                 self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
@@ -575,7 +577,7 @@ class RTSPStream(AprilDetector):
             straw_level = self.helpers._smooth_level(straw_level, 'straw')
             
             x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)      
-            if self.record and self.recording_req:
+            if self.recording_req:
                 self.prediction_dict["predicted"] = {straw_level: (x_pixel, y_pixel)}
             # Draw line and text for straw level
             cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 100, int(y_pixel)), (92, 92, 205), 2)
@@ -738,7 +740,7 @@ if __name__ == "__main__":
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     # ### YOLO PREDICTOR
-    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
