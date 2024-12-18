@@ -56,6 +56,7 @@ def create_json_from_cloudinary() -> None:
     json_file = open('data/processed/cloudinary.json', 'w')
     json.dump(image_data, json_file, indent=4)
     
+    print('JSON file created!')
 
 if __name__ == '__main__':
     create_json_from_cloudinary()
