@@ -25,6 +25,11 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
     
+    total_size = 0
+    total_size_mb = 0
+    total_size_gb = 0
+    
+    
     with h5py.File(data_path, 'r') as f:
         keys = list(f.keys())
         tqdm_keys = tqdm(keys, desc='Creating images')
@@ -83,8 +88,12 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
                 image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
             image_path = os.path.join(output_folder, f'{keys[i]}.jpg')
             cv2.imwrite(image_path, image)
+            total_size += os.path.getsize(image_path)
+            total_size_mb = total_size / 1024 / 1024
+            total_size_gb = total_size / 1024 / 1024 / 1024
+            tqdm_keys.set_postfix({'size (mb)': total_size_mb}) if total_size_mb < 1024 else tqdm_keys.set_postfix({'size (gb)': total_size_gb})
 
-    print(f"{len(keys)} images saved to {output_folder}!")
+    print(f"{len(keys)} images saved to {output_folder}! Total size: {total_size_gb / 1024 / 1024:.2f} GB")
 
 if __name__ == '__main__':
     create_images_from_recording('data/processed/recording - rotated chute.hdf5', 'data/processed/recordings', False)
