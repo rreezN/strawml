@@ -536,7 +536,7 @@ class AprilDetectorHelpers:
         # If the tag_diff is greateer than one, then we need to perform a linear interpolation between the points to get the straw level
         y_under = chute_numbers[tag_under][1]
         y_over = chute_numbers[tag_above][1]
-        x_mean = (chute_numbers[tag_under][0] + chute_numbers[tag_above][0]) / 2
+        x_mean = (chute_numbers_[tag_under][0] + chute_numbers_[tag_above][0]) / 2
         
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
         straw_level = (tag_diff * (y_under-straw_top) / (y_under-y_over) + tag_under)*10
