@@ -520,25 +520,25 @@ class AprilDetectorHelpers:
         # lets first make a check to i see if the closest tag under is 10. Meaning then we should clip it to 10        
         if len(distance_dict_under) == 0:
             if tag_above == 0:
-                x_mean = chute_numbers_[tag_above][0]
+                x_mean, straw_top = chute_numbers_[tag_above]
                 straw_level = 0.0
             else:
                 x_mean = 0
+                straw_top = 0
                 straw_level = "NA"
             if self.ADI.record and self.ADI.recording_req:
-                straw_top = (bbox[1] + bbox[-1]) / 2
                 self.ADI.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
                 self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
             return straw_level
         elif len(distance_dict_above) == 0:
             if tag_under == 10:
-                x_mean = chute_numbers_[tag_under][0]
+                x_mean, straw_top = chute_numbers_[tag_under]
                 straw_level = 100
             else:
                 x_mean = 0
+                straw_top = 0
                 straw_level = "NA"
             if self.ADI.record and self.ADI.recording_req:
-                straw_top = (bbox[1] + bbox[-1]) / 2
                 self.ADI.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
                 self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
             return straw_level
