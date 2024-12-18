@@ -53,10 +53,6 @@
             }
             const randomIndex = Math.floor(Math.random() * images.length);
             const randomImage = images[randomIndex];
-    
-            // Hide buttons before showing the new image
-            document.getElementById('option-A').style.display = 'none';
-            document.getElementById('option-B').style.display = 'none';
 
             // Display the image
             document.getElementById('random-image').src = randomImage.url;
@@ -73,22 +69,12 @@
     
             // Log or send the response to a server
             console.log(`Image: ${imageUrl}, Choice: ${choice}`);
-            
-            // Hide buttons while waiting for the next image
-            document.getElementById('option-A').disabled = true;
-            document.getElementById('option-B').disabled = true;
 
-            // Wait a short time for the image to be processed before showing the next one
-            setTimeout(() => {
-                // Load the next image after submitting the response
-                fetchRandomImage();
-                // Show buttons again after the new image has loaded
-                document.getElementById('option-A').style.display = 'inline-block';
-                document.getElementById('option-B').style.display = 'inline-block';
-                document.getElementById('option-A').disabled = false;
-                document.getElementById('option-B').disabled = false;
-            }, 500);  // Adjust the time delay as needed
+
+            // Load the next image after submitting the response
+            fetchRandomImage();
         }
+        
     </script>
 </body>
 </html>
