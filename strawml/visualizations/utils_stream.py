@@ -10,6 +10,9 @@ import threading
 import asyncio
 from asyncua import Client
 import copy
+import time
+from strawml.data.image_utils import SpecialRotate
+
 
 class AprilDetectorHelpers:
     def __init__(self, april_detector_instance):
@@ -100,6 +103,8 @@ class AprilDetectorHelpers:
     def _get_tag_angle(self, chute_tags: list) -> float:
         # extract all the centers for the tags in chute_tags
         # first see if tags is a list of tuples or a list of objects
+        if len(chute_tags) == 0:
+            return 0
         if isinstance(chute_tags[0], tuple) or isinstance(chute_tags[0], np.ndarray):
             tags = np.array(chute_tags).reshape(-1, 2)
         else:
@@ -154,7 +159,7 @@ class AprilDetectorHelpers:
         bottom_right = corners[2]
         return (top_right + bottom_right) / 2
     
-    def _handle_cutouts(self, frame: np.ndarray, chute_tags: list, use_cutout: bool) -> Tuple[np.ndarray, np.ndarray]:
+    def _handle_cutouts(self, frame: np.ndarray, chute_tags: list, use_cutout: bool):
         """Handles creation of a cutout based on chute tags."""
         tag_graph = TagGraphWithPositionsCV(self.ADI.tag_connections, chute_tags, self)
         tag_graph.account_for_missing_tags()
@@ -360,9 +365,11 @@ class AprilDetectorHelpers:
             detected_tag = tags[matching_tags[0]]
             prev_tag = self.ADI.tags[t]
             accumulated_error += np.linalg.norm(np.array(detected_tag.center) - np.array(prev_tag.center))
-
-        if accumulated_error / len(self.ADI.tag_ids) > 10: # Threshold for accumulated error is 10 pixels
-            self._reset_tags()
+        
+        # First we make sure that the tags are not empty
+        if len(self.ADI.tag_ids) != 0:
+            if accumulated_error / len(self.ADI.tag_ids) > 10: # Threshold for accumulated error is 10 pixels
+                self._reset_tags()
 
     def _reset_tags(self) -> None:
         """
@@ -408,7 +415,7 @@ class AprilDetectorHelpers:
 
         return detected_tags, unique_tag_ids
     
-    def _refine_detection(self, frame: np.ndarray, tag, margin: int = 150) -> list:
+    def _refine_detection(self, frame: np.ndarray, tag, margin: int = 150):
         """
         Performs refined detection around a tag's region.
 
@@ -466,6 +473,139 @@ class AprilDetectorHelpers:
 
         return cutout_image
     
+    def _get_pixel_to_straw_level(self, frame, straw_bbox):
+        """ Finds the straw level based on the detected tags in the chute. """
+        chute_numbers_ = self.ADI.chute_numbers.copy()
+        if not len(chute_numbers_) >= 2:
+            return "NA"
+            
+        _, straw_cord,_ , _ = straw_bbox
+        straw_cord = straw_cord[0].flatten()
+        
+        angle = self._get_tag_angle(list(chute_numbers_.values()))
+        # from radians to degrees
+        angle = np.degrees(angle)
+        # Rotate the frame to the angle of the chute and the bbox
+        _, _, bbox_, affine_warp = SpecialRotate(image=frame, bbox=straw_bbox[1][0].cpu().numpy(), angle=angle, return_affine=True) # type: ignore
+        c_nr = np.expand_dims(np.array(list(chute_numbers_.values())).reshape(-1, 2), 1)
+        warped_chute_numbers = cv2.perspectiveTransform(c_nr, affine_warp).squeeze(1)
+        # replace the old values in the dict. Remember that the order is the same
+        chute_numbers = {}
+        for i, (k,_) in enumerate(chute_numbers_.items()):
+            chute_numbers[k] = tuple(warped_chute_numbers[i])
+
+        # Extract the top of the straw bbox
+        straw_top = (bbox_[1] + bbox_[-1])/2
+        
+        # Given the straw bbox, we need to calculate the straw level based on the center of each tag in the chute. We know that the id of each tag corresponds to the level of the chute, meaning 1 is 10%, 2 is 20% and so on. We need to find the two closest tags in the y-axis to the straw bbox and calculate the straw level based on the distance between the two tags.
+        # We can do this by calculating the distance between the straw bbox and the center of each tag in the chute. We then sort the distances and find the two closest tags. We then calculate the distance between the straw bbox and the two closest tags and use this to calculate the straw level.
+        distance_dict_under = {}
+        distance_dict_above = {}
+        for key, values in chute_numbers.items():
+            distance = straw_top - values[1]
+            if distance < 0:
+                distance_dict_under[distance] = key
+            else:
+                distance_dict_above[distance] = key
+         
+        # sort the dictionary by key
+        distance_dict_under = dict(sorted(distance_dict_under.items(), reverse=True))
+        distance_dict_above = dict(sorted(distance_dict_above.items()))
+        
+        # get the two closest tags
+        tag_under, tag_above = list(distance_dict_under.values())[0], list(distance_dict_above.values())[0]
+
+        # there are three cases to consider, no detected tags under, no detected tags above, and detected tags both above and under
+        # lets first make a check to i see if the closest tag under is 10. Meaning then we should clip it to 10        
+        if len(distance_dict_under) == 0:
+            if tag_above == 0:
+                return 0.0
+            return "NA"
+        elif len(distance_dict_above) == 0:
+            if tag_under == 10:
+                return 100
+            return "NA"
+        
+        # we get the difference between the two tags ids to see if we are missing tags inbetween
+        tag_diff = tag_above - tag_under
+        if tag_diff > 1:
+            interpolated = True
+        else:
+            interpolated = False
+        
+        # If the tag_diff is greateer than one, then we need to perform a linear interpolation between the points to get the straw level
+        y_under = chute_numbers[tag_under][1]
+        y_over = chute_numbers[tag_above][1]
+        x_mean = (chute_numbers[tag_under][0] + chute_numbers[tag_above][0]) / 2
+        
+        # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
+        straw_level = (tag_diff * (y_under-straw_top) / (y_under-y_over) + tag_under)*10
+        
+        if self.ADI.record and self.ADI.recording_req:
+            self.ADI.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
+            self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
+        
+        return straw_level
+    
+    def _get_straw_to_pixel_level(self, straw_level):
+        # We know that the self.chute_numbers are ordered from 0 to 10. We can use this to calculate the pixel value of the straw level
+        # we know that each tag is 10% of the chute, meaning that the distance between each tag is 10% of the chute height. We can use 
+        # this to calculate the pixel value of the straw level.
+        # We can use the distance between the two closest tags to calculate the pixel value of the straw level.
+        chute_numbers = self.ADI.chute_numbers.copy()
+        # make sure there are chute numbers to work with, otherwise we return
+        if not len(chute_numbers) >= 2:
+            return "NA"
+
+        # First we divide the straw level by 10 to get it on the same scale as the tag ids
+        straw_level = straw_level / 10
+
+        # We then get the two closest tags
+        tag_under, tag_over = int(straw_level), int(straw_level) + 1
+        
+        # next we find the two closest tags in chute_numbers based on the tag ids
+        # First we create a list for the values that are less or equal to the tag_under and greater than the tag_over
+        tag_under_list = [key for key, _ in chute_numbers.items() if key <= tag_under]
+        tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
+
+        # next we order them
+        tag_under_list = sorted(tag_under_list, reverse=True)
+        tag_over_list = sorted(tag_over_list)
+        
+        # Then we see if the tag_under_closest is above or below the straw level
+        tag_under_closest = tag_under_list[0]
+        tag_over_closest = tag_over_list[0]
+
+        # calculate difference between tag ids
+        tag_diff = tag_over_closest - tag_under_closest
+        if tag_diff > 1:
+            interpolated = True
+        else:
+            interpolated = False
+        
+        # get the distance between the two closest tags
+        y_under = chute_numbers[tag_under_closest][1]
+        y_over = chute_numbers[tag_over_closest][1]
+        
+        # get the pixel value of the straw level
+        excess = straw_level - tag_under_closest
+        pixel_straw_level_x = (chute_numbers[tag_under_closest][0] + chute_numbers[tag_over_closest][0]) / 2
+        pixel_straw_level_y = y_under - (y_under - y_over) * excess/tag_diff
+        
+        return (pixel_straw_level_x, pixel_straw_level_y)
+
+    def _smooth_level(self, level: float | None, id:str):
+        """Smooth the straw level using a queue."""
+        if id == 'scada':
+            self.ADI.scada_smoothing_queue.append(level)
+            filtered_data = [x for x in self.ADI.scada_smoothing_queue if x is not None]
+            return np.mean(filtered_data)
+        elif id == 'straw':
+            self.ADI.straw_smoothing_queue.append(level)
+            filtered_data = [x for x in self.ADI.straw_smoothing_queue if x is not None]
+            return np.mean(filtered_data)
+                
+    
     def _grab_scada_url_n_id(self):
         # Read the url from the scada.txt file
         data_path = 'data/opcua_server.txt'
@@ -506,7 +646,9 @@ class TagGraphWithPositionsCV:
         self.detected_tags = {tag.tag_id: tuple(map(int, tag.center)) for tag in detected_tags}  # Detected tag positions
         self.inferred_tags = {}  # Store inferred tag positions
         self.corner_tags = set([11, 15, 26, 22])  # Store corner tags
-    
+        self.left_tags = set([12, 13, 14, 19, 20, 21])  # Store left tags
+        self.right_tags = set([16, 17, 18, 23, 24, 25])  # Store right tags
+        
     def intersection_point(self, x1, y1, x2, y2, x3, y3):
         """
         Finds the intersection between a line created by two points (x1, y1) and (x2, y2) and a 
@@ -582,44 +724,58 @@ class TagGraphWithPositionsCV:
         if not neighbor_positions:
             return None
         
+        detected_tag_ids = set(list(self.detected_tags.keys()))
+
         if is_corner:
             if tag_id == 11:
                 try:
-                    # draw a line between tag 12+13 and find the intersection with a line drawn from 15 such that it is perpendicular to the line between 12+13
-                    x_value, y_value = self.intersection_point(self.detected_tags[12][0], 
-                                                               self.detected_tags[12][1], 
-                                                               self.detected_tags[13][0], 
-                                                               self.detected_tags[13][1], 
+                    intersection = list(detected_tag_ids - (detected_tag_ids - self.left_tags))
+                    p1 = intersection[0]
+                    p2 = intersection[1]
+                    x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
+                                                               self.detected_tags[p1][1], 
+                                                               self.detected_tags[p2][0], 
+                                                               self.detected_tags[p2][1], 
                                                                self.detected_tags[15][0], 
                                                                self.detected_tags[15][1])
                 except KeyError:
                     return None
             if tag_id == 15:
                 try:
-                    x_value, y_value = self.intersection_point(self.detected_tags[16][0], 
-                                                               self.detected_tags[16][1], 
-                                                               self.detected_tags[17][0], 
-                                                               self.detected_tags[17][1], 
+                    intersection = list(detected_tag_ids - (detected_tag_ids - self.right_tags))
+                    p1 = intersection[0]
+                    p2 = intersection[1]
+                    x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
+                                                               self.detected_tags[p1][1], 
+                                                               self.detected_tags[p2][0], 
+                                                               self.detected_tags[p2][1], 
                                                                self.detected_tags[11][0], 
                                                                self.detected_tags[11][1])
                 except KeyError:
                     return None
             if tag_id == 22:
                 try:
-                    x_value, y_value = self.intersection_point(self.detected_tags[20][0], 
-                                                               self.detected_tags[20][1], 
-                                                               self.detected_tags[21][0], 
-                                                               self.detected_tags[21][1], 
+                    intersection = list(detected_tag_ids - (detected_tag_ids - self.left_tags))[::-1]
+                    p1 = intersection[0]
+                    p2 = intersection[1]
+                    x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
+                                                               self.detected_tags[p1][1], 
+                                                               self.detected_tags[p2][0], 
+                                                               self.detected_tags[p2][1], 
                                                                self.detected_tags[26][0], 
                                                                self.detected_tags[26][1])
                 except KeyError:
                     return None
             if tag_id == 26:
                 try:
-                    x_value, y_value = self.intersection_point(self.detected_tags[24][0], 
-                                                               self.detected_tags[24][1], 
-                                                               self.detected_tags[25][0], 
-                                                               self.detected_tags[25][1], 
+                    intersection = list(detected_tag_ids - (detected_tag_ids - self.right_tags))[::-1]
+                    p1 = intersection[0]
+                    p2 = intersection[1]
+
+                    x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
+                                                               self.detected_tags[p1][1], 
+                                                               self.detected_tags[p2][0], 
+                                                               self.detected_tags[p2][1], 
                                                                self.detected_tags[22][0], 
                                                                self.detected_tags[22][1])
                 except KeyError:
@@ -629,7 +785,6 @@ class TagGraphWithPositionsCV:
             # For edge tags, we average the position
             avg_x = np.mean([pos[0] for pos in neighbor_positions])
             avg_y = np.mean([pos[1] for pos in neighbor_positions])
-        
             return (int(avg_x), int(avg_y))
 
     def account_for_missing_tags(self):
@@ -728,7 +883,7 @@ class TagGraphWithPositionsCV:
 
         return image
     
-    def _is_valid_quadrilateral(pts):
+    def _is_valid_quadrilateral(self, pts):
         """Check if the points form a valid quadrilateral."""
         if len(pts) != 4:
             return False
@@ -746,10 +901,11 @@ class AsyncStreamThread:
     def __init__(self, server_keys: str):
         self.grab_keys()
         self.server_keys = server_keys
-        self.recent_value = None  # Shared variable for the most recent value
+        self.recent_value = 50  # Shared variable for the most recent value
         self.lock = threading.Lock()  # Lock for thread-safe access
         self.loop = asyncio.new_event_loop()  # Create a new event loop
         self.thread = threading.Thread(target=self._start_event_loop, daemon=True)  # Worker thread
+        self.wait = True
 
     def _start_event_loop(self):
         """Start the event loop in the thread."""
@@ -761,7 +917,7 @@ class AsyncStreamThread:
         async with Client(self.url) as client:
             print(f'Connected to {self.url}!')
             sensor_node = client.get_node(self.sensor_node_id)
-            while True:
+            while self.wait:
                 value = await sensor_node.get_value()
                 # Update the recent value in a thread-safe manner
                 with self.lock:
@@ -784,10 +940,47 @@ class AsyncStreamThread:
         """Get the most recent value in a thread-safe manner."""
         with self.lock:
             return self.recent_value
+        
+    def print_pending_tasks(self):
+        tasks = [t for t in asyncio.all_tasks(self.loop) if t is not asyncio.current_task(self.loop)]
+        print(f"Pending tasks: {tasks}")
 
     def join(self):
         """Stop the event loop and thread."""
-        self.loop.call_soon_threadsafe(self.loop.stop)
+        self.wait = False
         self.thread.join()
 
-
+def time_function(func, *args, **kwargs):
+    """
+    Wrapper function to time the execution of any function.
+    
+    Parameters:
+    -----------
+    func : function
+        The function to be timed.
+    *args : tuple
+        The positional arguments to pass to the function.
+    **kwargs : dict
+        The keyword arguments to pass to the function.
+    
+    Returns:
+    --------
+    result : any
+        The result of the function call.
+    elapsed_time : float
+        The time taken to execute the function in seconds.
+    """
+    if isinstance(func, list):
+        start_time = time.time()
+        # TODO: Only works for non-cnn models right now
+        result = func[0].forward_features(*args, **kwargs)
+        # if result.shape[0] == 1: result = result.flatten()
+        # else: result = result.flatten(1)
+        result = func[1](result)
+        elapsed_time = time.time() - start_time
+    else:
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+    return result, elapsed_time
