@@ -24,12 +24,13 @@
 </head>
 <body>
     <h1>Straw Level Monitor Evaluation</h1>
-    <p>Select which line best fits the straw level in the chute. Press (R)ed for the red line, (G)reen for the green line or (E)qual if they are equal.</p>
+    <p>Select which line best fits the straw level in the chute. Press (R)ed for the red line, (G)reen for the green line or (E)qual if they are equal. If you are unsure, press (S)kip</p>
     <img id="random-image" alt="Random Image">
     <div>
         <button id="red" onclick="submitResponse('Red')">(R)ed</button>
         <button id="equal" onclick="submitResponse('Equal')">(E)qual</button>
         <button id="green" onclick="submitResponse('Green')">(G)reen</button>
+        <button id="skip" onclick="fetchRandomImage()">(S)kip</button>
     </div>
     <script>
         let images = [];
@@ -78,6 +79,9 @@
                     break;
                 case 'g':
                     submitResponse('Green');
+                    break;
+                case 's':
+                    fetchRandomImage();
                     break;
             }
         }
