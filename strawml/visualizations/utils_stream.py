@@ -473,6 +473,15 @@ class AprilDetectorHelpers:
 
         return cutout_image
     
+    def _save_tag_0(self):
+        """Get the tag with ID 0 from the detected tags."""
+        for tag in self.ADI.detected_tags:
+            if tag.tag_id == 0:
+                x,y = tag.center
+                self.ADI.prediction_dict["yolo"] = {0: (x, y)}
+                self.ADI.prediction_dict["attr."] = {False: sorted(self.ADI.chute_numbers.keys())}
+                break
+
     def _get_pixel_to_straw_level(self, frame, straw_bbox):
         """ Finds the straw level based on the detected tags in the chute. """
         chute_numbers_ = self.ADI.chute_numbers.copy()

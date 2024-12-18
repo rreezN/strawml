@@ -14,6 +14,7 @@ import numpy as np
 from collections import deque
 from typing import Tuple, Optional, Any
 from torchvision.transforms import v2 as transforms
+from scipy import ndimage
 
 # Model imports
 import timm
@@ -391,6 +392,9 @@ class RTSPStream(AprilDetector):
             success, frame = self.cap.read()
             if not success:
                 break
+
+            # rotate the frame by 30 degrees
+            frame = ndimage.rotate(frame, 30, reshape=True)
             self._process_frame(frame, from_videofile=True)
 
     def _process_frame(self, frame: np.ndarray, from_videofile: bool) -> None:
@@ -538,6 +542,13 @@ class RTSPStream(AprilDetector):
                     self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level}'
                 else:
                     self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
+                self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
+            else:
+                straw_level = self.helpers._smooth_level(0, 'straw')
+                if self.record and self.recording_req:
+                    # if no bbox is detected, we add 0 to the previous straw level smoothing predictions
+                    self.helpers._save_tag_0()
+                self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
                 self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
         return frame_drawn
 
@@ -704,8 +715,8 @@ if __name__ == "__main__":
         debug=config["debug"]
     )
 
-    # video_path = "data/raw/Pin drum Chute 2_HKVision_HKVision_20241102105959_20241102112224_1532587042.mp4"
-    video_path = "C:/Users/ikaos/OneDrive/Desktop/strawml/data/raw/stream-2024-09-23-10h11m28s.mp4"
+    # video_path = "data/raw/videos/2024-11-21-16h02m03s.mp4"
+    # video_path = "C:/Users/ikaos/OneDrive/Desktop/strawml/data/raw/stream-2024-09-23-10h11m28s.mp4"
     # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
     #            rtsp=False, # Only used when the stream is from an RTSP source
     #            make_cutout=False, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
@@ -727,8 +738,8 @@ if __name__ == "__main__":
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     # ### YOLO PREDICTOR
-    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-        rtsp=True , # Only used when the stream is from an RTSP source
+    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+        rtsp=False , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
         with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
