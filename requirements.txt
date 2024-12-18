@@ -15,6 +15,7 @@ openpyxl
 keyboard
 pupil-apriltags
 asyncua
+cloudinary
 
 --extra-index-url https://download.pytorch.org/whl/cu118
 torch 
