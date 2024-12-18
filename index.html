@@ -36,8 +36,12 @@
     
         // Fetch the image list from the 'cloudinary.json' file
         fetch('data/processed/cloudinary.json')
-            .then(response => response.json())
+            .then(response =>  {
+                console.log('Response status:', response.status);
+                response.json();
+            })
             .then(data => {
+                console.log('Fetched data:', data);
                 images = data; // Store the fetched image data in the images array
                 console.log('Loaded image, total: ' + images.length);
                 fetchRandomImage(); // Load the first random image
