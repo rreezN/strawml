@@ -38,7 +38,7 @@
         fetch('data/processed/cloudinary.json')
             .then(response =>  {
                 console.log('Response status:', response.status);
-                response.json();
+                return response.json();
             })
             .then(data => {
                 console.log('Fetched data:', data);
