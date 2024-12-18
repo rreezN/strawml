@@ -528,7 +528,7 @@ class AprilDetectorHelpers:
             if self.ADI.record and self.ADI.recording_req:
                 straw_top = (bbox[1] + bbox[-1]) / 2
                 self.ADI.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
-                self.ADI.prediction_dict["attr."] = {interpolated: []}
+                self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
             return straw_level
         elif len(distance_dict_above) == 0:
             if tag_under == 10:
