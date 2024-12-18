@@ -451,7 +451,6 @@ class RTSPStream(AprilDetector):
                 line_start = (int(scada_pixel_values[0]), int(scada_pixel_values[1]))
                 line_end = (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1]))
                 line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-                print(1, line_start, line_end)
                 cv2.line(frame_drawn, line_start, line_end, (255, 4, 0), 2)
                 cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 4, 0), 2, cv2.LINE_AA)
 
@@ -488,7 +487,6 @@ class RTSPStream(AprilDetector):
                 else:
                     t1_name = 'percent'
                     t2_name = 'pixel'
-                    print(2, t2)
                 predict_group.create_dataset(t1_name, data=t1)
                 predict_group.create_dataset(t2_name, data=t2)
             hf.close()
