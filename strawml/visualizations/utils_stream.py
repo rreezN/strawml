@@ -473,12 +473,14 @@ class AprilDetectorHelpers:
 
         return cutout_image
     
-    def _save_tag_0(self):
+    def _save_tag_0(self, angle):
         """Get the tag with ID 0 from the detected tags."""
         for tag in self.ADI.detected_tags:
             if tag.tag_id == 0:
                 x,y = tag.center
-                self.ADI.prediction_dict["yolo"] = {0: (x, y)}
+                line_start, line_end = (x+100, y), (x+200, y)
+                line_start, line_end = self._rotate_line(line_start, line_end, angle)
+                self.ADI.prediction_dict["yolo"] = {0: [line_start, line_end]}
                 self.ADI.prediction_dict["attr."] = {False: sorted(self.ADI.chute_numbers.keys())}
                 break
 

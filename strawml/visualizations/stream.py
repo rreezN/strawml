@@ -547,7 +547,8 @@ class RTSPStream(AprilDetector):
                 straw_level = self.helpers._smooth_level(0, 'straw')
                 if self.recording_req:
                     # if no bbox is detected, we add 0 to the previous straw level smoothing predictions
-                    self.helpers._save_tag_0()
+                    angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                    self.helpers._save_tag_0(angle)
                 self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
                 self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
         return frame_drawn
