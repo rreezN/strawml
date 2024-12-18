@@ -529,26 +529,24 @@ class AprilDetectorHelpers:
         # lets first make a check to i see if the closest tag under is 10. Meaning then we should clip it to 10        
         if len(distance_dict_under) == 0:
             if tag_above == 0:
-                x_mean, straw_top = chute_numbers_[tag_above]
+                x_mean = chute_numbers_[tag_above][0]
                 straw_level = 0.0
             else:
                 x_mean = 0
-                straw_top = 0
                 straw_level = "NA"
-            if self.ADI.record and self.ADI.recording_req:
-                self.ADI.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
+            if self.ADI.recording_req:
+                self.ADI.prediction_dict["yolo"] = {straw_level: [(x_mean+100, bbox[1]), (x_mean+200, bbox[-1])]}
                 self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
             return straw_level
         elif len(distance_dict_above) == 0:
             if tag_under == 10:
-                x_mean, straw_top = chute_numbers_[tag_under]
+                x_mean = chute_numbers_[tag_under][0]
                 straw_level = 100
             else:
                 x_mean = 0
-                straw_top = 0
                 straw_level = "NA"
-            if self.ADI.record and self.ADI.recording_req:
-                self.ADI.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
+            if self.ADI.recording_req:
+                self.ADI.prediction_dict["yolo"] = {straw_level: [(x_mean+100, bbox[1]), (x_mean+200, bbox[-1])]}
                 self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
             return straw_level
         
@@ -566,11 +564,9 @@ class AprilDetectorHelpers:
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
         straw_level = (tag_diff * (y_under-straw_top) / (y_under-y_over) + tag_under)*10
         
-        if self.ADI.record and self.ADI.recording_req:
+        if self.ADI.recording_req:
             # Get coordiantes for the original data
-            x_mean = (chute_numbers_[tag_under][0] + chute_numbers_[tag_above][0]) / 2
-            straw_top = (bbox[1] + bbox[-1]) / 2
-            self.ADI.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
+            self.ADI.prediction_dict["yolo"] = {straw_level: [(bbox[0], bbox[1]), (bbox[-2], bbox[-1])]}
             self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
         
         return straw_level

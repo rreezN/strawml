@@ -170,7 +170,6 @@ class AprilDetector:
                     cv2.line(frame, (x1, y1), (x4, y4), (127,0,255), 2)
                     if type(straw_lvl) == str:
                         cv2.putText(frame, f"{straw_lvl}", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
-
                     else:                        
                         cv2.putText(frame, f"{straw_lvl:.2f} %", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
                 else:                        
@@ -419,10 +418,13 @@ class RTSPStream(AprilDetector):
                 # Record sensor data if enabled
                 self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
                 if self.recording_req:
-                    # Init recording file
-                    self.prediction_dict = {}
-                    # Save the scada data and pixel values
-                    self.prediction_dict["scada"] = {sensor_scada_data: scada_pixel_values}
+                    scada_pixel_values_ = (scada_pixel_values[0]+100, scada_pixel_values[1])
+                    # Get angle of self.chute_numbers
+                    angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                    line_start = (int(scada_pixel_values_[0]), int(scada_pixel_values_[1]))
+                    line_end = (int(scada_pixel_values_[0]) + 100, int(scada_pixel_values_[1]))
+                    line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+                    self.prediction_dict["scada"] = {sensor_scada_data: [line_start, line_end]}
                     # Reset the time
                     self.since_last_save = time.time()
                 display_scada_line = True
@@ -442,8 +444,7 @@ class RTSPStream(AprilDetector):
         # Draw sensor_scada_data on frame based on scada_pixel_values
         if display_scada_line and self.record:
             if type(scada_pixel_values) != str:
-                pix_x = scada_pixel_values[0]
-                scada_pixel_values = (pix_x+100, scada_pixel_values[1])
+                scada_pixel_values = (scada_pixel_values[0]+100, scada_pixel_values[1])
                 
                 # Get angle of self.chute_numbers
                 angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
@@ -739,7 +740,7 @@ if __name__ == "__main__":
     
     # ### YOLO PREDICTOR
     RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-        rtsp=False , # Only used when the stream is from an RTSP source
+        rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
         with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
