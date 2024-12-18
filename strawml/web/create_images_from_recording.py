@@ -29,7 +29,6 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
         keys = list(f.keys())
         tqdm_keys = tqdm(keys, desc='Creating images')
         for i in range(len(keys)):
-            tqdm_keys.set_postfix({'image': i})
             tqdm_keys.update()
             image = f[keys[i]]['image'][:]
             image = decode_binary_image(image)
@@ -63,6 +62,7 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
                 image = cv2.line(image, yolo_coords, (yolo_coords[0]+line_offset, yolo_coords[1]), (0, 0, 255), line_thickness)
                 image = cv2.putText(image, f'{yolo_percent:.2f}%', (yolo_coords[0]+line_offset, yolo_coords[1]), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness//2)
             else:
+                # print(f'No yolo line for {i}:{keys[i]}')
                 if scada_line is not None:
                     yolo_coords = scada_coords
                     yolo_coords = (yolo_coords[0], image.shape[0]-line_thickness-64)
@@ -84,6 +84,7 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
             image_path = os.path.join(output_folder, f'{keys[i]}.jpg')
             cv2.imwrite(image_path, image)
 
+    print(f"{len(keys)} images saved to {output_folder}!")
 
 if __name__ == '__main__':
-    create_images_from_recording('data/processed/recording.hdf5', 'data/processed/recordings', False)
+    create_images_from_recording('data/processed/recording - rotated chute.hdf5', 'data/processed/recordings', False)
