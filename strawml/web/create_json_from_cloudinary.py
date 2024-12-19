@@ -47,9 +47,9 @@ def create_json_from_cloudinary() -> None:
     print('Creating the JSON file...')
     for resource in resources:
         image_info = {
-            'public_id': resource['public_id'],
+            # 'public_id': resource['public_id'],
             'url': resource['secure_url'],
-            'secure_url': resource['secure_url'],
+            # 'secure_url': resource['secure_url'],
         }
         image_data.append(image_info)
     

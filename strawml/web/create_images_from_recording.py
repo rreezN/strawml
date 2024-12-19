@@ -54,27 +54,32 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
                 yolo_percent = 0.0
                 yolo_line = None
             
-            line_offset = 200
-            line_thickness = 10
+            line_thickness = 5
             font_scale = 2
             # Plot the yolo and scada lines and percent on the image
             if scada_line is not None:
-                scada_coords = (int(35+scada_line[0]), int(scada_line[1]))
-                image = cv2.line(image, scada_coords, (scada_coords[0]+line_offset, scada_coords[1]), (0, 255, 0), line_thickness)
-                image = cv2.putText(image, f'{scada_percent:.2f}%', (scada_coords[0]+line_offset, scada_coords[1]), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), line_thickness//2)
+                scada_coords_left = (int(scada_line[0][0]), int(scada_line[0][1]))
+                scada_coords_right = (int(scada_line[1][0]), int(scada_line[1][1]))
+                image = cv2.line(image, scada_coords_left, scada_coords_right, (0, 255, 0), line_thickness)
+                image = cv2.putText(image, f'{scada_percent:.2f}%', scada_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), line_thickness)
             if yolo_line is not None:
-                yolo_coords = (int(35+yolo_line[0]), int(yolo_line[1]))
-                image = cv2.line(image, yolo_coords, (yolo_coords[0]+line_offset, yolo_coords[1]), (0, 0, 255), line_thickness)
-                image = cv2.putText(image, f'{yolo_percent:.2f}%', (yolo_coords[0]+line_offset, yolo_coords[1]), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness//2)
+                yolo_coords_left = (int(yolo_line[1][0]), int(yolo_line[1][1]))
+                yolo_coords_right = (int(yolo_line[0][0]), int(yolo_line[0][1]))
+                image = cv2.line(image, yolo_coords_left, yolo_coords_right, (0, 0, 255), line_thickness)
+                image = cv2.putText(image, f'{yolo_percent:.2f}%', yolo_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness)
             else:
                 # print(f'No yolo line for {i}:{keys[i]}')
                 if scada_line is not None:
-                    yolo_coords = scada_coords
-                    yolo_coords = (yolo_coords[0], image.shape[0]-line_thickness-64)
+                    yolo_coords_left = scada_coords_left
+                    yolo_coords_right = scada_coords_right
+                    yolo_coords_left = (yolo_coords_left[0], image.shape[0]-line_thickness-64)
+                    yolo_coords_right = (yolo_coords_right[0], image.shape[0]-line_thickness-64)
                 else: # If there are no scada or yolo lines, just put the text in the bottom middle
-                    yolo_coords = (int(image.shape[1]//2), image.shape[0]-line_thickness-64)
-                image = cv2.line(image, yolo_coords, (yolo_coords[0]+line_offset, yolo_coords[1]), (0, 0, 255), line_thickness)
-                image = cv2.putText(image, f'0.0%',  (yolo_coords[0]+line_offset, yolo_coords[1]), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness//2)
+                    yolo_coords_left = (int(image.shape[1]//2)-50, image.shape[0]-line_thickness-64)
+                    yolo_coords_right = (int(image.shape[1]//2)+50, image.shape[0]-line_thickness-64)
+                    
+                image = cv2.line(image, yolo_coords_left, yolo_coords_right, (0, 0, 255), line_thickness)
+                image = cv2.putText(image, f'0.0%',  yolo_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness)
             
             # Resize the image
             image_width = image.shape[1]
@@ -92,8 +97,10 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
             total_size_mb = total_size / 1024 / 1024
             total_size_gb = total_size / 1024 / 1024 / 1024
             tqdm_keys.set_postfix({'size (mb)': total_size_mb}) if total_size_mb < 1024 else tqdm_keys.set_postfix({'size (gb)': total_size_gb})
+        
+    tqdm_keys.close()
 
     print(f"{len(keys)} images saved to {output_folder}! Total size: {total_size_gb / 1024 / 1024:.2f} GB")
 
 if __name__ == '__main__':
-    create_images_from_recording('data/processed/recording - rotated chute.hdf5', 'data/processed/recordings', False)
+    create_images_from_recording('data/processed/recording copy.hdf5', 'data/processed/recordings', False)
