@@ -1,23 +1,51 @@
 [
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600111/1734594923.9287648.jpg"
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600111/1734594923.9287648.jpg",
+        "tags": [
+            "strawml",
+            "test_tag"
+        ]
     },
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600111/1734594918.9171014.jpg"
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600111/1734594918.9171014.jpg",
+        "tags": [
+            "strawml",
+            "test_tag"
+        ]
     },
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600110/1734594913.8066418.jpg"
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600110/1734594913.8066418.jpg",
+        "tags": [
+            "strawml",
+            "test_tag"
+        ]
     },
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600109/1734594908.7738328.jpg"
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600109/1734594908.7738328.jpg",
+        "tags": [
+            "strawml",
+            "test_tag"
+        ]
     },
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600108/1734594903.7263076.jpg"
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600108/1734594903.7263076.jpg",
+        "tags": [
+            "strawml",
+            "test_tag"
+        ]
     },
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600108/1734594898.6388636.jpg"
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600108/1734594898.6388636.jpg",
+        "tags": [
+            "strawml",
+            "test_tag"
+        ]
     },
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600107/1734594893.6218352.jpg"
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600107/1734594893.6218352.jpg",
+        "tags": [
+            "strawml",
+            "test_tag"
+        ]
     }
 ]

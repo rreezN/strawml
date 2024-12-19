@@ -28,13 +28,13 @@ def create_json_from_cloudinary() -> None:
     
     # Get the list of images in the cloudinary bucket
     print('Getting the list of images in the cloudinary bucket...')
-    response = cloudinary.api.resources(asset_folder=folder_name)
+    response = cloudinary.api.resources(asset_folder=folder_name, tags=True)
     
     resources = response['resources']
     if 'next_cursor' in response:
         next_cursor = response['next_cursor']
         while next_cursor:
-            response = cloudinary.api.resources(asset_folder=folder_name, next_cursor=next_cursor)
+            response = cloudinary.api.resources(asset_folder=folder_name, next_cursor=next_cursor, tags=True)
             if 'next_cursor' in response:
                 next_cursor = response['next_cursor']
             else:
