@@ -11,7 +11,7 @@ import asyncio
 from asyncua import Client
 import copy
 import time
-from strawml.data.image_utils import SpecialRotate
+from strawml.data.image_utils import SpecialRotate, rotate_point
 
 
 class AprilDetectorHelpers:
@@ -22,7 +22,9 @@ class AprilDetectorHelpers:
         temp = {
             "FPS":              {"text": "", "font_scale": 1,   "font_thicknesss": 2, "position": (10, 40)},
             "scada_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 75)},
+            "scada_og":         {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (250, 75)},
             "straw_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 100)},
+            "straw_og":         {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (250, 100)},
             "undistort_time":   {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 125)},
             "april":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 150)},
             "od":               {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 175)},
@@ -524,12 +526,10 @@ class AprilDetectorHelpers:
         distance_dict_under = dict(sorted(distance_dict_under.items(), reverse=True))
         distance_dict_above = dict(sorted(distance_dict_above.items()))
         
-        # get the two closest tags
-        tag_under, tag_above = list(distance_dict_under.values())[0], list(distance_dict_above.values())[0]
-
         # there are three cases to consider, no detected tags under, no detected tags above, and detected tags both above and under
         # lets first make a check to i see if the closest tag under is 10. Meaning then we should clip it to 10        
         if len(distance_dict_under) == 0:
+            tag_above = list(distance_dict_above.values())[0]
             if tag_above == 0:
                 x_mean = chute_numbers_[tag_above][0]
                 straw_level = 0.0
@@ -538,9 +538,10 @@ class AprilDetectorHelpers:
                 straw_level = "NA"
             if self.ADI.recording_req:
                 self.ADI.prediction_dict["yolo"] = {straw_level: [(x_mean+100, bbox[1]), (x_mean+200, bbox[-1])]}
-                self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
+                self.ADI.prediction_dict["attr."] = {False: sorted(chute_numbers.keys())}
             return straw_level
         elif len(distance_dict_above) == 0:
+            tag_under = list(distance_dict_under.values())[0]
             if tag_under == 10:
                 x_mean = chute_numbers_[tag_under][0]
                 straw_level = 100
@@ -549,9 +550,12 @@ class AprilDetectorHelpers:
                 straw_level = "NA"
             if self.ADI.recording_req:
                 self.ADI.prediction_dict["yolo"] = {straw_level: [(x_mean+100, bbox[1]), (x_mean+200, bbox[-1])]}
-                self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
+                self.ADI.prediction_dict["attr."] = {False: sorted(chute_numbers.keys())}
             return straw_level
         
+        # get the two closest tags
+        tag_under, tag_above = list(distance_dict_under.values())[0], list(distance_dict_above.values())[0]
+
         # we get the difference between the two tags ids to see if we are missing tags inbetween
         tag_diff = tag_above - tag_under
         if tag_diff > 1:
@@ -586,36 +590,45 @@ class AprilDetectorHelpers:
         # First we divide the straw level by 10 to get it on the same scale as the tag ids
         straw_level = straw_level / 10
 
-        # We then get the two closest tags
-        tag_under, tag_over = int(straw_level), int(straw_level) + 1
-        
-        # next we find the two closest tags in chute_numbers based on the tag ids
-        # First we create a list for the values that are less or equal to the tag_under and greater than the tag_over
-        tag_under_list = [key for key, _ in chute_numbers.items() if key <= tag_under]
-        tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
+        if straw_level == 10:
+            # Handle edge case when straw level is at the top
+            tag_under_closest = 9
+            tag_over_closest = 10
+        else:
+            # Determine closest tags
+            tag_under, tag_over = int(straw_level), int(straw_level) + 1
 
-        # next we order them
-        tag_under_list = sorted(tag_under_list, reverse=True)
-        tag_over_list = sorted(tag_over_list)
-        
-        # Then we see if the tag_under_closest is above or below the straw level
-        tag_under_closest = tag_under_list[0]
-        tag_over_closest = tag_over_list[0]
+            # Find the closest tags in chute_numbers
+            tag_under_list = [key for key, _ in chute_numbers.items() if key <= tag_under]
+            tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
+
+            if not tag_under_list or not tag_over_list:
+                return "NA"
+
+            tag_under_list = sorted(tag_under_list, reverse=True)
+            tag_over_list = sorted(tag_over_list)
+
+            tag_under_closest = tag_under_list[0]
+            tag_over_closest = tag_over_list[0]
 
         # calculate difference between tag ids
         tag_diff = tag_over_closest - tag_under_closest
-        if tag_diff > 1:
-            interpolated = True
-        else:
-            interpolated = False
-        
-        # get the distance between the two closest tags
-        y_under = chute_numbers[tag_under_closest][1]
-        y_over = chute_numbers[tag_over_closest][1]
-        
         # get the pixel value of the straw level
         excess = straw_level - tag_under_closest
-        pixel_straw_level_x = (chute_numbers[tag_under_closest][0] + chute_numbers[tag_over_closest][0]) / 2
+
+        # get the distance between the two closest tags
+        x_under, y_under = chute_numbers[tag_under_closest]
+        x_over, y_over = chute_numbers[tag_over_closest]
+        
+        # Get x
+        if x_under > x_over:
+            x_range = np.linspace(x_over, x_under, 1001)
+            pixel_straw_level_x = x_range[1000 - int(np.round(excess*1000))].astype(float)
+        else:
+            x_range = np.linspace(x_under, x_over, 1001)
+            pixel_straw_level_x = x_range[int(np.round(excess*1000))].astype(float)
+
+        # Get y
         pixel_straw_level_y = y_under - (y_under - y_over) * excess/tag_diff
         
         return (pixel_straw_level_x, pixel_straw_level_y)
@@ -625,11 +638,22 @@ class AprilDetectorHelpers:
         if id == 'scada':
             self.ADI.scada_smoothing_queue.append(level)
             filtered_data = [x for x in self.ADI.scada_smoothing_queue if x is not None]
-            return np.mean(filtered_data)
+            mean = np.mean(filtered_data)
+            if level is not None:
+                self.ADI.information["scada_og"]["text"] = f'(T2) Original Scada Level: {level:.2f} %'
+            else:
+                self.ADI.information["scada_og"]["text"] = f'(T2) Original Scada Level: NA'
+
+            return mean
         elif id == 'straw':
             self.ADI.straw_smoothing_queue.append(level)
             filtered_data = [x for x in self.ADI.straw_smoothing_queue if x is not None]
-            return np.mean(filtered_data)
+            mean = np.mean(filtered_data)
+            if level is not None:
+                self.ADI.information["straw_og"]["text"] = f'(T2) Original Straw Level: {level:.2f} %'
+            else:
+                self.ADI.information["straw_og"]["text"] = f'(T2) Original Straw Level: NA'
+            return mean
                 
     
     def _grab_scada_url_n_id(self):

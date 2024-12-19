@@ -168,11 +168,11 @@ class AprilDetector:
                 if straw:
                     cv2.line(frame, (x1, y1), (x4, y4), (127,0,255), 2)
                     if type(straw_lvl) == str:
-                        cv2.putText(frame, f"{straw_lvl}", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
+                        cv2.putText(frame, f"{straw_lvl}", (x1+10, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
                     else:                        
-                        cv2.putText(frame, f"{straw_lvl:.2f} %", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
+                        cv2.putText(frame, f"{straw_lvl:.2f} %", (x1+10, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
                 else:                        
-                    # draw lines between the corners
+                    # draw lines between the cornersq
                     cv2.line(frame, (x1, y1), (x2, y2), (138,43,226), 2)
                     cv2.line(frame, (x2, y2), (x3, y3), (138,43,226), 2)
                     cv2.line(frame, (x3, y3), (x4, y4), (138,43,226), 2)
@@ -418,11 +418,11 @@ class RTSPStream(AprilDetector):
                 self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
                 if self.recording_req:
                     self.prediction_dict = {}
-                    scada_pixel_values_ = (scada_pixel_values[0]+100, scada_pixel_values[1])
+                    scada_pixel_values_ = (scada_pixel_values[0], scada_pixel_values[1])
                     # Get angle of self.chute_numbers
                     angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
                     line_start = (int(scada_pixel_values_[0]), int(scada_pixel_values_[1]))
-                    line_end = (int(scada_pixel_values_[0]) + 100, int(scada_pixel_values_[1]))
+                    line_end = (int(scada_pixel_values_[0])+300, int(scada_pixel_values_[1]))
                     line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
                     self.prediction_dict["scada"] = {sensor_scada_data: [line_start, line_end]}
                     # Reset the time
@@ -444,15 +444,19 @@ class RTSPStream(AprilDetector):
         # Draw sensor_scada_data on frame based on scada_pixel_values
         if display_scada_line and self.record:
             if type(scada_pixel_values) != str:
-                scada_pixel_values = (scada_pixel_values[0]+100, scada_pixel_values[1])
+                scada_pixel_values = (scada_pixel_values[0], scada_pixel_values[1])
                 
                 # Get angle of self.chute_numbers
                 angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                # print("angle: ", np.degrees(angle))
+
                 line_start = (int(scada_pixel_values[0]), int(scada_pixel_values[1]))
-                line_end = (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1]))
+                line_end = (int(scada_pixel_values[0])+300, int(scada_pixel_values[1]))
+                
                 line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-                cv2.line(frame_drawn, line_start, line_end, (255, 4, 0), 2)
-                cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 4, 0), 2, cv2.LINE_AA)
+                
+                cv2.line(frame_drawn, line_start, line_end, (32,165,218), 2)
+                cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (32,165,218), 2, cv2.LINE_AA)
 
         # Display frame and overlay text
         self._display_frame(frame_drawn)
