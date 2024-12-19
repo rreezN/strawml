@@ -50,6 +50,7 @@ def create_json_from_cloudinary() -> None:
             # 'public_id': resource['public_id'],
             'url': resource['secure_url'],
             # 'secure_url': resource['secure_url'],
+            'tags': resource['tags'],
         }
         image_data.append(image_info)
     
