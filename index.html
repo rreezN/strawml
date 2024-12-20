@@ -95,19 +95,16 @@
             const imageUrl = imgElement.dataset.url;
             let tags = imgElement.dataset.tags ? JSON.parse(imgElement.dataset.tags) : []; // Parse tags from the data attribute
 
-            // Extract YOLO and SCADA values from tags
-            let yoloValue = null
-            let scadaValue = null
-
-            tags.forEach(tag => {
+            // Remove yolo and scada tags while extracting their values
+            tags = tags.filter(tag => {
                 if (tag.startsWith('yolo:')) {
                     yoloValue = tag.split(':')[1];
-                    return false;
+                    return false; // Exclude this tag
                 } else if (tag.startsWith('scada:')) {
                     scadaValue = tag.split(':')[1];
-                    return false;
+                    return false; // Exclude this tag
                 }
-                return true;
+                return true; // Keep this tag
             });
 
             // Send the response to the Google Apps Script Web App URL without waiting for the response
