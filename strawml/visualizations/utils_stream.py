@@ -357,6 +357,8 @@ class AprilDetectorHelpers:
             tags: List of detected tags in the current frame.
         """
         tag_ids = np.array([int(tag.tag_id) for tag in tags])
+        if len(tag_ids) == 0:
+            self._reset_tags()
         accumulated_error = 0
 
         for t in self.ADI.tag_ids:
