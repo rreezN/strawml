@@ -93,7 +93,7 @@
         function submitResponse(choice) {
             const imgElement = document.getElementById('random-image');
             const imageUrl = imgElement.dataset.url;
-            const tags = imgElement.dataset.tags ? JSON.parse(imgElement.dataset.tags) : []; // Parse tags from the data attribute
+            let tags = imgElement.dataset.tags ? JSON.parse(imgElement.dataset.tags) : []; // Parse tags from the data attribute
 
             // Extract YOLO and SCADA values from tags
             let yoloValue = null
@@ -111,7 +111,7 @@
             });
 
             // Send the response to the Google Apps Script Web App URL without waiting for the response
-            fetch('https://script.google.com/macros/s/AKfycbycvWi6Hb0B3YJR7p1CfNaXeiNiQKBSx7SeBPhoLxfxSIl7u1sV_y8xknL2LLi1MHmP/exec', {
+            fetch('https://script.google.com/macros/s/AKfycbwbyko2B2-FBi2EZkHIlTTlVutXMEHW3iVXIGxRAzzdzyOi5LvlFU4UeVVdsAIPid5z/exec', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
@@ -119,8 +119,8 @@
                 body: new URLSearchParams({
                     'imageUrl': imageUrl,
                     'tags': tags.join(','),
-                    'yolo': yoloValue || '',
-                    'scada': scadaValue || '',
+                    'yolo': yoloValue ? parseFloat(yoloValue).toFixed(2) : '',
+                    'scada': scadaValue ? parseFloat(scadaValue).toFixed(2) : '',
                     'choice': choice
                 })
             }).catch(error => {
