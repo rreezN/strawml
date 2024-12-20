@@ -393,9 +393,6 @@ class RTSPStream(AprilDetector):
             success, frame = self.cap.read()
             if not success:
                 break
-
-            # rotate the frame by 30 degrees
-            # frame = ndimage.rotate(frame, 30, reshape=True)
             self._process_frame(frame, from_videofile=True)
 
     def _process_frame(self, frame: np.ndarray, from_videofile: bool) -> None:
@@ -527,20 +524,30 @@ class RTSPStream(AprilDetector):
             if len(output[0]) != 0:
                 # Extract the straw level from the pixel values of the bbox
                 straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level(frame_drawn, output)
+                
+                # Smooth the data
                 if self.smoothing:
                     straw_level = self.helpers._smooth_level(straw_level, 'straw')
+                
                 # Since the new straw level might be a smoothed value, we need to update the pixel values of the straw level. We do this everytime to ensure that the overlay is based on the same pixel values all the time. Otherwise the overlay would shift from being based on the bbox pixel values vs. based on the tags.
                 x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
                 if x_pixel is None:
                     return frame_drawn
+                
+                # Define the overlay lines and orientation
                 line_start = (int(x_pixel), int(y_pixel))
                 line_end = (int(x_pixel) + 300, int(y_pixel))
-                # Plot the boxes and straw level on the frame
+                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+                
+                # Plot the line on the frame
+                frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level)
+
                 if self.recording_req:
                     # Get coordiantes for the original data
                     self.prediction_dict["yolo"] = {straw_level: [line_start, line_end]}
                     self.prediction_dict["attr."] = {interpolated: chute_nrs}
-                frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level)
+
                 if straw_level is None:
                     self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: NA'
                 else:
