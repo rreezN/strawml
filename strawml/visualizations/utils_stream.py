@@ -369,9 +369,9 @@ class AprilDetectorHelpers:
             accumulated_error += np.linalg.norm(np.array(detected_tag.center) - np.array(prev_tag.center))
         
         # First we make sure that the tags are not empty
-        if len(self.ADI.tag_ids) != 0:
-            if accumulated_error / len(self.ADI.tag_ids) > 10: # Threshold for accumulated error is 10 pixels
-                self._reset_tags()
+        # if len(self.ADI.tag_ids) != 0:
+        if accumulated_error / len(self.ADI.tag_ids) > 10: # Threshold for accumulated error is 10 pixels
+            self._reset_tags()
 
     def _reset_tags(self) -> None:
         """
@@ -679,7 +679,6 @@ class AprilDetectorHelpers:
                 self.ADI.information["straw_level"]["text"] = f'(T2) Straw Level: NA'
             return self._smooth(level, self.ADI.straw_smoothing_queue)[0]
                 
-    
     def _grab_scada_url_n_id(self):
         # Read the url from the scada.txt file
         data_path = 'data/opcua_server.txt'
