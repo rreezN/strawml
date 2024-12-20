@@ -490,7 +490,7 @@ class AprilDetectorHelpers:
         """ Finds the straw level based on the detected tags in the chute. """
         chute_numbers_ = self.ADI.chute_numbers.copy()
         if not len(chute_numbers_) >= 2:
-            return "NA"
+            return None, False, sorted(chute_numbers.keys())
         
         # We extract the straw_bbox from the results with the highest confidence
         straw_cord = straw_bbox[1][torch.argmax(straw_bbox[2])]
@@ -532,27 +532,15 @@ class AprilDetectorHelpers:
         if len(distance_dict_under) == 0:
             tag_above = list(distance_dict_above.values())[0]
             if tag_above == 0:
-                x_mean = chute_numbers_[tag_above][0]
-                straw_level = 0.0
+                return 0.0, False, sorted(chute_numbers.keys())
             else:
-                x_mean = 0
-                straw_level = "NA"
-            if self.ADI.recording_req:
-                self.ADI.prediction_dict["yolo"] = {straw_level: [(x_mean+100, bbox[1]), (x_mean+200, bbox[-1])]}
-                self.ADI.prediction_dict["attr."] = {False: sorted(chute_numbers.keys())}
-            return straw_level
+                return None, False, sorted(chute_numbers.keys())
         elif len(distance_dict_above) == 0:
             tag_under = list(distance_dict_under.values())[0]
             if tag_under == 10:
-                x_mean = chute_numbers_[tag_under][0]
-                straw_level = 100
+                return 100, False, sorted(chute_numbers.keys())
             else:
-                x_mean = 0
-                straw_level = "NA"
-            if self.ADI.recording_req:
-                self.ADI.prediction_dict["yolo"] = {straw_level: [(x_mean+100, bbox[1]), (x_mean+200, bbox[-1])]}
-                self.ADI.prediction_dict["attr."] = {False: sorted(chute_numbers.keys())}
-            return straw_level
+                return None, False, sorted(chute_numbers.keys())
         
         # get the two closest tags
         tag_under, tag_above = list(distance_dict_under.values())[0], list(distance_dict_above.values())[0]
@@ -571,12 +559,7 @@ class AprilDetectorHelpers:
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
         straw_level = (tag_diff * (y_under-straw_top) / (y_under-y_over) + tag_under)*10
         
-        if self.ADI.recording_req:
-            # Get coordiantes for the original data
-            self.ADI.prediction_dict["yolo"] = {straw_level: [(bbox[0], bbox[1]), (bbox[-2], bbox[-1])]}
-            self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
-        
-        return straw_level
+        return straw_level, interpolated, sorted(chute_numbers.keys())
     
     def _get_straw_to_pixel_level(self, straw_level):
         # We know that the self.chute_numbers are ordered from 0 to 10. We can use this to calculate the pixel value of the straw level
@@ -586,7 +569,7 @@ class AprilDetectorHelpers:
         chute_numbers = self.ADI.chute_numbers.copy()
         # make sure there are chute numbers to work with, otherwise we return
         if not len(chute_numbers) >= 2:
-            return "NA"
+            return None, None
 
         # First we divide the straw level by 10 to get it on the same scale as the tag ids
         straw_level = straw_level / 10
@@ -604,7 +587,7 @@ class AprilDetectorHelpers:
             tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
 
             if not tag_under_list or not tag_over_list:
-                return "NA"
+                return None, None
 
             tag_under_list = sorted(tag_under_list, reverse=True)
             tag_over_list = sorted(tag_over_list)
@@ -670,11 +653,12 @@ class AprilDetectorHelpers:
         while history and history[0][0] < current_time - 1:
             history.popleft()
 
-
         # Compute the weighted average of the remaining predictions
         if history:
             predictions = [pred for _, pred in history]
             weights = self.create_weight_list(len(predictions))
+            filtered_p_w = [(pi, wi) for pi, wi in zip(predictions, weights) if pi is not None]
+            predictions, weights = zip(*filtered_p_w)
             avg_prediction = np.convolve(predictions, weights[::-1], mode='valid')
         else:
             avg_prediction = 0  # Default if no predictions are in the window

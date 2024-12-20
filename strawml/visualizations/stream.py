@@ -146,13 +146,13 @@ class AprilDetector:
 
     def plot_straw_level(self, frame_drawn, line_start, line_end, straw_level, color=(127, 0, 255)) -> np.ndarray:
         cv2.line(frame_drawn, line_start, line_end, color, 2)
-        if type(straw_level) == str:
-            cv2.putText(frame_drawn, f"{straw_level}", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
+        if straw_level is None:
+            cv2.putText(frame_drawn, "NA", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
         else:
             cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
         return frame_drawn
     
-    def plot_boxes(self, results, frame, straw=False, straw_lvl=None, model_type: str = 'obb'):
+    def plot_boxes(self, results, frame, model_type: str = 'obb'):
         """
         Takes a frame and its results as input, and plots the bounding boxes and label on to the frame.
         :param results: contains labels and coordinates predicted by model on the given frame.
@@ -173,20 +173,14 @@ class AprilDetector:
             if 'obb' in model_type:
                 x1, y1, x2, y2, x3, y3, x4, y4 = cord[i].flatten()
                 x1, y1, x2, y2, x3, y3, x4, y4 = int(x1), int(y1), int(x2), int(y2), int(x3), int(y3), int(x4), int(y4)
-                if straw:
-                    cv2.line(frame, (x1, y1), (x4, y4), (127,0,255), 2)
-                    if type(straw_lvl) == str:
-                        cv2.putText(frame, f"{straw_lvl}", (x1+10, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
-                    else:                        
-                        cv2.putText(frame, f"{straw_lvl:.2f} %", (x1+10, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
-                else:                        
-                    # draw lines between the cornersq
-                    cv2.line(frame, (x1, y1), (x2, y2), (138,43,226), 2)
-                    cv2.line(frame, (x2, y2), (x3, y3), (138,43,226), 2)
-                    cv2.line(frame, (x3, y3), (x4, y4), (138,43,226), 2)
-                    cv2.line(frame, (x4, y4), (x1, y1), (138,43,226), 2)
-                    # plot label on the object
-                    cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                      
+                # draw lines between the cornersq
+                cv2.line(frame, (x1, y1), (x2, y2), (138,43,226), 2)
+                cv2.line(frame, (x2, y2), (x3, y3), (138,43,226), 2)
+                cv2.line(frame, (x3, y3), (x4, y4), (138,43,226), 2)
+                cv2.line(frame, (x4, y4), (x1, y1), (138,43,226), 2)
+                # plot label on the object
+                cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
             else:
                 x1, y1, x2, y2 = cord[i].flatten()
                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
@@ -537,30 +531,29 @@ class RTSPStream(AprilDetector):
             if self.with_predictor:
                 frame_drawn = self._process_predictions(frame, results, frame_drawn)
             if self.object_detect:
-                frame_drawn = self.plot_boxes(results, frame_drawn, straw=False, straw_lvl=None, model_type="obb")
+                frame_drawn = self.plot_boxes(results, frame_drawn, model_type="obb")
         elif self.yolo_straw:
             output, inference_time = time_function(self.model.score_frame, frame)
             # If the output is not empty, we can plot the boxes and get the straw level
             if len(output[0]) != 0:
                 # Extract the straw level from the pixel values of the bbox
-                straw_level = self.helpers._get_pixel_to_straw_level(frame_drawn, output)
+                straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level(frame_drawn, output)
                 if self.smoothing:
-                    if straw_level == "NA": # If the straw level is not detected, we add None to the previous straw level smoothing predictions
-                        straw_level = self.helpers._smooth_level(None, 'straw')
-                    else: # otherwise we add the detected straw level to the smoothing predictions and get the smoothed straw level
-                        straw_level = self.helpers._smooth_level(straw_level, 'straw')
-                
+                    straw_level = self.helpers._smooth_level(straw_level, 'straw')
                 # Since the new straw level might be a smoothed value, we need to update the pixel values of the straw level. We do this everytime to ensure that the overlay is based on the same pixel values all the time. Otherwise the overlay would shift from being based on the bbox pixel values vs. based on the tags.
                 x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
-                if x_pixel == 'N':
+                if x_pixel is None:
                     return frame_drawn
                 line_start = (int(x_pixel), int(y_pixel))
                 line_end = (int(x_pixel) + 300, int(y_pixel))
                 # Plot the boxes and straw level on the frame
+                if self.recording_req:
+                    # Get coordiantes for the original data
+                    self.prediction_dict["yolo"] = {straw_level: [line_start, line_end]}
+                    self.prediction_dict["attr."] = {interpolated: chute_nrs}
                 frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level)
-                
-                if type(straw_level) == str:
-                    self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level}'
+                if straw_level is None:
+                    self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: NA'
                 else:
                     self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
                 self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
@@ -570,7 +563,7 @@ class RTSPStream(AprilDetector):
                 else:
                     straw_level = 0
                 x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
-                if x_pixel == 'N':
+                if x_pixel is None:
                     return frame_drawn
                 line_start = (int(x_pixel), int(y_pixel))
                 line_end = (int(x_pixel) + 300, int(y_pixel))
@@ -771,7 +764,7 @@ if __name__ == "__main__":
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     # ### YOLO PREDICTOR
-    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
