@@ -1,51 +1,65 @@
 [
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600111/1734594923.9287648.jpg",
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734694256/1734634547.126224.jpg",
         "tags": [
-            "strawml",
-            "test_tag"
+            "scada:61.92",
+            "upright",
+            "weak_smoothing",
+            "yolo:79.03"
         ]
     },
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600111/1734594918.9171014.jpg",
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734694255/1734634541.987448.jpg",
         "tags": [
-            "strawml",
-            "test_tag"
+            "scada:61.95",
+            "upright",
+            "weak_smoothing",
+            "yolo:81.61"
         ]
     },
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600110/1734594913.8066418.jpg",
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734694254/1734634536.9151402.jpg",
         "tags": [
-            "strawml",
-            "test_tag"
+            "scada:69.25",
+            "upright",
+            "weak_smoothing",
+            "yolo:84.25"
         ]
     },
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600109/1734594908.7738328.jpg",
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734694253/1734634531.8892996.jpg",
         "tags": [
-            "strawml",
-            "test_tag"
+            "scada:63.68",
+            "upright",
+            "weak_smoothing",
+            "yolo:83.88"
         ]
     },
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600108/1734594903.7263076.jpg",
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734694253/1734634526.7679365.jpg",
         "tags": [
-            "strawml",
-            "test_tag"
+            "scada:70.00",
+            "upright",
+            "weak_smoothing",
+            "yolo:84.43"
         ]
     },
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600108/1734594898.6388636.jpg",
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734694252/1734634521.7410352.jpg",
         "tags": [
-            "strawml",
-            "test_tag"
+            "scada:70.00",
+            "upright",
+            "weak_smoothing",
+            "yolo:81.83"
         ]
     },
     {
-        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734600107/1734594893.6218352.jpg",
+        "url": "https://res.cloudinary.com/dpfaegaqh/image/upload/v1734694251/1734634516.641538.jpg",
         "tags": [
-            "strawml",
-            "test_tag"
+            "scada:69.93",
+            "upright",
+            "weak_smoothing",
+            "yolo:81.29"
         ]
     }
 ]

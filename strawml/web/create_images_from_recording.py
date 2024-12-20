@@ -3,9 +3,11 @@ from __init__ import *
 import h5py
 import os
 import cv2
+import piexif
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from PIL import Image
 
 from strawml.data.make_dataset import decode_binary_image
 
@@ -91,16 +93,36 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
                 plt.imshow(image)
                 plt.show()
                 image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            
+            # Save the image
             image_path = os.path.join(output_folder, f'{keys[i]}.jpg')
             cv2.imwrite(image_path, image)
+            
+            # Add metadata using piexif
+            exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "Interop": {}, "1st": {}, "thumbnail": None}
+            scada_string = ''
+            if scada_percent is not None:
+                scada_string = f"scada_percent={scada_percent:.2f}"
+            yolo_string = ''
+            if yolo_percent is not None:
+                yolo_string = f"yolo_percent={yolo_percent:.2f}"
+            percent = f"{scada_string}, {yolo_string}"
+            exif_dict["0th"][piexif.ImageIFD.ImageDescription] = percent
+            exif_bytes = piexif.dump(exif_dict)
+
+            pil_image = Image.open(image_path)
+            pil_image.save(image_path, "jpeg", quality=95, exif=exif_bytes)
+            pil_image.close()
+            
+            
             total_size += os.path.getsize(image_path)
             total_size_mb = total_size / 1024 / 1024
-            total_size_gb = total_size / 1024 / 1024 / 1024
-            tqdm_keys.set_postfix({'size (mb)': total_size_mb}) if total_size_mb < 1024 else tqdm_keys.set_postfix({'size (gb)': total_size_gb})
+            total_size_gb = total_size_mb / 1024
+            tqdm_keys.set_postfix({'size (mb)': total_size_mb, 'exif': exif_dict["0th"][piexif.ImageIFD.ImageDescription]}) if total_size_mb < 1024 else tqdm_keys.set_postfix({'size (gb)': total_size_gb, 'exif': exif_dict["0th"][piexif.ImageIFD.ImageDescription]})
         
     tqdm_keys.close()
 
-    print(f"{len(keys)} images saved to {output_folder}! Total size: {total_size_gb / 1024 / 1024:.2f} GB")
+    print(f"{len(keys)} images saved to {output_folder}! Total size: {total_size_gb:.2f} GB")
 
 if __name__ == '__main__':
-    create_images_from_recording('data/processed/recording copy.hdf5', 'data/processed/recordings', False)
+    create_images_from_recording('data/processed/recording - vertical.hdf5', 'data/processed/recordings', False)
