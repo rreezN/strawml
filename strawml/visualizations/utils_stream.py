@@ -591,7 +591,7 @@ class AprilDetectorHelpers:
         # First we divide the straw level by 10 to get it on the same scale as the tag ids
         straw_level = straw_level / 10
 
-        if straw_level == 10:
+        if int(straw_level) == 10:
             # Handle edge case when straw level is at the top
             tag_under_closest = 9
             tag_over_closest = 10
@@ -687,13 +687,13 @@ class AprilDetectorHelpers:
                 self.ADI.information["scada_level"]["text"] = f'(T2) Scada Level: {level:.2f} %'
             else:
                 self.ADI.information["scada_level"]["text"] = f'(T2) Scada Level: NA'
-            return self._smooth(level, self.ADI.scada_smoothing_queue)
+            return self._smooth(level, self.ADI.scada_smoothing_queue)[0]
         elif id == 'straw':
             if level is not None:
                 self.ADI.information["straw_level"]["text"] = f'(T2) Straw Level: {level:.2f} %'
             else:
                 self.ADI.information["straw_level"]["text"] = f'(T2) Straw Level: NA'
-            return self._smooth(level, self.ADI.straw_smoothing_queue)
+            return self._smooth(level, self.ADI.straw_smoothing_queue)[0]
                 
     
     def _grab_scada_url_n_id(self):

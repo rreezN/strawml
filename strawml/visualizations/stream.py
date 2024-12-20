@@ -552,6 +552,8 @@ class RTSPStream(AprilDetector):
                 
                 # Since the new straw level might be a smoothed value, we need to update the pixel values of the straw level. We do this everytime to ensure that the overlay is based on the same pixel values all the time. Otherwise the overlay would shift from being based on the bbox pixel values vs. based on the tags.
                 x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
+                if x_pixel == 'N':
+                    return frame_drawn
                 line_start = (int(x_pixel), int(y_pixel))
                 line_end = (int(x_pixel) + 300, int(y_pixel))
                 # Plot the boxes and straw level on the frame
@@ -567,12 +569,20 @@ class RTSPStream(AprilDetector):
                     straw_level = self.helpers._smooth_level(0, 'straw')
                 else:
                     straw_level = 0
+                x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
+                if x_pixel == 'N':
+                    return frame_drawn
+                line_start = (int(x_pixel), int(y_pixel))
+                line_end = (int(x_pixel) + 300, int(y_pixel))
+                # Plot the boxes and straw level on the frame
+                frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level)
+                self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
+                self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
                 if self.recording_req:
                     # if no bbox is detected, we add 0 to the previous straw level smoothing predictions
                     angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
                     self.helpers._save_tag_0(angle)
-                self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
-                self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
+                
         return frame_drawn
 
     def _process_predictions(self, frame, results, frame_drawn):
@@ -761,7 +771,7 @@ if __name__ == "__main__":
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     # ### YOLO PREDICTOR
-    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
