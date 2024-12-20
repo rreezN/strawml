@@ -51,4 +51,4 @@ def upload_to_cloudinary(cloudinary_txt: str, image_folder: str, tags: str = '')
     print('Upload complete!')
 
 if __name__ == '__main__':
-    upload_to_cloudinary('data/cloudinary.txt', 'data/processed/recordings', tags=['upright', 'weak_smoothing', "bugged_line"])
+    upload_to_cloudinary('data/cloudinary.txt', 'data/processed/recordings', tags=['rotated', 'weak_smoothing', "bugged_line"])
