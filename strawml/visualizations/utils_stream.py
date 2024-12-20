@@ -359,6 +359,7 @@ class AprilDetectorHelpers:
         tag_ids = np.array([int(tag.tag_id) for tag in tags])
         if len(tag_ids) == 0:
             self._reset_tags()
+            return
         accumulated_error = 0
 
         for t in self.ADI.tag_ids:
@@ -372,7 +373,7 @@ class AprilDetectorHelpers:
         
         # First we make sure that the tags are not empty
         # if len(self.ADI.tag_ids) != 0:
-        if accumulated_error / len(self.ADI.tag_ids) > 10: # Threshold for accumulated error is 10 pixels
+        if accumulated_error / (len(self.ADI.tag_ids) + 1e-6) > 10: # Threshold for accumulated error is 10 pixels
             self._reset_tags()
 
     def _reset_tags(self) -> None:
@@ -805,6 +806,8 @@ class TagGraphWithPositionsCV:
             if tag_id == 11:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.left_tags))
+                    if len(intersection) == 0:
+                        return None
                     p1 = intersection[0]
                     p2 = intersection[1]
                     x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
@@ -818,6 +821,8 @@ class TagGraphWithPositionsCV:
             if tag_id == 15:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.right_tags))
+                    if len(intersection) == 0:
+                        return None
                     p1 = intersection[0]
                     p2 = intersection[1]
                     x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
@@ -831,6 +836,8 @@ class TagGraphWithPositionsCV:
             if tag_id == 22:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.left_tags))[::-1]
+                    if len(intersection) == 0:
+                        return None
                     p1 = intersection[0]
                     p2 = intersection[1]
                     x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
@@ -844,6 +851,8 @@ class TagGraphWithPositionsCV:
             if tag_id == 26:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.right_tags))[::-1]
+                    if len(intersection) == 0:
+                        return None
                     p1 = intersection[0]
                     p2 = intersection[1]
 

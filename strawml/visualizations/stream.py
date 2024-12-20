@@ -264,7 +264,6 @@ class AprilDetector:
             # Step 4: Optionally create and return the cutout
             if make_cutout:
                 return self.helpers._handle_cutouts(frame_drawn, chute_tags, use_cutout)
-
             return frame_drawn, None        
         except Exception as e:
             print(f"ERROR in draw: {e}")
@@ -400,11 +399,31 @@ class RTSPStream(AprilDetector):
         if frame is None:
             print("Frame is None. Skipping...")
             return
+        # Lock and set the frame for thread safety
+        with self.lock:
+            self.frame = frame
+
         # Clear the queue in RTSP mode to avoid lag
         if not from_videofile and self.rtsp:
             self.q.queue.clear()
+
         frame_time = time.time()
+
+        # Find Apriltags
+        if self.detect_april and self.tags is not None:
+            frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
+        else:
+            frame_drawn, cutout = frame, None
         
+        # If not tags have been found we go to the next frame
+        if len(self.tag_ids) == 0:
+            self._display_frame(frame_drawn)
+            return
+        
+        # Process frame (Object Detection, Predictor, etc.)
+        frame_drawn = self._process_frame_content(frame, frame_drawn, cutout)
+
+        # Get scada data
         display_scada_line = False
         if self.record:
             try:
@@ -414,13 +433,16 @@ class RTSPStream(AprilDetector):
                 self.information["scada_smooth"]["text"] = f'(T2) Smoothed Scada Level: {sensor_scada_data:.2f}%'
                 # Get pixel values for scada
                 scada_pixel_values = self.helpers._get_straw_to_pixel_level(sensor_scada_data)
-                # Record sensor data if enabled
-                scada_pixel_values_ = (scada_pixel_values[0], scada_pixel_values[1])
-                # Get angle of self.chute_numbers
-                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
-                line_start = (int(scada_pixel_values_[0]), int(scada_pixel_values_[1]))
-                line_end = (int(scada_pixel_values_[0])+300, int(scada_pixel_values_[1]))
-                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+                if scada_pixel_values[0] is not None:
+                    # Record sensor data if enabled
+                    scada_pixel_values_ = (scada_pixel_values[0], scada_pixel_values[1])
+                    # Get angle of self.chute_numbers
+                    angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                    line_start = (int(scada_pixel_values_[0]), int(scada_pixel_values_[1]))
+                    line_end = (int(scada_pixel_values_[0])+300, int(scada_pixel_values_[1]))
+                    line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+                else:
+                    line_start, line_end = (None,None), (None,None)
                 self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
 
                 if self.recording_req and scada_pixel_values[0] is not None:
@@ -431,13 +453,7 @@ class RTSPStream(AprilDetector):
                 display_scada_line = True
             except Exception as e:
                 print(f'Error while trying to get scada data: {e}')
-                    
-        # Lock and set the frame for thread safety
-        with self.lock:
-            self.frame = frame
-
-        # Process frame (AprilTags, Object Detection, Predictor, etc.)
-        frame_drawn = self._process_frame_content(frame)
+                
 
         # Draw sensor_scada_data on frame based on scada_pixel_values
         if display_scada_line and scada_pixel_values[0] is not None:
@@ -491,14 +507,8 @@ class RTSPStream(AprilDetector):
                 continue
             self.information[key]["text"] = ""
 
-    def _process_frame_content(self, frame: np.ndarray) -> np.ndarray:
+    def _process_frame_content(self, frame: np.ndarray, frame_drawn: np.ndarray, cutout) -> np.ndarray:
         """Handle specific processing like AprilTags, Object Detection, etc."""
-        # Apriltags
-        if self.detect_april and self.tags is not None:
-            frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
-        else:
-            frame_drawn, cutout = frame, None
-
         # Object Detection
         if cutout is not None:
             frame = cutout
@@ -563,6 +573,8 @@ class RTSPStream(AprilDetector):
                     return frame_drawn
                 line_start = (int(x_pixel), int(y_pixel))
                 line_end = (int(x_pixel) + 300, int(y_pixel))
+                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
                 # Plot the boxes and straw level on the frame
                 frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level)
                 self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
