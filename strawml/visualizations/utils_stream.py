@@ -22,9 +22,9 @@ class AprilDetectorHelpers:
         temp = {
             "FPS":              {"text": "", "font_scale": 1,   "font_thicknesss": 2, "position": (10, 40)},
             "scada_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 75)},
-            "scada_og":         {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (250, 75)},
+            "scada_smooth":     {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (250, 75)},
             "straw_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 100)},
-            "straw_og":         {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (250, 100)},
+            "straw_smooth":     {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (250, 100)},
             "undistort_time":   {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 125)},
             "april":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 150)},
             "od":               {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 175)},
@@ -491,9 +491,10 @@ class AprilDetectorHelpers:
         chute_numbers_ = self.ADI.chute_numbers.copy()
         if not len(chute_numbers_) >= 2:
             return "NA"
-            
-        _, straw_cord,_ , _ = straw_bbox
-        straw_cord = straw_cord[0].flatten()
+        
+        # We extract the straw_bbox from the results with the highest confidence
+        straw_cord = straw_bbox[1][torch.argmax(straw_bbox[2])]
+        straw_cord = straw_cord.flatten()
         
         angle = self._get_tag_angle(list(chute_numbers_.values()))
         # from radians to degrees
@@ -632,28 +633,67 @@ class AprilDetectorHelpers:
         pixel_straw_level_y = y_under - (y_under - y_over) * excess/tag_diff
         
         return (pixel_straw_level_x, pixel_straw_level_y)
+    
+    def create_weight_list(self, length, decay_factor=1.5):
+        """
+        Create a weight list of specified length where:
+        - The first entry has the highest weight.
+        - Remaining weights decrease based on the decay factor.
+        - The total sum equals 1.
 
+        Args:
+            length (int): Length of the weight list.
+            decay_factor (float): Controls the rate of decrease. Higher values make weights drop faster.
+
+        Returns:
+            list: A list of weights summing to 1.
+        """
+        if length == 0:
+            return []
+        
+        # Generate decreasing weights
+        weights = [1 / (decay_factor ** i) for i in range(length)]
+        
+        # Normalize to ensure the sum is exactly 1
+        total_weight = sum(weights)
+        normalized_weights = [w / total_weight for w in weights]
+        return normalized_weights
+
+    def _smooth(self, level, history):
+        # Get the current timestamp
+        current_time = time.time()
+
+        # Add the new prediction with its timestamp
+        history.append((current_time, level))
+
+        # Remove entries older than 1 second
+        while history and history[0][0] < current_time - 1:
+            history.popleft()
+
+
+        # Compute the weighted average of the remaining predictions
+        if history:
+            predictions = [pred for _, pred in history]
+            weights = self.create_weight_list(len(predictions))
+            avg_prediction = np.convolve(predictions, weights[::-1], mode='valid')
+        else:
+            avg_prediction = 0  # Default if no predictions are in the window
+        return avg_prediction
+    
     def _smooth_level(self, level: float | None, id:str):
         """Smooth the straw level using a queue."""
         if id == 'scada':
-            self.ADI.scada_smoothing_queue.append(level)
-            filtered_data = [x for x in self.ADI.scada_smoothing_queue if x is not None]
-            mean = np.mean(filtered_data)
             if level is not None:
-                self.ADI.information["scada_og"]["text"] = f'(T2) Original Scada Level: {level:.2f} %'
+                self.ADI.information["scada_level"]["text"] = f'(T2) Scada Level: {level:.2f} %'
             else:
-                self.ADI.information["scada_og"]["text"] = f'(T2) Original Scada Level: NA'
-
-            return mean
+                self.ADI.information["scada_level"]["text"] = f'(T2) Scada Level: NA'
+            return self._smooth(level, self.ADI.scada_smoothing_queue)
         elif id == 'straw':
-            self.ADI.straw_smoothing_queue.append(level)
-            filtered_data = [x for x in self.ADI.straw_smoothing_queue if x is not None]
-            mean = np.mean(filtered_data)
             if level is not None:
-                self.ADI.information["straw_og"]["text"] = f'(T2) Original Straw Level: {level:.2f} %'
+                self.ADI.information["straw_level"]["text"] = f'(T2) Straw Level: {level:.2f} %'
             else:
-                self.ADI.information["straw_og"]["text"] = f'(T2) Original Straw Level: NA'
-            return mean
+                self.ADI.information["straw_level"]["text"] = f'(T2) Straw Level: NA'
+            return self._smooth(level, self.ADI.straw_smoothing_queue)
                 
     
     def _grab_scada_url_n_id(self):

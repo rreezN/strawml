@@ -144,6 +144,14 @@ class AprilDetector:
             self.model.load_state_dict(torch.load(self.model_load_path, weights_only=True))
         self.model.to(self.device)
 
+    def plot_straw_level(self, frame_drawn, line_start, line_end, straw_level, color=(127, 0, 255)) -> np.ndarray:
+        cv2.line(frame_drawn, line_start, line_end, color, 2)
+        if type(straw_level) == str:
+            cv2.putText(frame_drawn, f"{straw_level}", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
+        else:
+            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
+        return frame_drawn
+    
     def plot_boxes(self, results, frame, straw=False, straw_lvl=None, model_type: str = 'obb'):
         """
         Takes a frame and its results as input, and plots the bounding boxes and label on to the frame.
@@ -277,7 +285,7 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
+    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False, smoothing:bool=True) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, yolo_straw=yolo_straw, yolo_straw_model=yolo_straw_model, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         self.record = record
         self.recording_req = False
@@ -299,6 +307,7 @@ class RTSPStream(AprilDetector):
         self.regressor = regressor
         self.predictor_model = predictor_model
         self.frame = None
+        self.smoothing = smoothing
         self.should_abort_immediately = False
         self.threads = []
         self.information = self.helpers._initialize_information_dict()
@@ -411,7 +420,7 @@ class RTSPStream(AprilDetector):
                 # Get scada
                 sensor_scada_data = self.scada_thread.get_recent_value()
                 sensor_scada_data = self.helpers._smooth_level(sensor_scada_data, 'scada')
-                self.information["scada_level"]["text"] = f'(TScada) SCADA: {sensor_scada_data:.2f}%'
+                self.information["scada_smooth"]["text"] = f'(T2) Smoothed Scada Level: {sensor_scada_data:.2f}%'
                 # Get pixel values for scada
                 scada_pixel_values = self.helpers._get_straw_to_pixel_level(sensor_scada_data)
                 # Record sensor data if enabled
@@ -438,9 +447,6 @@ class RTSPStream(AprilDetector):
         # Process frame (AprilTags, Object Detection, Predictor, etc.)
         frame_drawn = self._process_frame_content(frame)
 
-        # Update FPS and resource usage information
-        self._update_information(frame_time)
-
         # Draw sensor_scada_data on frame based on scada_pixel_values
         if display_scada_line and self.record:
             if type(scada_pixel_values) != str:
@@ -458,12 +464,15 @@ class RTSPStream(AprilDetector):
                 cv2.line(frame_drawn, line_start, line_end, (32,165,218), 2)
                 cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (32,165,218), 2, cv2.LINE_AA)
 
+        # Update FPS and resource usage information
+        self._update_information(frame_time)
+
         # Display frame and overlay text
         self._display_frame(frame_drawn)
-
-        
+    
         if self.recording_req:
-            self._save_frame()
+            self._save_frame
+
         # Clean up resources
         torch.cuda.empty_cache()
     
@@ -535,25 +544,34 @@ class RTSPStream(AprilDetector):
             if len(output[0]) != 0:
                 # Extract the straw level from the pixel values of the bbox
                 straw_level = self.helpers._get_pixel_to_straw_level(frame_drawn, output)
-                if straw_level == "NA": # If the straw level is not detected, we add None to the previous straw level smoothing predictions
-                    straw_level = self.helpers._smooth_level(None, 'straw')
-                else: # otherwise we add the detected straw level to the smoothing predictions and get the smoothed straw level
-                    straw_level = self.helpers._smooth_level(straw_level, 'straw')
+                if self.smoothing:
+                    if straw_level == "NA": # If the straw level is not detected, we add None to the previous straw level smoothing predictions
+                        straw_level = self.helpers._smooth_level(None, 'straw')
+                    else: # otherwise we add the detected straw level to the smoothing predictions and get the smoothed straw level
+                        straw_level = self.helpers._smooth_level(straw_level, 'straw')
+                
+                # Since the new straw level might be a smoothed value, we need to update the pixel values of the straw level. We do this everytime to ensure that the overlay is based on the same pixel values all the time. Otherwise the overlay would shift from being based on the bbox pixel values vs. based on the tags.
+                x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
+                line_start = (int(x_pixel), int(y_pixel))
+                line_end = (int(x_pixel) + 300, int(y_pixel))
                 # Plot the boxes and straw level on the frame
-                frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level, model_type="obb")
+                frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level)
                 
                 if type(straw_level) == str:
-                    self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level}'
+                    self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level}'
                 else:
-                    self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
+                    self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
                 self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
             else:
-                straw_level = self.helpers._smooth_level(0, 'straw')
+                if self.smoothing:
+                    straw_level = self.helpers._smooth_level(0, 'straw')
+                else:
+                    straw_level = 0
                 if self.recording_req:
                     # if no bbox is detected, we add 0 to the previous straw level smoothing predictions
                     angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
                     self.helpers._save_tag_0(angle)
-                self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
+                self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
                 self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
         return frame_drawn
 
@@ -583,9 +601,9 @@ class RTSPStream(AprilDetector):
             if self.recording_req:
                 self.prediction_dict["predicted"] = {straw_level: (x_pixel, y_pixel)}
             # Draw line and text for straw level
-            cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 100, int(y_pixel)), (92, 92, 205), 2)
+            cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 300, int(y_pixel)), (92, 92, 205), 2)
             cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel) + 110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 1,  (92, 92, 205), 2, cv2.LINE_AA)
-            self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
+            self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
             self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
             self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
         return frame_drawn
@@ -743,7 +761,7 @@ if __name__ == "__main__":
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     # ### YOLO PREDICTOR
-    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
