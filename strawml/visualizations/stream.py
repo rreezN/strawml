@@ -418,15 +418,16 @@ class RTSPStream(AprilDetector):
                 # Get pixel values for scada
                 scada_pixel_values = self.helpers._get_straw_to_pixel_level(sensor_scada_data)
                 # Record sensor data if enabled
+                scada_pixel_values_ = (scada_pixel_values[0], scada_pixel_values[1])
+                # Get angle of self.chute_numbers
+                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                line_start = (int(scada_pixel_values_[0]), int(scada_pixel_values_[1]))
+                line_end = (int(scada_pixel_values_[0])+300, int(scada_pixel_values_[1]))
+                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
                 self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
-                if self.recording_req:
+
+                if self.recording_req and scada_pixel_values[0] is not None:
                     self.prediction_dict = {}
-                    scada_pixel_values_ = (scada_pixel_values[0], scada_pixel_values[1])
-                    # Get angle of self.chute_numbers
-                    angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
-                    line_start = (int(scada_pixel_values_[0]), int(scada_pixel_values_[1]))
-                    line_end = (int(scada_pixel_values_[0])+300, int(scada_pixel_values_[1]))
-                    line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
                     self.prediction_dict["scada"] = {sensor_scada_data: [line_start, line_end]}
                     # Reset the time
                     self.since_last_save = time.time()
@@ -442,21 +443,9 @@ class RTSPStream(AprilDetector):
         frame_drawn = self._process_frame_content(frame)
 
         # Draw sensor_scada_data on frame based on scada_pixel_values
-        if display_scada_line and self.record:
-            if type(scada_pixel_values) != str:
-                scada_pixel_values = (scada_pixel_values[0], scada_pixel_values[1])
-                
-                # Get angle of self.chute_numbers
-                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
-                # print("angle: ", np.degrees(angle))
-
-                line_start = (int(scada_pixel_values[0]), int(scada_pixel_values[1]))
-                line_end = (int(scada_pixel_values[0])+300, int(scada_pixel_values[1]))
-                
-                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-                
-                cv2.line(frame_drawn, line_start, line_end, (32,165,218), 2)
-                cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (32,165,218), 2, cv2.LINE_AA)
+        if display_scada_line and scada_pixel_values[0] is not None:
+            cv2.line(frame_drawn, line_start, line_end, (32,165,218), 2)
+            cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (32,165,218), 2, cv2.LINE_AA)
 
         # Update FPS and resource usage information
         self._update_information(frame_time)
@@ -764,7 +753,7 @@ if __name__ == "__main__":
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
     
     # ### YOLO PREDICTOR
-    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
