@@ -22,9 +22,12 @@ class FeatureRegressor(torch.nn.Module):
         
         self.r = torch.nn.ReLU()
         self.fc1 = torch.nn.Linear(input_size, 512, dtype=torch.float)
+        # self.fc2 = torch.nn.Linear(512, 512, dtype=torch.float)
+        # self.fc3 = torch.nn.Linear(512, 512, dtype=torch.float)
+        # self.fc4 = torch.nn.Linear(512, 512, dtype=torch.float)
         
         # Output layer
-        self.fc2 = torch.nn.Linear(512, self.output_size, dtype=torch.float)
+        self.out = torch.nn.Linear(512, self.output_size, dtype=torch.float)
         
         self.sigmoid = torch.nn.Sigmoid()
         
@@ -40,7 +43,11 @@ class FeatureRegressor(torch.nn.Module):
         """
         x = torch.flatten(x, 1)
         x = self.r(self.fc1(x))
-        x = self.fc2(x)
+        # x = self.r(self.fc2(x))
+        # x = self.r(self.fc3(x))
+        # x = self.r(self.fc4(x))
+        
+        x = self.out(x)
         x = torch.flatten(x)
         if self.use_sigmoid:
             x = self.sigmoid(x)

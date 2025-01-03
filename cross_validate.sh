@@ -23,4 +23,4 @@ module load matplotlib/3.8.3-numpy-1.26.4-python-3.10.13
 # NOTE: needs to have been built with the same numpy / SciPy  version as above!
 source ~/strawml/.venv/bin/activate
 
-python3 strawml/cross_validate_straw_model.py --model convnextv2 --image_size 384 384 --id edges_384 --inc_edges True --inc_heatmap False --augment_probability 0.0 --cont --use_wce --hpc --lr 0.00001 --epochs 20 --folds 4 --pretrained --data_path train.hdf5
+python3 strawml/cross_validate_straw_model.py --model convnextv2 --image_size 672 208  --id sig_aug_50_adam_data75 --data_subsample 0.75 --optim adam --use_sigmoid --augment_probability 0.5 --cont --use_wce --hpc --lr 0.00001 --epochs 20 --folds 4 --pretrained --data_path train.hdf5

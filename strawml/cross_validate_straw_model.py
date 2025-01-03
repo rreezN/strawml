@@ -123,7 +123,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             
             # Backward pass
             loss.backward()
-            optimizer.step()
+            if not args.only_head and feature_regressor is not None:
+                optimizer.step()
             if feature_regressor is not None: optimizer_feature.step()
 
             if args.cont:
@@ -597,6 +598,7 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'pretrained': args.pretrained,
             'id': args.id,
             'greyscale': args.greyscale,
+            'only_head': args.only_head,
         })
     
     global LOG_DICT
@@ -656,6 +658,7 @@ def get_args():
     parser.add_argument('--id', type=str, default='', help='ID for the run')
     parser.add_argument('--greyscale', action='store_true', help='Use greyscale images')
     parser.add_argument('--hpc', action='store_true', help='Use the HPC')
+    parser.add_argument('--only_head', action='store_true', help='Only train the head of the model')
     return parser.parse_args()
 
 if __name__ == '__main__':
