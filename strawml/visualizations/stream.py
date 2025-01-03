@@ -10,8 +10,10 @@ import psutil
 import keyboard
 import threading
 import numpy as np
+from collections import deque
 from typing import Tuple, Optional, Any
 from torchvision.transforms import v2 as transforms
+from scipy import ndimage
 
 # Model imports
 import timm
@@ -21,8 +23,7 @@ import pupil_apriltags
 from strawml.models.chute_finder.yolo import ObjectDetect
 import strawml.models.straw_classifier.cnn_classifier as cnn
 import strawml.models.straw_classifier.feature_model as feature_model
-from strawml.visualizations.utils_stream import AprilDetectorHelpers, AsyncStreamThread
-from strawml.data.image_utils import SpecialRotate
+from strawml.visualizations.utils_stream import AprilDetectorHelpers, AsyncStreamThread, time_function
 
 class AprilDetector:
     """
@@ -143,7 +144,15 @@ class AprilDetector:
             self.model.load_state_dict(torch.load(self.model_load_path, weights_only=True))
         self.model.to(self.device)
 
-    def plot_boxes(self, results, frame, straw=False, straw_lvl=None, model_type: str = 'obb'):
+    def plot_straw_level(self, frame_drawn, line_start, line_end, straw_level, color=(127, 0, 255)) -> np.ndarray:
+        cv2.line(frame_drawn, line_start, line_end, color, 2)
+        if straw_level is None:
+            cv2.putText(frame_drawn, "NA", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
+        else:
+            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
+        return frame_drawn
+    
+    def plot_boxes(self, results, frame, model_type: str = 'obb'):
         """
         Takes a frame and its results as input, and plots the bounding boxes and label on to the frame.
         :param results: contains labels and coordinates predicted by model on the given frame.
@@ -164,18 +173,14 @@ class AprilDetector:
             if 'obb' in model_type:
                 x1, y1, x2, y2, x3, y3, x4, y4 = cord[i].flatten()
                 x1, y1, x2, y2, x3, y3, x4, y4 = int(x1), int(y1), int(x2), int(y2), int(x3), int(y3), int(x4), int(y4)
-                if straw:
-                    # Only plot the upper vertical line
-                    cv2.line(frame, (x1, y1), (x4, y4), (127,0,255), 2)
-                    cv2.putText(frame, f"{straw_lvl:.2f} %", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
-                else:                        
-                    # draw lines between the corners
-                    cv2.line(frame, (x1, y1), (x2, y2), (138,43,226), 2)
-                    cv2.line(frame, (x2, y2), (x3, y3), (138,43,226), 2)
-                    cv2.line(frame, (x3, y3), (x4, y4), (138,43,226), 2)
-                    cv2.line(frame, (x4, y4), (x1, y1), (138,43,226), 2)
-                    # plot label on the object
-                    cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                      
+                # draw lines between the cornersq
+                cv2.line(frame, (x1, y1), (x2, y2), (138,43,226), 2)
+                cv2.line(frame, (x2, y2), (x3, y3), (138,43,226), 2)
+                cv2.line(frame, (x3, y3), (x4, y4), (138,43,226), 2)
+                cv2.line(frame, (x4, y4), (x1, y1), (138,43,226), 2)
+                # plot label on the object
+                cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
             else:
                 x1, y1, x2, y2 = cord[i].flatten()
                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
@@ -259,7 +264,6 @@ class AprilDetector:
             # Step 4: Optionally create and return the cutout
             if make_cutout:
                 return self.helpers._handle_cutouts(frame_drawn, chute_tags, use_cutout)
-
             return frame_drawn, None        
         except Exception as e:
             print(f"ERROR in draw: {e}")
@@ -274,13 +278,15 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
+    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False, smoothing:bool=True) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, yolo_straw=yolo_straw, yolo_straw_model=yolo_straw_model, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         self.record = record
         self.recording_req = False
         self.record_threshold = record_threshold
         if record:
             self.recording_queue = queue.Queue()
+            self.scada_smoothing_queue = deque(maxlen=5)
+        self.straw_smoothing_queue = deque(maxlen=5)
         self.rtsp = rtsp
         self.yolo_straw = yolo_straw
         self.wanted_tags = ids
@@ -294,6 +300,7 @@ class RTSPStream(AprilDetector):
         self.regressor = regressor
         self.predictor_model = predictor_model
         self.frame = None
+        self.smoothing = smoothing
         self.should_abort_immediately = False
         self.threads = []
         self.information = self.helpers._initialize_information_dict()
@@ -319,149 +326,7 @@ class RTSPStream(AprilDetector):
         cap.set(cv2.CAP_PROP_FPS, 25)
         # cap.open(f"rtsp://{username}:{password}@{ip}:{rtsp_port}/Streaming/Channels/101")
         return cap
-    
-    def get_pixel_to_straw_level(self, frame, straw_bbox):
-        """ Finds the straw level based on the detected tags in the chute. """
-        chute_numbers = self.chute_numbers.copy()
-        if not len(chute_numbers) >= 2:
-            return frame, 0
-            
-        _, straw_cord,_ , _ = straw_bbox
-        straw_cord = straw_cord[0].flatten()
-        
-        # Get angle of self.chute_numbers
-        angle = self.helpers._get_tag_angle(list(chute_numbers.values()))
-        
-        # Rotate the frame to the angle of the chute and the bbox
-        rotated_frame, _, bbox_ = SpecialRotate(image=frame, bbox=straw_bbox[1][0].cpu().numpy(), angle=angle)
-
-        # Extract the top of the straw bbox
-        straw_top = (bbox_[1] + bbox_[-1])/2
-        
-        # Given the straw bbox, we need to calculate the straw level based on the center of each tag in the chute. We know that the id of each tag corresponds to the level of the chute, meaning 1 is 10%, 2 is 20% and so on. We need to find the two closest tags in the y-axis to the straw bbox and calculate the straw level based on the distance between the two tags.
-        # We can do this by calculating the distance between the straw bbox and the center of each tag in the chute. We then sort the distances and find the two closest tags. We then calculate the distance between the straw bbox and the two closest tags and use this to calculate the straw level.
-        distance_dict_under = {}
-        distance_dict_above = {}
-        for key, values in chute_numbers.items():
-            distance = straw_top - values[1]
-            if distance < 0:
-                distance_dict_under[distance] = key
-            else:
-                distance_dict_above[distance] = key
-
-        # there are three cases to consider, no detected tags under, no detected tags above, and detected tags both above and under
-        if len(distance_dict_under) == 0 or len(distance_dict_above) == 0:
-            return frame, 0
-          
-        # sort the dictionary by key
-        distance_dict_under = dict(sorted(distance_dict_under.items(), reverse=True))
-        distance_dict_above = dict(sorted(distance_dict_above.items()))
-        
-        # get the two closest tags
-        tag_under, tag_above = list(distance_dict_under.values())[0], list(distance_dict_above.values())[0]
-
-        # we get the difference between the two tags ids to see if we are missing tags inbetween
-        tag_diff = tag_above - tag_under
-        if tag_diff > 1:
-            interpolated = True
-        else:
-            interpolated = False
-        
-        # If the tag_diff is greateer than one, then we need to perform a linear interpolation between the points to get the straw level
-        y_under = chute_numbers[tag_under][1]
-        y_over = chute_numbers[tag_above][1]
-        x_mean = (chute_numbers[tag_under][0] + chute_numbers[tag_above][0]) / 2
-        
-        # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
-        straw_level = (tag_diff * (y_under-straw_top) / (y_under-y_over) + tag_under)*10
-        
-        if self.record and self.recording_req:
-            self.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
-            self.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
-        
-        return rotated_frame, straw_level
-    
-    def get_straw_to_pixel_level(self, straw_level):
-        # We know that the self.chute_numbers are ordered from 0 to 10. We can use this to calculate the pixel value of the straw level
-        # we know that each tag is 10% of the chute, meaning that the distance between each tag is 10% of the chute height. We can use 
-        # this to calculate the pixel value of the straw level.
-        # We can use the distance between the two closest tags to calculate the pixel value of the straw level.
-        chute_numbers = self.chute_numbers.copy()
-
-        # First we divide the straw level by 10 to get it on the same scale as the tag ids
-        straw_level = straw_level / 10
-
-        # We then get the two closest tags
-        tag_under, tag_over = int(straw_level), int(straw_level) + 1
-        
-        # next we find the two closest tags in chute_numbers based on the tag ids
-        # First we create a list for the values that are less or equal to the tag_under and greater than the tag_over
-        tag_under_list = [key for key, _ in chute_numbers.items() if key <= tag_under]
-        tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
-
-        # next we order them
-        tag_under_list = sorted(tag_under_list, reverse=True)
-        tag_over_list = sorted(tag_over_list)
-        
-        # Then we see if the tag_under_closest is above or below the straw level
-        tag_under_closest = tag_under_list[0]
-        tag_over_closest = tag_over_list[0]
-
-        # calculate difference between tag ids
-        tag_diff = tag_over_closest - tag_under_closest
-        if tag_diff > 1:
-            interpolated = True
-        else:
-            interpolated = False
-        
-        # get the distance between the two closest tags
-        y_under = chute_numbers[tag_under_closest][1]
-        y_over = chute_numbers[tag_over_closest][1]
-        
-        # get the pixel value of the straw level
-        excess = straw_level - tag_under_closest
-        pixel_straw_level_x = (chute_numbers[tag_under_closest][0] + chute_numbers[tag_over_closest][0]) / 2
-        pixel_straw_level_y = y_under - (y_under - y_over) * excess/tag_diff
-
-        
-        return (pixel_straw_level_x, pixel_straw_level_y)
-    
-    @staticmethod
-    def time_function(func, *args, **kwargs):
-        """
-        Wrapper function to time the execution of any function.
-        
-        Parameters:
-        -----------
-        func : function
-            The function to be timed.
-        *args : tuple
-            The positional arguments to pass to the function.
-        **kwargs : dict
-            The keyword arguments to pass to the function.
-        
-        Returns:
-        --------
-        result : any
-            The result of the function call.
-        elapsed_time : float
-            The time taken to execute the function in seconds.
-        """
-        if isinstance(func, list):
-            start_time = time.time()
-            # TODO: Only works for non-cnn models right now
-            result = func[0].forward_features(*args, **kwargs)
-            # if result.shape[0] == 1: result = result.flatten()
-            # else: result = result.flatten(1)
-            result = func[1](result)
-            elapsed_time = time.time() - start_time
-        else:
-            start_time = time.time()
-            result = func(*args, **kwargs)
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-        return result, elapsed_time
-
+  
     def receive_frame(self, cap: cv2.VideoCapture) -> None:
         ret, frame = cap.read()
         self.q.put(frame)
@@ -534,56 +399,76 @@ class RTSPStream(AprilDetector):
         if frame is None:
             print("Frame is None. Skipping...")
             return
+        # Lock and set the frame for thread safety
+        with self.lock:
+            self.frame = frame
+
         # Clear the queue in RTSP mode to avoid lag
         if not from_videofile and self.rtsp:
             self.q.queue.clear()
+
         frame_time = time.time()
+
+        # Find Apriltags
+        if self.detect_april and self.tags is not None:
+            frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
+        else:
+            frame_drawn, cutout = frame, None
         
+        # If not tags have been found we go to the next frame
+        if len(self.tag_ids) == 0:
+            self._display_frame(frame_drawn)
+            return
+        
+        # Process frame (Object Detection, Predictor, etc.)
+        frame_drawn = self._process_frame_content(frame, frame_drawn, cutout)
+
+        # Get scada data
         display_scada_line = False
         if self.record:
             try:
                 # Get scada
                 sensor_scada_data = self.scada_thread.get_recent_value()
-                self.information["scada_level"]["text"] = f'(TScada) SCADA: {sensor_scada_data:.2f}%'
+                sensor_scada_data = self.helpers._smooth_level(sensor_scada_data, 'scada')
+                self.information["scada_smooth"]["text"] = f'(T2) Smoothed Scada Level: {sensor_scada_data:.2f}%'
                 # Get pixel values for scada
-                scada_pixel_values = self.get_straw_to_pixel_level(sensor_scada_data)
-                # Record sensor data if enabled
+                scada_pixel_values = self.helpers._get_straw_to_pixel_level(sensor_scada_data)
+                if scada_pixel_values[0] is not None:
+                    # Record sensor data if enabled
+                    scada_pixel_values_ = (scada_pixel_values[0], scada_pixel_values[1])
+                    # Get angle of self.chute_numbers
+                    angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                    line_start = (int(scada_pixel_values_[0]), int(scada_pixel_values_[1]))
+                    line_end = (int(scada_pixel_values_[0])+300, int(scada_pixel_values_[1]))
+                    line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+                else:
+                    line_start, line_end = (None,None), (None,None)
                 self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
-                if self.recording_req:
-                    # Init recording file
+
+                if self.recording_req and scada_pixel_values[0] is not None:
                     self.prediction_dict = {}
-                    # Save the scada data and pixel values
-                    self.prediction_dict["scada"] = {sensor_scada_data: scada_pixel_values}
+                    self.prediction_dict["scada"] = {sensor_scada_data: [line_start, line_end]}
                     # Reset the time
                     self.since_last_save = time.time()
                 display_scada_line = True
             except Exception as e:
                 print(f'Error while trying to get scada data: {e}')
                 
-            
-        # Lock and set the frame for thread safety
-        with self.lock:
-            self.frame = frame
 
-        # Process frame (AprilTags, Object Detection, Predictor, etc.)
-        frame_drawn = self._process_frame_content(frame)
+        # Draw sensor_scada_data on frame based on scada_pixel_values
+        if display_scada_line and scada_pixel_values[0] is not None:
+            cv2.line(frame_drawn, line_start, line_end, (32,165,218), 2)
+            cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (32,165,218), 2, cv2.LINE_AA)
 
         # Update FPS and resource usage information
         self._update_information(frame_time)
 
-        # Draw sensor_scada_data on frame based on scada_pixel_values
-        if display_scada_line and self.record:
-            pix_x = scada_pixel_values[0]
-            scada_pixel_values = (pix_x+100, scada_pixel_values[1])
-            cv2.line(frame_drawn, (int(scada_pixel_values[0]), int(scada_pixel_values[1])), (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1])), (255, 4, 0), 2)
-            cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 4, 0), 2, cv2.LINE_AA)
-
         # Display frame and overlay text
         self._display_frame(frame_drawn)
+    
+        if self.recording_req:
+            self._save_frame
 
-        
-        if self.record and self.recording_req:
-            self._save_frame()
         # Clean up resources
         torch.cuda.empty_cache()
     
@@ -622,18 +507,14 @@ class RTSPStream(AprilDetector):
                 continue
             self.information[key]["text"] = ""
 
-    def _process_frame_content(self, frame: np.ndarray) -> np.ndarray:
+    def _process_frame_content(self, frame: np.ndarray, frame_drawn: np.ndarray, cutout) -> np.ndarray:
         """Handle specific processing like AprilTags, Object Detection, etc."""
-        if self.detect_april and self.tags is not None:
-            frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
-        else:
-            frame_drawn, cutout = frame, None
-
+        # Object Detection
         if cutout is not None:
             frame = cutout
             results = None
         elif self.object_detect:
-            results, OD_time = self.time_function(self.OD.score_frame, frame)
+            results, OD_time = time_function(self.OD.score_frame, frame)
             # Make sure the results are not empty
             if len(results[0]) == 0:
                 results = "NA"
@@ -641,46 +522,99 @@ class RTSPStream(AprilDetector):
         else:
             results = "NA"
 
+        # Predictor of the straw level
         if results != "NA":
             if self.with_predictor:
                 frame_drawn = self._process_predictions(frame, results, frame_drawn)
             if self.object_detect:
-                frame_drawn = self.plot_boxes(results, frame_drawn, straw=False, straw_lvl=None, model_type="obb")
+                frame_drawn = self.plot_boxes(results, frame_drawn, model_type="obb")
         elif self.yolo_straw:
-            output, inference_time = self.time_function(self.model.score_frame, frame)
+            output, inference_time = time_function(self.model.score_frame, frame)
+            # If the output is not empty, we can plot the boxes and get the straw level
             if len(output[0]) != 0:
-                frame_drawn, straw_level = self.get_pixel_to_straw_level(frame_drawn, output)
-                frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level, model_type="obb")
-                self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
+                # Extract the straw level from the pixel values of the bbox
+                straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level(frame_drawn, output)
+                
+                # Smooth the data
+                if self.smoothing:
+                    straw_level = self.helpers._smooth_level(straw_level, 'straw')
+                
+                # Since the new straw level might be a smoothed value, we need to update the pixel values of the straw level. We do this everytime to ensure that the overlay is based on the same pixel values all the time. Otherwise the overlay would shift from being based on the bbox pixel values vs. based on the tags.
+                x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
+                if x_pixel is None:
+                    return frame_drawn
+                
+                # Define the overlay lines and orientation
+                line_start = (int(x_pixel), int(y_pixel))
+                line_end = (int(x_pixel) + 300, int(y_pixel))
+                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+                
+                # Plot the line on the frame
+                frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level)
+
+                if self.recording_req:
+                    # Get coordiantes for the original data
+                    self.prediction_dict["yolo"] = {straw_level: [line_start, line_end]}
+                    self.prediction_dict["attr."] = {interpolated: chute_nrs}
+
+                if straw_level is None:
+                    self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: NA'
+                else:
+                    self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
                 self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
+            else:
+                if self.smoothing:
+                    straw_level = self.helpers._smooth_level(0, 'straw')
+                else:
+                    straw_level = 0
+                x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
+                if x_pixel is None:
+                    return frame_drawn
+                line_start = (int(x_pixel), int(y_pixel))
+                line_end = (int(x_pixel) + 300, int(y_pixel))
+                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+                # Plot the boxes and straw level on the frame
+                frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level)
+                self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
+                self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
+                if self.recording_req:
+                    # if no bbox is detected, we add 0 to the previous straw level smoothing predictions
+                    angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                    self.helpers._save_tag_0(angle)
+                
         return frame_drawn
 
     def _process_predictions(self, frame, results, frame_drawn):
         """Run model predictions and update overlay."""
-        cutout_image, prep_time = self.time_function(self.helpers._prepare_for_inference, frame, results)
+        cutout_image, prep_time = time_function(self.helpers._prepare_for_inference, frame, results)
         if cutout_image is not None:
             if self.regressor:
                 if self.predictor_model != 'cnn':
-                    output, inference_time = self.time_function([self.model, self.regressor_model], cutout_image.to(self.device))
+                    output, inference_time = time_function([self.model, self.regressor_model], cutout_image.to(self.device))
                 else:
-                    output, inference_time = self.time_function(self.model, cutout_image.to(self.device))
+                    output, inference_time = time_function(self.model, cutout_image.to(self.device))
                 # detach the output from the device and get the predicted value
                 output = output.detach().cpu()
                 straw_level = output[0].item()*100
             else:
-                output, inference_time = self.time_function(self.model, cutout_image.to(self.device)) 
+                output, inference_time = time_function(self.model, cutout_image.to(self.device)) 
                 # detach the output from the device and get the predicted value
                 output = output.detach().cpu()
                 _, predicted = torch.max(output, 1)
                 straw_level = predicted[0]*10
-
-            x_pixel, y_pixel = self.get_straw_to_pixel_level(straw_level)      
-            if self.record and self.recording_req:
+            
+            # We smooth the straw level
+            straw_level = self.helpers._smooth_level(straw_level, 'straw')
+            
+            x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)      
+            if self.recording_req:
                 self.prediction_dict["predicted"] = {straw_level: (x_pixel, y_pixel)}
             # Draw line and text for straw level
-            cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 100, int(y_pixel)), (92, 92, 205), 2)
+            cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 300, int(y_pixel)), (92, 92, 205), 2)
             cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel) + 110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 1,  (92, 92, 205), 2, cv2.LINE_AA)
-            self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
+            self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
             self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
             self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
         return frame_drawn
@@ -767,6 +701,10 @@ class RTSPStream(AprilDetector):
                 if cap is not None:
                     self.cap = cap
                 print("START: Threads and resources...")
+                if self.record:
+                    self.scada_thread = AsyncStreamThread(server_keys='data/opcua_server.txt')
+                    self.scada_thread.start()
+                    self.threads.append(self.scada_thread)
                 self.thread1 = threading.Thread(target=self.receive_frame, args=(self.cap,))
                 self.thread2 = threading.Thread(target=self.display_frame)
                 self.thread1.start()
@@ -776,10 +714,6 @@ class RTSPStream(AprilDetector):
                     self.thread3 = threading.Thread(target=self.find_tags)
                     self.thread3.start()
                     self.threads.append(self.thread3)
-                if self.record:
-                    self.scada_thread = AsyncStreamThread(server_keys='data/opcua_server.txt')
-                    self.scada_thread.start()
-                    self.threads.append(self.scada_thread)
                 while True:
                     if keyboard.is_pressed('q'):
                         self.close_threads()
@@ -815,8 +749,8 @@ if __name__ == "__main__":
         debug=config["debug"]
     )
 
-    # video_path = "data/raw/Pin drum Chute 2_HKVision_HKVision_20241102105959_20241102112224_1532587042.mp4"
-    video_path = "D:/HCAI/msc/strawml/data/special/Pin drum Chute 2_HKVision_HKVision_20241102112224_20241102113000_1532606664.mp4"
+    # video_path = "data/raw/videos/2024-11-21-16h02m03s.mp4"
+    # video_path = "C:/Users/ikaos/OneDrive/Desktop/strawml/data/raw/stream-2024-09-23-10h11m28s.mp4"
     # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
     #            rtsp=False, # Only used when the stream is from an RTSP source
     #            make_cutout=False, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
@@ -841,6 +775,6 @@ if __name__ == "__main__":
     RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=True , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-        detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
+        detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
         with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
         device='cuda')()
