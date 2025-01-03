@@ -599,6 +599,8 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'id': args.id,
             'greyscale': args.greyscale,
             'only_head': args.only_head,
+            'num_hidden_layers': args.num_hidden_layers,
+            'num_neurons': args.num_neurons,
         })
     
     global LOG_DICT
@@ -659,6 +661,8 @@ def get_args():
     parser.add_argument('--greyscale', action='store_true', help='Use greyscale images')
     parser.add_argument('--hpc', action='store_true', help='Use the HPC')
     parser.add_argument('--only_head', action='store_true', help='Only train the head of the model')
+    parser.add_argument('--num_hidden_layers', type=int, default=0, help='Number of hidden layers for the regressor. Default: 0 (in->out)')
+    parser.add_argument('--num_neurons', type=int, default=512, help='Number of neurons for the regressor')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -788,7 +792,7 @@ if __name__ == '__main__':
             # in_feats = in_feats.cuda() if torch.cuda.is_available() else in_feats
             features = model.forward_features(in_feats)
             feature_size = torch.flatten(features, 1).shape[1]
-            feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=args.use_sigmoid)
+            feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=args.use_sigmoid, num_hidden_layers=args.num_hidden_layers, num_neurons=args.num_neurons)
         else:
             feature_regressor = None
         
