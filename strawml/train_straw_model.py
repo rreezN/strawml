@@ -592,7 +592,7 @@ if __name__ == '__main__':
         case 'cnn':
             model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw, use_sigmoid=args.use_sigmoid)
         case 'convnextv2':
-            model = timm.create_model('convnextv2_base.fcmae_ft_in222k_in1k_384', in_chans=input_channels, num_calsses=args.num_classes_straw, pretrained=args.pretrained)
+            model = timm.create_model('convnextv2_base.fcmae_ft_in22k_in1k_384', in_chans=input_channels, num_calsses=args.num_classes_straw, pretrained=args.pretrained)
         case 'convnext':
             model = timm.create_model('convnext_small.in12k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
         case 'vit':
