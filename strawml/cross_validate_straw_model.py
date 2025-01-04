@@ -679,19 +679,22 @@ if __name__ == '__main__':
         print('Including heatmaps in the training data')
     
     # Is this how we want to do it?
+    ## NOTE SET NAME OF WORK3 USER
+    pers_id = "s194247"
+    # pers_id = "davos"
     if args.hpc:
-        path_to_data = f'/work3/davos/data/'
+        path_to_data = f'/work3/{pers_id}/data/'
         if not os.path.exists(path_to_data):
             raise FileNotFoundError(f'Path to data not found: {path_to_data}')
         os.makedirs(f'{path_to_data}', exist_ok=True)
         args.data_path = path_to_data + args.data_path
         if not os.path.exists(args.data_path):
             raise FileNotFoundError(f'Data path not found: {args.data_path}')
-        args.save_path = f'/work3/davos/models/'
+        args.save_path = f'/work3/{pers_id}/models/'
         os.makedirs(args.save_path, exist_ok=True)
         if not os.path.exists(args.save_path):
             raise FileNotFoundError(f'Save path not found: {args.save_path}')
-        sensor_path = f'/work3/davos/data/sensors.hdf5'
+        sensor_path = f'/work3/{pers_id}/data/sensors.hdf5'
         if not os.path.exists(sensor_path):
             raise FileNotFoundError(f'Sensor data path not found: {sensor_path}')
     
@@ -727,7 +730,7 @@ if __name__ == '__main__':
     # test_set = dl.Chute(data_path=args.data_path, data_type='val', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
     #                     random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont)
-    sensor_set = dl.Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
+    sensor_set = dl.Chute(data_path=f'work3/{pers_id}/data/sensors.hdf5', data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                           random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=1.0,
                           augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics, greyscale=args.greyscale)
     
