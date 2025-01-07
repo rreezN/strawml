@@ -11,20 +11,26 @@ import strawml.models.straw_classifier.utils as utils
 class FeatureRegressor(torch.nn.Module):
     """ Basic CNN classifier class.
     """
-    def __init__(self, image_size=(448, 448), input_size=1024, output_size=1, use_sigmoid=False) -> None:
+    def __init__(self, image_size=(448, 448), input_size=1024, output_size=1, use_sigmoid=False, num_hidden_layers=0, num_neurons=512) -> None:
         super(FeatureRegressor, self).__init__()
 
         self.image_size = image_size
         self.output_size = output_size
         self.use_sigmoid = use_sigmoid
+        self.num_hidden_layers = num_hidden_layers
         
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         self.r = torch.nn.ReLU()
-        self.fc1 = torch.nn.Linear(input_size, 512, dtype=torch.float)
+        self.input_layer = torch.nn.Linear(input_size, num_neurons, dtype=torch.float)
+        
+        # Hidden layers
+        self.hidden_layers = torch.nn.ModuleList()
+        for i in range(num_hidden_layers):
+            self.hidden_layers.append(torch.nn.Linear(num_neurons, num_neurons, dtype=torch.float))
         
         # Output layer
-        self.fc2 = torch.nn.Linear(512, self.output_size, dtype=torch.float)
+        self.out = torch.nn.Linear(num_neurons, self.output_size, dtype=torch.float)
         
         self.sigmoid = torch.nn.Sigmoid()
         
@@ -39,8 +45,13 @@ class FeatureRegressor(torch.nn.Module):
         
         """
         x = torch.flatten(x, 1)
-        x = self.r(self.fc1(x))
-        x = self.fc2(x)
+        x = self.r(self.input_layer(x))
+        
+        if self.num_hidden_layers > 0:
+            for i in range(self.num_hidden_layers):
+                x = self.r(self.hidden_layers[i](x))
+        
+        x = self.out(x)
         x = torch.flatten(x)
         if self.use_sigmoid:
             x = self.sigmoid(x)

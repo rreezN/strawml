@@ -201,7 +201,7 @@ class Chute(torch.utils.data.Dataset):
                                   ]
 
                 augmentation = transforms.RandomChoice(transform_list)
-                print(f'Augmenting frame {self.indices[idx]}')
+                # print(f'Augmenting frame {self.indices[idx]}')
                 if self.inc_heatmap:
                     img = augmentation(frame_data[0])
                     # heatmap = augmentation(frame_data[1])

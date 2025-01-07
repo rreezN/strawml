@@ -1,5 +1,14 @@
 # TODO
 
+## Optimal Model Settings
+### ConvNeXtv2
+- Best mean sensor accuracy: Large images, no sig, ADAM, 1 hidden layer, 512 neurons, no manual features 
+- Overall best sensor accuracy: Large images, sig, ADAM, 1 hidden layer, 512 neurons, no manual features
+  
+### Vision Transformer
+- Best mean sensor accuracy: Large images, sig, ADAMW, 1 hidden layer, 512 neurons, no manual features
+- Overall best sensor accuracy: Large images, sig, ADAMW, 1 hidden layer, 512 neurons, no manual features
+
 ## Model Experiments (in order)
 ### Architecture experiments
 These experiments should be done as barebones as possible. No additional fancy features. No data augmentation. No edges, heatmaps. No LR schedulers, bare minimum LR tuning, ADAM optimizer. The goal is to figure out which overall architecture will best satisfy our needs within both accuracy and inference time.
@@ -17,11 +26,14 @@ MODEL - top1 acc - img_size - param_count
 - [X] Classifier
 - [X] Classifier w. weighted CE
 
+#### Only Train Head
+- [X] Head only
+
 ### Image size experiments
 Some models (ConvNeXt for example) are fully convolutional, and thus don't depend on image size. Others can manually specify input sizes for. Might be a good idea to test, especially with non-square images.
 
-- [ ] [ConvNeXt](https://github.com/huggingface/pytorch-image-models/discussions/2269) (should be able to use any size image)
-- [ ] [ViT](https://github.com/huggingface/pytorch-image-models/discussions/2104) (can use non-square images, but must be multiple of patch size) (training time does not scale well with larger images - might need to look into compiling torch with flash attention)
+- [X] [ConvNeXt](https://github.com/huggingface/pytorch-image-models/discussions/2269) (should be able to use any size image)
+- [X] [ViT](https://github.com/huggingface/pytorch-image-models/discussions/2104) (can use non-square images, but must be multiple of patch size) (training time does not scale well with larger images - might need to look into compiling torch with flash attention)
 
 Other models should also be possible..
 
@@ -29,21 +41,21 @@ Other models should also be possible..
 The goal of these experiments is to test adjustments in architecture after selecting the overall architecture.
 
 #### Sigmoid vs Clamp
-- [ ] Nothing
-- [ ] Sigmoid
-- [ ] Clamp
+- [X] Nothing
+- [X] Sigmoid
 
 #### TIMM regressor architecture (feature_regressor)
-- [ ] Number of layers
-- [ ] Number of neurons
+- [X] Number of layers
+- [X] Number of neurons
+- [ ] Try a CNN instead of a FCN as the feature regressor
 - [ ] BatchNorm, etc..
 - [ ] Average pool instead of FCN
 
 #### Manual Features
-- [ ] RGB (standard images)
-- [ ] Greyscale only
-- [ ] Include edges
-- [ ] Include heatmaps
+- [X] RGB (standard images)
+- [X] Greyscale only
+- [X] Include edges
+- [X] Include heatmaps
 - [ ] Only edges
 - [ ] Only heatmaps
 - [ ] Fourier transform
@@ -55,9 +67,9 @@ These experiments will alter the training by introducing different optimisers, l
 
 #### Optimisers
 - [ ] Research SOTA optimisers
-- [ ] Adam
-- [ ] AdamW
-- [ ] SGD
+- [X] Adam
+- [X] AdamW
+- [X] SGD
 
 THESE ARE NEW AND SOTA (and it might be possible to combine them, but that would probably constitute a research paper of its own):
 - [ ] [SOAP](https://arxiv.org/abs/2409.11321)
@@ -81,28 +93,16 @@ After having selected a model and training procedure, we will try to experiment 
 #### Model Changes
 - [ ] Dropout
 - [ ] AveragePool instead of FCN at the end (feature_regressor)
-- [ ] Image size
+- [X] Image size
 - [ ] Smaller batch size sometimes increases regularisation
 - [ ] Try a larger model (sometimes can be good even for validation)
 
-#### Dataset Size
-- [ ] 25% of training data
-- [ ] 50% of training data
-- [ ] 75% of training data
-- [ ] 100% of training data
 
 #### Data Augmentation
-- [ ] RGBShift
-- [ ] HueSaturationValue
-- [ ] ChannelShuffle
-- [ ] CLAHE
-- [ ] RandomContrast
-- [ ] RandomGamma
-- [ ] RandomBrightness
-- [ ] Blur
-- [ ] MedianBlur
-- [ ] JpegCompression
-- [ ] Noise ? - careful can cause some features to go kaboom
+- [X] 25%
+- [X] 50%
+- [X] 75%
+- [X] 100% 
 
 
 ### Hyperparameter Tuning
@@ -110,7 +110,7 @@ Finally, once the desired augmentations and features have been selected, we will
 
 #### Parameters and their ranges:
 - Learning Rate: 0.01 - 0.0000001
-- ...
+- Batch size: 4 - 128
 - ....
 
 ### Squeezing out the juice (if time)
@@ -118,13 +118,8 @@ Finally, once the desired augmentations and features have been selected, we will
   - [ ] Would probably need to look into some sort of distilling to hit inference time targets https://arxiv.org/abs/1503.02531
 - [ ] Leave it training (for very very long - multiple days)
 
-
-## Model implementations
-- [X] Feature extraction from pretrained to use in continuous version
-- [X] Setup predict_model to work with pretrained regressions
-- [X] Cross-validation
-- [ ] More features ?
-
-
-## BIG ONE
-- [ ] Go through http://karpathy.github.io/2019/04/25/recipe/
+#### Dataset Size
+- [ ] 25% of training data
+- [ ] 50% of training data
+- [ ] 75% of training data
+- [ ] 100% of training data

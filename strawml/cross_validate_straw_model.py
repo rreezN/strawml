@@ -123,7 +123,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             
             # Backward pass
             loss.backward()
-            optimizer.step()
+            if not args.only_head and feature_regressor is not None:
+                optimizer.step()
             if feature_regressor is not None: optimizer_feature.step()
 
             if args.cont:
@@ -597,6 +598,9 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'pretrained': args.pretrained,
             'id': args.id,
             'greyscale': args.greyscale,
+            'only_head': args.only_head,
+            'num_hidden_layers': args.num_hidden_layers,
+            'num_neurons': args.num_neurons,
         })
     
     global LOG_DICT
@@ -640,7 +644,7 @@ def get_args():
     parser.add_argument('--inc_edges', action='store_true', help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--no_wandb', action='store_true', help='Do not use Weights and Biases for logging')
-    parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
+    parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnext', 'convnextv2', 'vit', 'eva02', 'caformer'])
     parser.add_argument('--image_size', type=int, default=[1370, 204], help='Image size for the model (only for CNN)', nargs=2)
     parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
     parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class')
@@ -656,6 +660,9 @@ def get_args():
     parser.add_argument('--id', type=str, default='', help='ID for the run')
     parser.add_argument('--greyscale', action='store_true', help='Use greyscale images')
     parser.add_argument('--hpc', action='store_true', help='Use the HPC')
+    parser.add_argument('--only_head', action='store_true', help='Only train the head of the model')
+    parser.add_argument('--num_hidden_layers', type=int, default=0, help='Number of hidden layers for the regressor. Default: 0 (in->out)')
+    parser.add_argument('--num_neurons', type=int, default=512, help='Number of neurons for the regressor')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -672,19 +679,22 @@ if __name__ == '__main__':
         print('Including heatmaps in the training data')
     
     # Is this how we want to do it?
+    ## NOTE SET NAME OF WORK3 USER
+    pers_id = "s194247"
+    # pers_id = "davos"
     if args.hpc:
-        path_to_data = f'/work3/davos/data/'
+        path_to_data = f'/work3/{pers_id}/data/'
         if not os.path.exists(path_to_data):
             raise FileNotFoundError(f'Path to data not found: {path_to_data}')
         os.makedirs(f'{path_to_data}', exist_ok=True)
         args.data_path = path_to_data + args.data_path
         if not os.path.exists(args.data_path):
             raise FileNotFoundError(f'Data path not found: {args.data_path}')
-        args.save_path = f'/work3/davos/models/'
+        args.save_path = f'/work3/{pers_id}/models/'
         os.makedirs(args.save_path, exist_ok=True)
         if not os.path.exists(args.save_path):
             raise FileNotFoundError(f'Save path not found: {args.save_path}')
-        sensor_path = f'/work3/davos/data/sensors.hdf5'
+        sensor_path = f'/work3/{pers_id}/data/sensors.hdf5'
         if not os.path.exists(sensor_path):
             raise FileNotFoundError(f'Sensor data path not found: {sensor_path}')
     
@@ -720,7 +730,7 @@ if __name__ == '__main__':
     # test_set = dl.Chute(data_path=args.data_path, data_type='val', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
     #                     random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont)
-    sensor_set = dl.Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
+    sensor_set = dl.Chute(data_path=f'work3/{pers_id}/data/sensors.hdf5', data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                           random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=1.0,
                           augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics, greyscale=args.greyscale)
     
@@ -770,6 +780,8 @@ if __name__ == '__main__':
             case 'cnn':
                 model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw, use_sigmoid=args.use_sigmoid)
             case 'convnextv2':
+                model = timm.create_model('convnextv2_base.fcmae_ft_in22k_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
+            case 'convnext':
                 model = timm.create_model('convnext_small.in12k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
             case 'vit':
                 model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained, img_size=image_size)
@@ -783,7 +795,7 @@ if __name__ == '__main__':
             # in_feats = in_feats.cuda() if torch.cuda.is_available() else in_feats
             features = model.forward_features(in_feats)
             feature_size = torch.flatten(features, 1).shape[1]
-            feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=args.use_sigmoid)
+            feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=args.use_sigmoid, num_hidden_layers=args.num_hidden_layers, num_neurons=args.num_neurons)
         else:
             feature_regressor = None
         
