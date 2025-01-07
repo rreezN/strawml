@@ -24,6 +24,7 @@ from strawml.models.chute_finder.yolo import ObjectDetect
 import strawml.models.straw_classifier.cnn_classifier as cnn
 import strawml.models.straw_classifier.feature_model as feature_model
 from strawml.visualizations.utils_stream import AprilDetectorHelpers, AsyncStreamThread, time_function
+from strawml.data.make_dataset import decode_binary_image
 
 class AprilDetector:
     """
@@ -367,6 +368,24 @@ class RTSPStream(AprilDetector):
         self._setup_display()
         self._process_frames_from_videofile()
 
+    def display_frame_from_hdf5(self, path: str, model_name) -> None:
+        """
+        Display the frames with the detected AprilTags.
+        """
+
+        # Start by running through the first 50 frames to get the tags
+        with h5py.File(path, 'r') as hf:
+            timestamps = list(hf.keys())
+            for timestamp in timestamps[:50]:
+                frame = hf[timestamp]['image'][()]
+                frame = decode_binary_image(frame)
+                self.frame = frame
+        # pause to allow for the apriltag detect thread to catch up
+        print("Waiting for AprilTag detection to catch up...")
+        time.sleep(3)
+        self._setup_display()
+        self._process_frames_from_hdf5(path, model_name)
+
     def _setup_display(self) -> None:
         """Set up display settings and initialize variables for both modes."""
         self.font = cv2.FONT_HERSHEY_SIMPLEX
@@ -393,6 +412,62 @@ class RTSPStream(AprilDetector):
             if not success:
                 break
             self._process_frame(frame, from_videofile=True)
+
+    def _process_frames_from_hdf5(self, path: str, model_name) -> None:
+        """Process frames from an HDF5 file."""
+        with h5py.File(path, 'r') as hf:
+            timestamps = list(hf.keys())
+            self.recording_req = True
+            for timestamp in timestamps:
+                self.prediction_dict = {}
+                frame = hf[timestamp]['image'][()]
+                frame = decode_binary_image(frame)
+                self._process_hdf5_frame(frame, hf, timestamp, model_name)
+
+    def _process_hdf5_frame(self, frame: np.ndarray, hf, timestamp, model_name) -> None:
+        if frame is None:
+            print("Frame is None. Skipping...")
+            return
+        with self.lock:
+            self.frame = frame
+        # Find Apriltags
+        if self.detect_april and self.tags is not None:
+            frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
+            # print shape of cutout
+            print("cutout shape: ", cutout.shape)
+        else:
+            frame_drawn, cutout = frame, None
+        
+        # If not tags have been found we go to the next frame
+        if len(self.tag_ids) == 0:
+            self._display_frame(frame_drawn)
+            return
+
+        frame_drawn = self._process_frame_content(frame, frame_drawn, cutout)
+        # Display frame and overlay text
+        self._display_frame(frame_drawn)
+        # Now we save the frame
+        # self._save_frame_existing_hdf5(hf, timestamp, model_name)
+    
+    def _save_frame_existing_hdf5(self, hf, timestamp, model_name) -> None:
+        """
+        Function to save the frame to an existing HDF5 file.
+
+        Parameters:
+        -----------
+        hf : h5py.File
+            The HDF5 file object.
+        timestamp : str
+            The timestamp of the frame
+        """
+        t = self.prediction_dict["yolo"]
+        t1_name = 'percent'
+        t2_name = 'pixel'
+        t1, t2 = t.key(), t.value()
+        pred = hf[timestamp].create_group(model_name)
+        pred.create_dataset(t1_name, data=t1)
+        pred.create_dataset(t2_name, data=t2)
+        
 
     def _process_frame(self, frame: np.ndarray, from_videofile: bool) -> None:
         """Process a single frame for display."""
@@ -686,17 +761,26 @@ class RTSPStream(AprilDetector):
                 if not os.path.exists(video_path):
                     print("The video path does not exist.")
                     return
-                self.cap = cv2.VideoCapture(video_path)
-                print("START: Videofile loaded")
-                if self.detect_april:
-                    self.thread1 = threading.Thread(target=self.find_tags)
-                    self.thread1.start()
-                    self.threads.append(self.thread1)
-                if self.record:
-                    self.scada_thread = AsyncStreamThread(server_keys='data/opcua_server.txt')
-                    self.scada_thread.start()
-                    self.threads.append(self.scada_thread)
-                self.display_frame_from_videofile()
+                # Check if the file mp4 or hdf5
+                if video_path.endswith('.mp4'):
+                    self.cap = cv2.VideoCapture(video_path)
+                    print("START: Videofile loaded")
+                    if self.detect_april:
+                        self.thread1 = threading.Thread(target=self.find_tags)
+                        self.thread1.start()
+                        self.threads.append(self.thread1)
+                    if self.record:
+                        self.scada_thread = AsyncStreamThread(server_keys='data/opcua_server.txt')
+                        self.scada_thread.start()
+                        self.threads.append(self.scada_thread)
+                    self.display_frame_from_videofile()
+                elif video_path.endswith('.hdf5'):
+                    print("START: hdf5 File loading...")
+                    if self.detect_april:
+                        self.thread1 = threading.Thread(target=self.find_tags)
+                        self.thread1.start()
+                        self.threads.append(self.thread1)
+                    self.display_frame_from_hdf5(video_path, model_name='yolo_cutout')
             else:
                 if cap is not None:
                     self.cap = cap
@@ -770,11 +854,20 @@ if __name__ == "__main__":
     #         make_cutout=False, use_cutout=False, object_detect=True, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
     #         detect_april=True, yolo_straw=False, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
     #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
-    
+
     # ### YOLO PREDICTOR
-    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-        rtsp=True , # Only used when the stream is from an RTSP source
-        make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-        detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
+    RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+        rtsp=False , # Only used when the stream is from an RTSP source
+        make_cutout=True, use_cutout=True, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
+        detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_cutout_best.pt",
         with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
-        device='cuda')()
+        device='cuda')(video_path="data/predictions/recording - vertical.hdf5")
+
+
+    # # ### YOLO PREDICTOR STREAM
+    # RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    #     rtsp=True , # Only used when the stream is from an RTSP source
+    #     make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
+    #     detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
+    #     with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
+    #     device='cuda')()
