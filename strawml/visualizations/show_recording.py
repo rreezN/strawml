@@ -22,7 +22,134 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from strawml.data.make_dataset import decode_binary_image
+from matplotlib.gridspec import GridSpec
+from scipy.stats import gaussian_kde
+import seaborn as sns
 
+
+class JointPlot:
+    def __init__(self, x, model_data, sensor_data, marginal_x=True, marginal_y=True, plot_data=True):
+        """
+        Initializes the JointPlot object.
+        
+        :param x: Array-like, data for the x-axis.
+        :param y: Array-like, data for the y-axis.
+        :param marginal_x: Boolean, whether to show the marginal distribution for x.
+        :param marginal_y: Boolean, whether to show the marginal distribution for y.
+        """
+        self.x = x
+        self.model_data = model_data
+        self.sensor_data = sensor_data
+        self.marginal_x = marginal_x
+        self.marginal_y = marginal_y
+        self.plot_data = plot_data
+
+    def plot(self, ax=None):
+        """
+        Plots the jointplot with optional marginal distributions.
+
+        :param ax: Matplotlib axis object to use for plotting. If None, creates a new figure.
+        """
+        if ax is None:
+            # Create a new figure if no axis is provided
+            fig = plt.figure(figsize=(8, 8))
+            gs = GridSpec(4, 4, figure=fig)
+            ax_joint = fig.add_subplot(gs[1:4, 0:3])
+            ax_marginal_x = fig.add_subplot(gs[0, 0:3], sharex=ax_joint) if self.marginal_x else None
+            ax_marginal_y = fig.add_subplot(gs[1:4, 3], sharey=ax_joint) if self.marginal_y else None
+        else:
+            # Use the provided axis
+            fig = ax.figure
+            bbox = ax.get_position()
+            fig.delaxes(ax)  # Remove the placeholder axis
+            max_x, max_y = 12, 30
+            gs = GridSpec(max_x, max_y, figure=fig, left=bbox.x0, right=bbox.x1, bottom=bbox.y0, top=bbox.y1)
+            
+            # Joint plot occupies the larger section
+            ax_joint = fig.add_subplot(gs[1:max_x, 0:max_y-3])
+            
+            # Marginal x plot occupies the top, with the same width
+            ax_marginal_x = fig.add_subplot(gs[0, 0:max_y-3], sharex=ax_joint) if self.marginal_x else None
+            
+            # Marginal y plot occupies the right side, with the same height as ax_joint
+            ax_marginal_y = fig.add_subplot(gs[1:max_x-1, max_y-2], sharey=ax_joint) if self.marginal_y else None
+
+        if self.plot_data:
+            # Main scatter plot
+            ax_joint.plot(self.x, self.sensor_data, label="Sensor Data", c='royalblue', linestyle='-')
+            ax_joint.plot(self.x, self.model_data, label="Model Data", c='indianred', linestyle='-')
+            ax_joint.yaxis.tick_right()
+            # draw confidence intervals of +- 5%
+            ax_joint.fill_between(self.x, self.sensor_data - 5, self.sensor_data + 5, color='lightblue', alpha=0.5)
+            ax_joint.fill_between(self.x, self.model_data - 5, self.model_data + 5, color='lightcoral', alpha=0.5)
+            # add the confidence intervals to the legend
+            ax_joint.plot([], [], color='lightblue', alpha=0.5, label='Data Threshold (+-5%)')
+            ax_joint.plot([], [], color='lightcoral', alpha=0.5)
+
+            # Highlight the areas where the sensor and model data overlap when within 5% of each other
+            overlap = np.where((self.sensor_data >= self.model_data - 5) & (self.sensor_data <= self.model_data + 5))
+            # Highlight the entire vertical area where the sensor and model data overlap
+            for i in overlap[0]:
+                ax.axvline(x=self.x[i], color='goldenrod', linestyle='-', alpha=0.2)
+            # add the highlighted area to the legend
+            ax_joint.plot([], [], color='goldenrod', linestyle='-', alpha=0.2, label='Overlap points (w. Threshold)')
+            
+            if self.marginal_x and ax_marginal_x:
+                ax_marginal_x.grid()
+                sns.kdeplot(self.x, ax=ax_marginal_x, color='black', fill=True, vertical=False)
+                ax_marginal_x.axis('off')
+
+            if self.marginal_y and ax_marginal_y:
+                ax_marginal_y.grid()
+                sns.kdeplot(self.sensor_data, ax=ax_marginal_y, color='royalblue', fill=True, vertical=True)
+                sns.kdeplot(self.model_data, ax=ax_marginal_y, color='indianred', fill=True, vertical=True)
+                ax_marginal_y.axis('off')
+
+            ax_joint.grid()
+            ax_joint.set_xlabel("Time")
+            ax_joint.set_ylabel("Data")
+            # Shrink current axis's height by 10% on the bottom
+            box = ax_joint.get_position()
+            ax_joint.set_position([box.x0, box.y0 + box.height * 0.1,
+                            box.width, box.height * 0.9])
+
+            # Put a legend below current axis
+            ax_joint.legend(loc='upper center', bbox_to_anchor=(0.5, 1.12),
+                    fancybox=True, shadow=True, ncol=5)
+            
+            if ax is None:
+                plt.tight_layout()
+                plt.show()
+        else:
+            # draw line through 0 to indicate when the model is over or under predicting
+            ax_joint.axhline(0, color='black', linestyle='--')
+            # axes[2].plot(x_axis_data, sensor_data - model_data, label='Delta', c=cs[0], linestyle='-')
+            ax_joint.plot(self.x, self.sensor_data - self.model_data, label='Delta (Smooth)', c="mediumseagreen", linestyle='-')
+            # Highlight the areas where the sensor and model data overlap when within 5% of each other, meaning where the delta is within 5% of 0
+            overlap = np.where((self.sensor_data - self.model_data >= -5) & (self.sensor_data - self.model_data <= 5))
+            # Highlight the entire vertical area where the sensor and model data overlap
+            for i in overlap[0]:
+                ax_joint.axvline(x=self.x[i], color='goldenrod', linestyle='-', alpha=0.2)
+            ax_joint.plot([], [], color='goldenrod', linestyle='-', alpha=0.2, label='Overlap points (w. Threshold)')
+            
+            ax_joint.grid()
+            ax_joint.set_xlabel("Time")
+            ax_joint.set_ylabel("Data")
+            ax_joint.yaxis.tick_right()
+            
+            if self.marginal_y and ax_marginal_y:
+                ax_marginal_y.grid()
+                sns.kdeplot(self.sensor_data - self.model_data, ax=ax_marginal_y, color='mediumseagreen', fill=True, vertical=True)
+                ax_marginal_y.axis('off')
+
+            # Shrink current axis's height by 10% on the bottom
+            box = ax_joint.get_position()
+            ax_joint.set_position([box.x0, box.y0 + box.height * 0.1,
+                            box.width, box.height * 0.9])
+
+            # Put a legend below current axis
+            ax_joint.legend(loc='upper center', bbox_to_anchor=(0.5, 1.12),
+                    fancybox=True, shadow=True, ncol=5)
 
 def _validate_data(file_path:str):
     missing_keys = {'scada': [], 'yolo': []}
@@ -47,14 +174,20 @@ def _retreive_data(file_path: str):
     model_data = np.array([])
 
     # We then load the data from the file path
+    errors = 0
     with h5py.File(file_path, 'r') as f:
         for key in f.keys():
-            sensor_data = np.append(sensor_data, f[key]['scada']['percent'][...])
-            if 'yolo' not in f[key].keys():
-                model_data = np.append(model_data, np.array([0.0]))
-            else:
-                model_data = np.append(model_data, f[key]['yolo']['percent'][...])
+            try:
+                sensor_data = np.append(sensor_data, f[key]['scada']['percent'][...])
+                if 'yolo' not in f[key].keys():
+                    model_data = np.append(model_data, np.array([0.0]))
+                else:
+                    model_data = np.append(model_data, f[key]['yolo']['percent'][...])
+            except:
+                errors += 1
+                print(f"Error in loading data from key: {key}")
     
+    print(f"Errors in loading data: {errors}")
     x_axis = np.arange(len(sensor_data))
     # We then return the data
     return sensor_data, model_data, x_axis
@@ -81,27 +214,6 @@ def _smooth_data(sensor_data, model_data):
 
     return smoothed_sensor_data, smoothed_model_data, x_axis
 
-def _plot_recording(ax, sensor_data, model_data, x_axis, labels=['a', 'b'], c=['b', 'r'], linestyle='-'):
-    ax.plot(x_axis, sensor_data, label=labels[0], c=c[0], linestyle=linestyle)
-    ax.plot(x_axis, model_data, label=labels[1], c=c[1], linestyle=linestyle)
-
-    # draw confidence intervals of +- 5%
-    ax.fill_between(x_axis, sensor_data - 5, sensor_data + 5, color='lightblue', alpha=0.5)
-    ax.fill_between(x_axis, model_data - 5, model_data + 5, color='lightcoral', alpha=0.5)
-    # add the confidence intervals to the legend
-    ax.plot([], [], color='lightblue', alpha=0.5, label='Data Threshold (+-5%)')
-    ax.plot([], [], color='lightcoral', alpha=0.5)
-
-    # Highlight the areas where the sensor and model data overlap when within 5% of each other
-    overlap = np.where((sensor_data >= model_data - 5) & (sensor_data <= model_data + 5))
-    # Highlight the entire vertical area where the sensor and model data overlap
-    for i in overlap[0]:
-        ax.axvline(x=x_axis[i], color='goldenrod', linestyle='-', alpha=0.2)
-    # add the highlighted area to the legend
-    ax.plot([], [], color='goldenrod', linestyle='-', alpha=0.2, label='Overlap points (w. Threshold)')
-    
-    return ax
-
 def _print_summary_statistics(sensor_data, model_data, smooth_sensor_data, smooth_model_data):
     print(f"\nSummary Statistics:")
     print(f"  -- Sensor Data: Mean:          {np.mean(sensor_data):.2f}, STD: {np.std(sensor_data):.2f}")
@@ -111,73 +223,33 @@ def _print_summary_statistics(sensor_data, model_data, smooth_sensor_data, smoot
     print(f"  -- Smoothed Sensor Data: Mean: {np.mean(smooth_sensor_data):.2f}, STD: {np.std(smooth_sensor_data):.2f}")
     print(f"  -- Smoothed Model Data: Mean:  {np.mean(smooth_model_data):.2f}, STD: {np.std(smooth_model_data):.2f}")
     print(f"  -- Delta: Mean:                {np.mean(smooth_sensor_data - smooth_model_data):.2f}, STD: {np.std(smooth_sensor_data - smooth_model_data):.2f}")
-    print("NOTE: Negative values in the delta indicate that the model's predictions are higher than the sensor data.")
+    print("NOTE: Negative values in the delta indicate that the model's predictions are higher than the sensor data.\n")
 
-def main(file_path:str, time_step:int = 5, delta:bool = True):  
+def main(file_path:str, name:str="Recording", time_step:int = 5, delta:bool = True):  
     # We first define the figure on which we wish to plot the data
     if delta:
-        fig, axes = plt.subplots(3, 1, figsize=(15, 10))
-        titles = ['Raw Data', 'Smoothed Data', 'Delta']
-        cs = ['royalblue', 'indianred']
-    else:
         fig, axes = plt.subplots(2, 1, figsize=(15, 10))
-        titles = ['Raw Data', 'Smoothed Data']
-        cs = ['royalblue', 'indianred']
+    else:
+        fig, axes = plt.subplots(1, 1, figsize=(15, 10))
 
     # We then load the data from the file path
     sensor_data, model_data, x_axis = _retreive_data(file_path)
     x_axis_data = x_axis * time_step
     # Plot the data on top of the figure
-    axes[0] = _plot_recording(axes[0], sensor_data, model_data, x_axis_data, 
-                              labels=['Sensor Data', 'Model Data'], 
-                              c=cs, 
-                              linestyle='-')
-
-    # Calculate a smoothed version of the data.
-    smooth_sensor_data, smooth_model_data, x_axis = _smooth_data(sensor_data, model_data)
-    x_axis_smooth = x_axis * time_step
-    # Plot the data on top of the figure
-    axes[1] = _plot_recording(axes[1], smooth_sensor_data, smooth_model_data, x_axis_smooth, 
-                              labels=['Sensor Data (Smooth)', 'Model Data (Smooth)'], 
-                              c=cs, 
-                              linestyle='--')
+    JointPlot(x_axis_data, model_data, sensor_data, marginal_x=False, marginal_y=True).plot(axes[0])
 
     if delta:
-        # draw line through 0 to indicate when the model is over or under predicting
-        axes[2].axhline(0, color='black', linestyle='--')
-        # axes[2].plot(x_axis_data, sensor_data - model_data, label='Delta', c=cs[0], linestyle='-')
-        axes[2].plot(x_axis_smooth, smooth_sensor_data - smooth_model_data, label='Delta (Smooth)', c="mediumseagreen", linestyle='-')
-        # Highlight the areas where the sensor and model data overlap when within 5% of each other, meaning where the delta is within 5% of 0
-        overlap = np.where((smooth_sensor_data - smooth_model_data >= -5) & (smooth_sensor_data - smooth_model_data <= 5))
-        # Highlight the entire vertical area where the sensor and model data overlap
-        for i in overlap[0]:
-            axes[2].axvline(x=x_axis_smooth[i], color='goldenrod', linestyle='-', alpha=0.2)
-        axes[2].plot([], [], color='goldenrod', linestyle='-', alpha=0.2, label='Overlap points (w. Threshold)')
+        JointPlot(x_axis_data, model_data, sensor_data, marginal_x=False, marginal_y=True, plot_data=False).plot(axes[1])
 
+    _print_summary_statistics(sensor_data, model_data, sensor_data, model_data)
+    fig.suptitle(f"Recording: {name}", y=0.92, fontsize=20)
 
-    _print_summary_statistics(sensor_data, model_data, smooth_sensor_data, smooth_model_data)
-
-    for i, ax in enumerate(axes):
-        ax.grid()
-        ax.set_xlabel('Time (s)')
-        ax.set_ylabel('Data')
-        ax.set_title(f'Recording: {titles[i]}')
-        
-        # Shrink current axis's height by 10% on the bottom
-        box = ax.get_position()
-        ax.set_position([box.x0, box.y0 + box.height * 0.1,
-                        box.width, box.height * 0.9])
-
-        # Put a legend below current axis
-        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
-                fancybox=True, shadow=True, ncol=5)
-
-        # ax.legend()
-
-    fig.tight_layout(pad=5.0)
+    # Adjust vertical spacing between subplots
+    plt.subplots_adjust(hspace=0.2)  # Reduce hspace as needed
+    plt.tight_layout(pad=1.0)  # Adjust padding as necessary
+    plt.savefig(f"reports/Recording - {name}.pdf")
     plt.show()
 
-
 if __name__ == '__main__':
-    file_path = "D:/HCAI/msc/strawml/data/predictions/recording.hdf5"
-    main(file_path)
+    file_path = "D:/HCAI/msc/strawml/data/predictions/recording - vertical.hdf5"
+    main(file_path, name="Vertical", time_step=5, delta=True)
