@@ -255,7 +255,7 @@ class AprilDetector:
             number_tags, chute_tags = self.helpers._classify_tags(tags)
             if len(number_tags) == 0 or len(chute_tags) == 0:
                 return frame, None
-            
+            frame_ = frame.copy()
             # Step 2: Draw detected tags on the frame
             frame_drawn = self.helpers._draw_tags(frame, number_tags, chute_tags)
             
@@ -264,7 +264,7 @@ class AprilDetector:
             
             # Step 4: Optionally create and return the cutout
             if make_cutout:
-                return self.helpers._handle_cutouts(frame_drawn, chute_tags, use_cutout)
+                return self.helpers._handle_cutouts(frame_drawn, frame_, chute_tags, use_cutout)
             return frame_drawn, None        
         except Exception as e:
             print(f"ERROR in draw: {e}")
@@ -415,7 +415,7 @@ class RTSPStream(AprilDetector):
 
     def _process_frames_from_hdf5(self, path: str, model_name) -> None:
         """Process frames from an HDF5 file."""
-        with h5py.File(path, 'r') as hf:
+        with h5py.File(path, 'r+') as hf:
             timestamps = list(hf.keys())
             self.recording_req = True
             for timestamp in timestamps:
@@ -434,7 +434,6 @@ class RTSPStream(AprilDetector):
         if self.detect_april and self.tags is not None:
             frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
             # print shape of cutout
-            print("cutout shape: ", cutout.shape)
         else:
             frame_drawn, cutout = frame, None
         
@@ -587,13 +586,13 @@ class RTSPStream(AprilDetector):
         # Object Detection
         if cutout is not None:
             frame = cutout
-            results = None
+            results = "NA"
         elif self.object_detect:
             results, OD_time = time_function(self.OD.score_frame, frame)
             # Make sure the results are not empty
             if len(results[0]) == 0:
                 results = "NA"
-            self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s' if results else "NA"
+            self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
         else:
             results = "NA"
 
@@ -607,9 +606,16 @@ class RTSPStream(AprilDetector):
             output, inference_time = time_function(self.model.score_frame, frame)
             # If the output is not empty, we can plot the boxes and get the straw level
             if len(output[0]) != 0:
+                x_pixel, y_pixel = output[1][0][-1].cpu().numpy()
+                # cv2.line(frame, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 300, int(y_pixel)), (92, 92, 205), 2)
+                # cv2.imshow("frame", frame)
+                # cv2.waitKey(0)
                 # Extract the straw level from the pixel values of the bbox
-                straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level(frame_drawn, output)
-                
+                if cutout is not None:
+                    straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level(frame, output)
+                else:
+                    straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level(frame_drawn, output)
+
                 # Smooth the data
                 if self.smoothing:
                     straw_level = self.helpers._smooth_level(straw_level, 'straw')
@@ -861,7 +867,8 @@ if __name__ == "__main__":
         make_cutout=True, use_cutout=True, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_cutout_best.pt",
         with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
-        device='cuda')(video_path="data/predictions/recording - vertical.hdf5")
+        device='cuda',
+        smoothing=False)(video_path="data/predictions/recording - vertical.hdf5")
 
 
     # # ### YOLO PREDICTOR STREAM

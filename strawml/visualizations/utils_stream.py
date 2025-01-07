@@ -161,11 +161,11 @@ class AprilDetectorHelpers:
         bottom_right = corners[2]
         return (top_right + bottom_right) / 2
     
-    def _handle_cutouts(self, frame: np.ndarray, chute_tags: list, use_cutout: bool):
+    def _handle_cutouts(self, frame_drawn:  np.ndarray, frame: np.ndarray, chute_tags: list, use_cutout: bool):
         """Handles creation of a cutout based on chute tags."""
         tag_graph = TagGraphWithPositionsCV(self.ADI.tag_connections, chute_tags, self)
         tag_graph.account_for_missing_tags()
-        overlay_frame = tag_graph.draw_overlay(frame)
+        overlay_frame = tag_graph.draw_overlay(frame_drawn)
         cutout = tag_graph.crop_to_size(frame)
         return (overlay_frame, cutout) if use_cutout else (overlay_frame, None)
 
