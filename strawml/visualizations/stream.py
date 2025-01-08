@@ -446,7 +446,7 @@ class RTSPStream(AprilDetector):
         # Display frame and overlay text
         self._display_frame(frame_drawn)
         # Now we save the frame
-        # self._save_frame_existing_hdf5(hf, timestamp, model_name)
+        self._save_frame_existing_hdf5(hf, timestamp, model_name)
     
     def _save_frame_existing_hdf5(self, hf, timestamp, model_name) -> None:
         """
@@ -462,7 +462,12 @@ class RTSPStream(AprilDetector):
         t = self.prediction_dict["yolo"]
         t1_name = 'percent'
         t2_name = 'pixel'
-        t1, t2 = t.key(), t.value()
+        t1, t2 = list(t.keys())[0], list(t.values())[0]
+        # first check if group model_name already exists
+        if model_name in hf[timestamp]:
+            # remove the group
+            del hf[timestamp][model_name]
+        # then we create the group and add the datasets
         pred = hf[timestamp].create_group(model_name)
         pred.create_dataset(t1_name, data=t1)
         pred.create_dataset(t2_name, data=t2)
@@ -612,7 +617,7 @@ class RTSPStream(AprilDetector):
                 # cv2.waitKey(0)
                 # Extract the straw level from the pixel values of the bbox
                 if cutout is not None:
-                    straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level(frame, output)
+                    straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level_cutout(frame, output)
                 else:
                     straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level(frame_drawn, output)
 
@@ -661,6 +666,9 @@ class RTSPStream(AprilDetector):
                 self.information["straw_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
                 self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
                 if self.recording_req:
+                    # Get coordiantes for the original data
+                    self.prediction_dict["yolo"] = {0: [line_start, line_end]}
+                    self.prediction_dict["attr."] = {False: None}
                     # if no bbox is detected, we add 0 to the previous straw level smoothing predictions
                     angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
                     self.helpers._save_tag_0(angle)

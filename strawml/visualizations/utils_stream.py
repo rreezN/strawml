@@ -489,6 +489,12 @@ class AprilDetectorHelpers:
                 self.ADI.prediction_dict["attr."] = {False: sorted(self.ADI.chute_numbers.keys())}
                 break
 
+    def _get_pixel_to_straw_level_cutout(self, frame, straw_bbox):
+        """ Finds the straw level based on height of the frame and the height of the straw_bbox."""
+        h, w = frame.shape[:2]
+        bbox_height = ((straw_bbox[1][0][0][1] + straw_bbox[1][0][-1][1])/2).cpu().numpy()
+        return (h - bbox_height)/h * 100, False, None
+
     def _get_pixel_to_straw_level(self, frame, straw_bbox):
         """ Finds the straw level based on the detected tags in the chute. """
         chute_numbers_ = self.ADI.chute_numbers.copy()
