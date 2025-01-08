@@ -126,7 +126,7 @@ class AprilDetector:
                 model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=num_classes, img_size=image_size)
         
         
-        model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_overall_best.pth', weights_only=True))
+        model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_v2_L_layers_sig_best_sensor.pth', weights_only=True))
         return model, image_size
 
     def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 0, num_neurons: int = 512) -> None:
@@ -136,8 +136,8 @@ class AprilDetector:
             feature_size = torch.flatten(features, 1).shape[1]
             self.regressor_model = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=use_sigmoid, num_hidden_layers=num_hidden_layers, num_neurons=num_neurons)
             
-            self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_overall_best.pth', weights_only=True))
-            self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor_overall_best.pth', weights_only=True))
+            self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_v2_L_layers_sig_best_sensor', weights_only=True))
+            self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor_v2_L_layers_sig_best_sensor.pth', weights_only=True))
             self.regressor_model.to(self.device)
         else:
             self.model.load_state_dict(torch.load(self.model_load_path, weights_only=True))
@@ -277,10 +277,11 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False, smoothing:bool=True) -> None:
+    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False, smoothing:bool=True, hdf5_model_save_name='yolo') -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, yolo_straw=yolo_straw, yolo_straw_model=yolo_straw_model, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         self.record = record
         self.recording_req = False
+        self.hdf5_model_save_name = hdf5_model_save_name
         self.record_threshold = record_threshold
         if record:
             self.recording_queue = queue.Queue()
@@ -366,7 +367,7 @@ class RTSPStream(AprilDetector):
         self._setup_display()
         self._process_frames_from_videofile()
 
-    def display_frame_from_hdf5(self, path: str, model_name) -> None:
+    def display_frame_from_hdf5(self, path: str, hdf5_model_save_name) -> None:
         """
         Display the frames with the detected AprilTags.
         """
@@ -382,7 +383,7 @@ class RTSPStream(AprilDetector):
         print("Waiting for AprilTag detection to catch up...")
         time.sleep(3)
         self._setup_display()
-        self._process_frames_from_hdf5(path, model_name)
+        self._process_frames_from_hdf5(path, hdf5_model_save_name)
 
     def _setup_display(self) -> None:
         """Set up display settings and initialize variables for both modes."""
@@ -411,7 +412,7 @@ class RTSPStream(AprilDetector):
                 break
             self._process_frame(frame, from_videofile=True)
 
-    def _process_frames_from_hdf5(self, path: str, model_name) -> None:
+    def _process_frames_from_hdf5(self, path: str, hdf5_model_save_name) -> None:
         """Process frames from an HDF5 file."""
         with h5py.File(path, 'r+') as hf:
             timestamps = list(hf.keys())
@@ -420,9 +421,9 @@ class RTSPStream(AprilDetector):
                 self.prediction_dict = {}
                 frame = hf[timestamp]['image'][()]
                 frame = decode_binary_image(frame)
-                self._process_hdf5_frame(frame, hf, timestamp, model_name)
+                self._process_hdf5_frame(frame, hf, timestamp, hdf5_model_save_name)
 
-    def _process_hdf5_frame(self, frame: np.ndarray, hf, timestamp, model_name) -> None:
+    def _process_hdf5_frame(self, frame: np.ndarray, hf, timestamp, hdf5_model_save_name) -> None:
         if frame is None:
             print("Frame is None. Skipping...")
             return
@@ -444,9 +445,9 @@ class RTSPStream(AprilDetector):
         # Display frame and overlay text
         self._display_frame(frame_drawn)
         # Now we save the frame
-        self._save_frame_existing_hdf5(hf, timestamp, model_name)
+        # self._save_frame_existing_hdf5(hf, timestamp, hdf5_model_save_name)
     
-    def _save_frame_existing_hdf5(self, hf, timestamp, model_name) -> None:
+    def _save_frame_existing_hdf5(self, hf, timestamp, hdf5_model_save_name) -> None:
         """
         Function to save the frame to an existing HDF5 file.
 
@@ -462,11 +463,11 @@ class RTSPStream(AprilDetector):
         t2_name = 'pixel'
         t1, t2 = list(t.keys())[0], list(t.values())[0]
         # first check if group model_name already exists
-        if model_name in hf[timestamp]:
+        if hdf5_model_save_name in hf[timestamp]:
             # remove the group
-            del hf[timestamp][model_name]
+            del hf[timestamp][hdf5_model_save_name]
         # then we create the group and add the datasets
-        pred = hf[timestamp].create_group(model_name)
+        pred = hf[timestamp].create_group(hdf5_model_save_name)
         pred.create_dataset(t1_name, data=t1)
         pred.create_dataset(t2_name, data=t2)
         
@@ -589,7 +590,7 @@ class RTSPStream(AprilDetector):
         # Object Detection
         if cutout is not None:
             frame = cutout
-            results = "NA"
+            results = None 
         elif self.object_detect:
             results, OD_time = time_function(self.OD.score_frame, frame)
             # Make sure the results are not empty
@@ -600,11 +601,14 @@ class RTSPStream(AprilDetector):
             results = "NA"
 
         # Predictor of the straw level
-        if results != "NA":
-            if self.with_predictor:
+        if self.with_predictor:
+            if results != "NA":
                 frame_drawn = self._process_predictions(frame, results, frame_drawn)
-            if self.object_detect:
-                frame_drawn = self.plot_boxes(results, frame_drawn, model_type="obb")
+                if self.object_detect:
+                    frame_drawn = self.plot_boxes(results, frame_drawn, model_type="obb")
+                return frame_drawn
+            else:
+                return frame
         elif self.yolo_straw:
             output, inference_time = time_function(self.model.score_frame, frame)
             # If the output is not empty, we can plot the boxes and get the straw level
@@ -671,7 +675,7 @@ class RTSPStream(AprilDetector):
                     angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
                     self.helpers._save_tag_0(angle)
                 
-        return frame_drawn
+            return frame_drawn
 
     def _process_predictions(self, frame, results, frame_drawn):
         """Run model predictions and update overlay."""
@@ -792,7 +796,7 @@ class RTSPStream(AprilDetector):
                         self.thread1 = threading.Thread(target=self.find_tags)
                         self.thread1.start()
                         self.threads.append(self.thread1)
-                    self.display_frame_from_hdf5(video_path, model_name='yolo_cutout')
+                    self.display_frame_from_hdf5(video_path, hdf5_model_save_name=self.hdf5_model_save_name)
             else:
                 if cap is not None:
                     self.cap = cap
@@ -871,10 +875,11 @@ if __name__ == "__main__":
     RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=False , # Only used when the stream is from an RTSP source
         make_cutout=True, use_cutout=True, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-        detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_cutout_best.pt",
-        with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
+        detect_april=True, yolo_straw=False, yolo_straw_model="models/obb_cutout_best.pt",
+        with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
         device='cuda',
-        smoothing=False)(video_path="data/predictions/recording - vertical.hdf5")
+        smoothing=False,
+        hdf5_model_save_name='yolo_cutout')(video_path="data/predictions/recording - vertical.hdf5")
 
 
     # # ### YOLO PREDICTOR STREAM
