@@ -129,14 +129,14 @@ class AprilDetector:
         model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_v2_L_layers_sig_best_sensor.pth', weights_only=True))
         return model, image_size
 
-    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 0, num_neurons: int = 512) -> None:
+    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 3, num_neurons: int = 512) -> None:
         """Setup the regressor model."""
         if self.predictor_model != 'cnn':
             features = self.model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
             feature_size = torch.flatten(features, 1).shape[1]
             self.regressor_model = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=use_sigmoid, num_hidden_layers=num_hidden_layers, num_neurons=num_neurons)
             
-            self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_v2_L_layers_sig_best_sensor', weights_only=True))
+            self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_v2_L_layers_sig_best_sensor.pth', weights_only=True))
             self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor_v2_L_layers_sig_best_sensor.pth', weights_only=True))
             self.regressor_model.to(self.device)
         else:
@@ -418,17 +418,20 @@ class RTSPStream(AprilDetector):
             timestamps = list(hf.keys())
             self.recording_req = True
             for timestamp in timestamps:
+                frame_time = time.time()
                 self.prediction_dict = {}
                 frame = hf[timestamp]['image'][()]
                 frame = decode_binary_image(frame)
-                self._process_hdf5_frame(frame, hf, timestamp, hdf5_model_save_name)
+                self._process_hdf5_frame(frame, hf, timestamp, hdf5_model_save_name, frame_time)
 
-    def _process_hdf5_frame(self, frame: np.ndarray, hf, timestamp, hdf5_model_save_name) -> None:
+    def _process_hdf5_frame(self, frame: np.ndarray, hf, timestamp, hdf5_model_save_name, frame_time) -> None:
         if frame is None:
             print("Frame is None. Skipping...")
+            self._update_information(frame_time)
             return
         with self.lock:
             self.frame = frame
+
         # Find Apriltags
         if self.detect_april and self.tags is not None:
             frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
@@ -442,10 +445,13 @@ class RTSPStream(AprilDetector):
             return
 
         frame_drawn = self._process_frame_content(frame, frame_drawn, cutout)
+
         # Display frame and overlay text
         self._display_frame(frame_drawn)
         # Now we save the frame
-        # self._save_frame_existing_hdf5(hf, timestamp, hdf5_model_save_name)
+        self._save_frame_existing_hdf5(hf, timestamp, hdf5_model_save_name)
+        self._update_information(frame_time)
+
     
     def _save_frame_existing_hdf5(self, hf, timestamp, hdf5_model_save_name) -> None:
         """
@@ -458,7 +464,10 @@ class RTSPStream(AprilDetector):
         timestamp : str
             The timestamp of the frame
         """
-        t = self.prediction_dict["yolo"]
+        if self.yolo_straw:
+            t = self.prediction_dict["yolo"]
+        elif self.with_predictor:
+            t = self.prediction_dict["predicted"]
         t1_name = 'percent'
         t2_name = 'pixel'
         t1, t2 = list(t.keys())[0], list(t.values())[0]
@@ -879,7 +888,7 @@ if __name__ == "__main__":
         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
         device='cuda',
         smoothing=False,
-        hdf5_model_save_name='yolo_cutout')(video_path="data/predictions/recording - vertical.hdf5")
+        hdf5_model_save_name='convnextv2')(video_path="data/predictions/recording - vertical.hdf5")
 
 
     # # ### YOLO PREDICTOR STREAM
