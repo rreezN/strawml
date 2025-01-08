@@ -108,35 +108,33 @@ class AprilDetector:
             self.model.load_state_dict(torch.load(self.model_load_path, weights_only=True))
             self.model.to(self.device)
 
-    def load_predictor_model(self, input_channels: int, num_classes: int) -> torch.nn.Module:
+    def load_predictor_model(self, input_channels: int, num_classes: int, use_sigmoid: bool = True, image_size: tuple = (672, 208)) -> torch.nn.Module:
         """Load the appropriate model based on the predictor_model string."""
         model = None
         match self.predictor_model:
             case 'cnn':
-                image_size = (384, 384)
-                model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=num_classes)
+                model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=num_classes, use_sigmoid=use_sigmoid)
             case 'convnextv2':
-                image_size = (224, 224)
-                model = timm.create_model('convnext_small.in12k_ft_in1k_384', pretrained=False, in_chans=input_channels, num_classes=num_classes)
+                model = timm.create_model('convnextv2_base.fcmae_ft_in22k_in1k_384', in_chans=input_channels, num_classes=num_classes)
+            case 'convnext':
+                model = timm.create_model('convnext_small.in12k_ft_in1k_384', in_chans=input_channels, num_classes=num_classes)
             case 'vit':
-                image_size = (384, 384)
-                model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', pretrained=False, in_chans=input_channels, num_classes=num_classes)
+                model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=num_classes, img_size=image_size)
             case 'eva02':
-                image_size = (448, 448)
-                model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', pretrained=False, in_chans=input_channels, num_classes=num_classes)
+                model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=num_classes, img_size=image_size)
             case 'caformer':
-                image_size = (384, 384)
-                model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=num_classes, pretrained=False)
+                model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=num_classes, img_size=image_size)
+        
         
         model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_overall_best.pth', weights_only=True))
         return model, image_size
 
-    def setup_regressor(self, image_size: tuple, input_channels: int) -> None:
+    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 0, num_neurons: int = 512) -> None:
         """Setup the regressor model."""
         if self.predictor_model != 'cnn':
             features = self.model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
             feature_size = torch.flatten(features, 1).shape[1]
-            self.regressor_model = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+            self.regressor_model = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=use_sigmoid, num_hidden_layers=num_hidden_layers, num_neurons=num_neurons)
             
             self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_overall_best.pth', weights_only=True))
             self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor_overall_best.pth', weights_only=True))
