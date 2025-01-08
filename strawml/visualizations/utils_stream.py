@@ -161,11 +161,11 @@ class AprilDetectorHelpers:
         bottom_right = corners[2]
         return (top_right + bottom_right) / 2
     
-    def _handle_cutouts(self, frame: np.ndarray, chute_tags: list, use_cutout: bool):
+    def _handle_cutouts(self, frame_drawn:  np.ndarray, frame: np.ndarray, chute_tags: list, use_cutout: bool):
         """Handles creation of a cutout based on chute tags."""
         tag_graph = TagGraphWithPositionsCV(self.ADI.tag_connections, chute_tags, self)
         tag_graph.account_for_missing_tags()
-        overlay_frame = tag_graph.draw_overlay(frame)
+        overlay_frame = tag_graph.draw_overlay(frame_drawn)
         cutout = tag_graph.crop_to_size(frame)
         return (overlay_frame, cutout) if use_cutout else (overlay_frame, None)
 
@@ -488,6 +488,12 @@ class AprilDetectorHelpers:
                 self.ADI.prediction_dict["yolo"] = {0: [line_start, line_end]}
                 self.ADI.prediction_dict["attr."] = {False: sorted(self.ADI.chute_numbers.keys())}
                 break
+
+    def _get_pixel_to_straw_level_cutout(self, frame, straw_bbox):
+        """ Finds the straw level based on height of the frame and the height of the straw_bbox."""
+        h, w = frame.shape[:2]
+        bbox_height = ((straw_bbox[1][0][0][1] + straw_bbox[1][0][-1][1])/2).cpu().numpy()
+        return (h - bbox_height)/h * 100, False, None
 
     def _get_pixel_to_straw_level(self, frame, straw_bbox):
         """ Finds the straw level based on the detected tags in the chute. """
