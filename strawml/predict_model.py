@@ -260,15 +260,15 @@ def get_args() -> argparse.Namespace:
 if __name__ == '__main__':
     args = get_args()
     
-    match args.model:
-        case 'cnn':
-            image_size = args.image_size
-        case 'convnextv2':
-            image_size = (224, 224)
-        case 'vit' | 'caformer':
-            image_size = (384, 384)
-        case 'eva02':
-            image_size = (448, 448)
+    # match args.model:
+    #     case 'cnn':
+    #         image_size = args.image_size
+    #     case 'convnextv2':
+    #         image_size = (224, 224)
+    #     case 'vit' | 'caformer':
+    #         image_size = (384, 384)
+    #     case 'eva02':
+    #         image_size = (448, 448)
     image_size = args.image_size
     
     temp_set = dl.Chute(data_path='data/processed/train.hdf5', data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, image_size=image_size,
@@ -297,16 +297,18 @@ if __name__ == '__main__':
     
     match args.model:
         case 'cnn':
-            model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw)
+            model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw, use_sigmoid=args.use_sigmoid)
         case 'convnextv2':
-            model = timm.create_model('convnext_small.in12k_ft_in1k_384', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
+            model = timm.create_model('convnextv2_base.fcmae_ft_in22k_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
+        case 'convnext':
+            model = timm.create_model('convnext_small.in12k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
         case 'vit':
-            model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
+            model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained, img_size=image_size)
         case 'eva02':
-            model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', pretrained=False, in_chans=input_channels, num_classes=args.num_classes_straw)
+            model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained, img_size=image_size)
         case 'caformer':
-            model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=False)
-    
+            model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained, img_size=image_size)
+        
 
     model_type = 'regressor' if args.cont else 'classifier'
     model_path = f'{args.model_path}{args.model}_{model_type}/'
