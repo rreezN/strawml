@@ -28,7 +28,7 @@ import seaborn as sns
 
 
 class JointPlot:
-    def __init__(self, x, name1_data, name2_data, name1, name2, marginal_x=True, marginal_y=True, plot_data=True):
+    def __init__(self, x, label_data, name1_data, name2_data, name1, name2, marginal_x=True, marginal_y=True, plot_data=True):
         """
         Initializes the JointPlot object.
         
@@ -38,6 +38,7 @@ class JointPlot:
         :param marginal_y: Boolean, whether to show the marginal distribution for y.
         """
         self.x = x
+        self.label_data = label_data
         self.name1_data = name1_data
         self.name2_data = name2_data
         self.marginal_x = marginal_x
@@ -78,6 +79,7 @@ class JointPlot:
 
         if self.plot_data:
             # Main scatter plot
+            ax_joint.plot(self.x, self.label_data, label=f"Annotated Data", c='black', linestyle='--')
             ax_joint.plot(self.x, self.name1_data, label=f"{self.name1} Data", c='royalblue', linestyle='-')
             ax_joint.plot(self.x, self.name2_data, label=f"{self.name2} Data", c='indianred', linestyle='-')
             ax_joint.yaxis.tick_right()
@@ -172,6 +174,7 @@ def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv
     # missing_keys = _validate_data(file_path)
 
     # Initialize the dataframes
+    label_data = np.array([])
     name1_data = np.array([])
     name2_data = np.array([])
 
@@ -180,7 +183,11 @@ def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv
     with h5py.File(file_path, 'r') as f:
         for key in f.keys():
             try:
-                name1_data = np.append(name1_data, f[key][name1]['percent'][...])
+                label_data = np.append(label_data, f[key]['straw_percent'][...])
+                if name1 == 'scada':
+                    name1_data = np.append(name1_data, f[key]['annotations']['sensor_fullness'][()]*100)
+                else:
+                    name1_data = np.append(name1_data, f[key][name1]['percent'][...])
                 if name2 not in f[key].keys():
                     name2_data = np.append(name2_data, np.array([0.0]))
                 else:
@@ -192,7 +199,7 @@ def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv
     print(f"Errors in loading data: {errors}")
     x_axis = np.arange(len(name1_data))
     # We then return the data
-    return name1_data, name2_data, x_axis
+    return label_data, name1_data, name2_data, x_axis
 
 def _smooth_data(sensor_data, model_data):
     """
@@ -235,13 +242,13 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
         fig, axes = plt.subplots(1, 1, figsize=(15, 10))
 
     # We then load the data from the file path
-    name1_data, name2_data, x_axis = _retreive_data(file_path, name1=name1, name2=name2)
+    label_data, name1_data, name2_data, x_axis = _retreive_data(file_path, name1=name1, name2=name2)
     x_axis_data = x_axis * time_step
     # Plot the data on top of the figure
-    JointPlot(x_axis_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True).plot(axes[0])
+    JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True).plot(axes[0])
 
     if delta:
-        JointPlot(x_axis_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, plot_data=False).plot(axes[1])
+        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, plot_data=False).plot(axes[1])
 
     _print_summary_statistics(name1_data, name2_data)
     fig.suptitle(f"Recording: {name}", y=0.92, fontsize=20)
@@ -253,5 +260,5 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
     plt.show()
 
 if __name__ == '__main__':
-    file_path = "D:/HCAI/msc/strawml/data/predictions/recording - vertical.hdf5"
-    main(file_path, name="Vertical", name1='scada', name2='yolo_cutout', time_step=5, delta=True)
+    file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox.hdf5"
+    main(file_path, name="", name1='yolo', name2='yolo_cutout', time_step=5, delta=True)

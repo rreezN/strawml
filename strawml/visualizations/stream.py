@@ -414,15 +414,42 @@ class RTSPStream(AprilDetector):
 
     def _process_frames_from_hdf5(self, path: str, hdf5_model_save_name) -> None:
         """Process frames from an HDF5 file."""
+        get_labels = True
         with h5py.File(path, 'r+') as hf:
             timestamps = list(hf.keys())
+            # Check if hf[timestamp]['label'] exists for the first timestamp. 
+            # If it does we do not need to get labels again
+            if 'straw_percent' in hf[timestamps[0]].keys():
+                get_labels = False
+            print(get_labels)
             self.recording_req = True
             for timestamp in timestamps:
                 frame_time = time.time()
                 self.prediction_dict = {}
                 frame = hf[timestamp]['image'][()]
                 frame = decode_binary_image(frame)
-                self._process_hdf5_frame(frame, hf, timestamp, hdf5_model_save_name, frame_time)
+                # first we check if string sensor is in the path
+                if 'sensors' in path and get_labels:
+                    self._process_sensor_hdf5_frame(frame, hf, timestamp, hdf5_model_save_name, frame_time)
+                else:
+                    self._process_hdf5_frame(frame, hf, timestamp, hdf5_model_save_name, frame_time)
+
+    def _process_sensor_hdf5_frame(self, frame: np.ndarray, hf, timestamp, hdf5_model_save_name, frame_time) -> None:
+        """ 
+        Special function for just processing sensor data. 
+        It needs to do a series of operations on the existing sensor file.
+        1. Retrieve existing annotated bbox and calculate the straw level
+        2. Save the straw level as label to the existing group
+        3. run the normal _process_hdf5_frame 
+        """
+        try:
+            straw_bbox = hf[timestamp]['annotations']['bbox_straw'][...]
+            straw_level = self.helpers._get_pixel_to_straw_level(frame, straw_bbox, object=False)[0]
+            hf[timestamp].create_dataset('straw_percent', data=straw_level)
+        except:
+            hf[timestamp].create_dataset('straw_percent', data=0)
+            print(f"{timestamp}: No bbox found for straw level")
+        self._process_hdf5_frame(frame, hf, timestamp, hdf5_model_save_name, frame_time)
 
     def _process_hdf5_frame(self, frame: np.ndarray, hf, timestamp, hdf5_model_save_name, frame_time) -> None:
         if frame is None:
@@ -888,7 +915,7 @@ if __name__ == "__main__":
         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
         device='cuda',
         smoothing=False,
-        hdf5_model_save_name='convnextv2')(video_path="data/predictions/recording - vertical.hdf5")
+        hdf5_model_save_name='convnextv2')(video_path="data/interim/sensors_with_strawbbox.hdf5")
 
 
     # # ### YOLO PREDICTOR STREAM

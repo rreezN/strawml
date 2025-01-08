@@ -495,21 +495,23 @@ class AprilDetectorHelpers:
         bbox_height = ((straw_bbox[1][0][0][1] + straw_bbox[1][0][-1][1])/2).cpu().numpy()
         return (h - bbox_height)/h * 100, False, None
 
-    def _get_pixel_to_straw_level(self, frame, straw_bbox):
+    def _get_pixel_to_straw_level(self, frame, straw_bbox, object=True):
         """ Finds the straw level based on the detected tags in the chute. """
+        if object:            
+            # We extract the straw_bbox from the results with the highest confidence
+            straw_cord = straw_bbox[1][torch.argmax(straw_bbox[2])]
+            bbox = straw_cord.cpu().numpy().flatten()
+        else:
+            bbox = straw_bbox
+
         chute_numbers_ = self.ADI.chute_numbers.copy()
         if not len(chute_numbers_) >= 2:
             return None, False, sorted(chute_numbers.keys())
-        
-        # We extract the straw_bbox from the results with the highest confidence
-        straw_cord = straw_bbox[1][torch.argmax(straw_bbox[2])]
-        straw_cord = straw_cord.flatten()
-        
         angle = self._get_tag_angle(list(chute_numbers_.values()))
         # from radians to degrees
         angle = np.degrees(angle)
+        
         # Rotate the frame to the angle of the chute and the bbox
-        bbox = straw_bbox[1][0].cpu().numpy().flatten()
         _, _, bbox_, affine_warp = SpecialRotate(image=frame, bbox=bbox, angle=angle, return_affine=True) # type: ignore
         c_nr = np.expand_dims(np.array(list(chute_numbers_.values())).reshape(-1, 2), 1)
         warped_chute_numbers = cv2.perspectiveTransform(c_nr, affine_warp).squeeze(1)
