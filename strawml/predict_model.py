@@ -254,6 +254,9 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--image_size', type=tuple, default=(224, 224), help='Image size for the model (only for CNN)')
     parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
     parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class (only for CNN model currently)')
+    parser.add_argument('--use_sigmoid', action='store_true', help='Use sigmoid activation for the output layer')
+    parser.add_argument('--num_hidden_layers', type=int, default=0, help='Number of hidden layers for the CNN model')
+    parser.add_argument('--num_neurons', type=int, default=512, help='Number of neurons for the hidden layers')
     return parser.parse_args()
 
 
@@ -315,7 +318,7 @@ if __name__ == '__main__':
     if args.cont and args.model != 'cnn':
         features = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
         feature_size = torch.flatten(features, 1).shape[1]
-        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, num_hidden_layers=args.num_hidden_layers, num_neurons=args.num_neurons, use_sigmoid=args.use_sigmoid)
         
         model.load_state_dict(torch.load(f'{model_path}/{args.model}_feature_extractor_best.pth', weights_only=True))
         feature_regressor.load_state_dict(torch.load(f'{model_path}/{args.model}_regressor_best.pth', weights_only=True))
