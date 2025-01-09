@@ -105,8 +105,8 @@ class JointPlot:
             ax_joint.plot(self.x, self.name2_data, label=f"{self.name2} Data", c='indianred', linestyle='-')
             ax_joint.yaxis.tick_right()
             # draw confidence intervals of +- 5%
-            ax_joint.fill_between(self.x, self.name1_data - 5, self.name1_data + 5, color='lightblue', alpha=0.5)
-            ax_joint.fill_between(self.x, self.name2_data - 5, self.name2_data + 5, color='lightcoral', alpha=0.5)
+            ax_joint.fill_between(self.x, self.name1_data - 10, self.name1_data + 10, color='lightblue', alpha=0.5)
+            ax_joint.fill_between(self.x, self.name2_data - 10, self.name2_data + 10, color='lightcoral', alpha=0.5)
             # add the confidence intervals to the legend
             # ax_joint.plot([], [], color=['lightblue', 'lightcoral'], alpha=0.5, label='Data Threshold (+-5%)')
 
@@ -143,10 +143,10 @@ class JointPlot:
             handles, labels = ax_joint.get_legend_handles_labels()
             # place the data threshold legend at position 2
             sorted_handles_labels = list(zip(handles, labels))
-            sorted_handles_labels.insert(1, (MulticolorPatch(['lightblue', 'lightcoral']), r'Data Threshold ($\pm$5%)'))
+            sorted_handles_labels.insert(1, (MulticolorPatch(['lightblue', 'lightcoral']), r'Data Threshold ($\pm$10%)'))
             # calculate accuracy of the model in terms of +- 5% threshold wrt. label data
-            accuracy_name1 = np.mean((self.name1_data >= self.label_data - 5) & (self.name1_data <= self.label_data + 5)) * 100
-            accuracy_name2 = np.mean((self.name2_data >= self.label_data - 5) & (self.name2_data <= self.label_data + 5)) * 100
+            accuracy_name1 = np.mean((self.name1_data >= self.label_data - 10) & (self.name1_data <= self.label_data + 10)) * 100
+            accuracy_name2 = np.mean((self.name2_data >= self.label_data - 10) & (self.name2_data <= self.label_data + 10)) * 100
             # add the accuracy to the legend
             sorted_handles_labels.append((MulticolorPatch(['royalblue', 'black', 'royalblue']), f'Accuracy {self.name1}: {accuracy_name1:.2f}%'))
             sorted_handles_labels.append((MulticolorPatch(['indianred', 'black', 'indianred']), f'Accuracy {self.name2}: {accuracy_name2:.2f}%'))
@@ -270,9 +270,9 @@ def _smooth_data(sensor_data, model_data):
 
 def _print_summary_statistics(name1, name2, name1_data, name2_data, label_data):
     print(f"\nSummary Statistics:")
-    print(f"  -- Sensor Data:   Mean:  {np.mean(name1_data):.2f}, STD: {np.std(name1_data):.2f}")
-    print(f"  -- Model Data:    Mean:  {np.mean(name2_data):.2f}, STD: {np.std(name2_data):.2f}")
-    print(f"  -- Delta:         Mean:  {np.mean(name1_data - name2_data):.2f}, STD: {np.std(name1_data - name2_data):.2f}")
+    print(f"  -- {name1} Data:    Mean:  {np.mean(name1_data):.2f}, STD: {np.std(name1_data):.2f}")
+    print(f"  -- {name2} Data:    Mean:  {np.mean(name2_data):.2f}, STD: {np.std(name2_data):.2f}")
+    print(f"  -- Delta:           Mean:  {np.mean(name1_data - name2_data):.2f}, STD: {np.std(name1_data - name2_data):.2f}")
 
     # Print accuracies with different thresholds, for all labels, labels below 50% and labels above 50%
     percentages = [2.5, 5, 10]
@@ -314,4 +314,4 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
 
 if __name__ == '__main__':
     file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox.hdf5"
-    main(file_path, name="sensors", name1='scada', name2='convnextv2', time_step=5, delta=True)
+    main(file_path, name="sensors", name1='yolo', name2='convnextv2', time_step=5, delta=True)

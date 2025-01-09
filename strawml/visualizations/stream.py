@@ -415,14 +415,13 @@ class RTSPStream(AprilDetector):
 
     def _process_frames_from_hdf5(self, path: str, hdf5_model_save_name) -> None:
         """Process frames from an HDF5 file."""
-        get_labels = True
+        overwrite = True
         with h5py.File(path, 'r+') as hf:
             timestamps = list(hf.keys())
+            # sort timestamps
+            timestamps = sorted(timestamps, key=lambda x: int(x.split('_')[1]))
             # Check if hf[timestamp]['label'] exists for the first timestamp. 
             # If it does we do not need to get labels again
-            if 'straw_percent' in hf[timestamps[0]].keys():
-                get_labels = False # False
-            print(get_labels)
             self.recording_req = True
             for timestamp in timestamps:
                 frame_time = time.time()
@@ -430,7 +429,7 @@ class RTSPStream(AprilDetector):
                 frame = hf[timestamp]['image'][()]
                 frame = decode_binary_image(frame)
                 # first we check if string sensor is in the path
-                if 'sensors' in path and get_labels:
+                if 'sensors' in path and overwrite:
                     self._process_sensor_hdf5_frame(frame, hf, timestamp, hdf5_model_save_name, frame_time)
                 else:
                     self._process_hdf5_frame(frame, hf, timestamp, hdf5_model_save_name, frame_time)
@@ -444,15 +443,13 @@ class RTSPStream(AprilDetector):
         3. run the normal _process_hdf5_frame 
         """
         try:
-            if timestamp == 'frame_200':
-                print("Frame 200")
             straw_bbox = hf[timestamp]['annotations']['bbox_straw'][...]
             straw_level = self.helpers._get_pixel_to_straw_level(frame, straw_bbox, object=False)[0]
-            if "straw_percent" in hf[timestamp]:
+            if "straw_percent" in hf[timestamp].keys():
                 del hf[timestamp]["straw_percent"]
             hf[timestamp].create_dataset('straw_percent', data=straw_level)
         except Exception as e:
-            t = "straw_percent" in hf[timestamp]
+            t = "straw_percent" in hf[timestamp].keys()
             if t:
                 del hf[timestamp]["straw_percent"]
             hf[timestamp].create_dataset('straw_percent', data=0)
@@ -460,6 +457,7 @@ class RTSPStream(AprilDetector):
         self._process_hdf5_frame(frame, hf, timestamp, hdf5_model_save_name, frame_time)
 
     def _process_hdf5_frame(self, frame: np.ndarray, hf, timestamp, hdf5_model_save_name, frame_time) -> None:
+        results = None 
         if frame is None:
             print("Frame is None. Skipping...")
             self._update_information(frame_time)
@@ -644,7 +642,7 @@ class RTSPStream(AprilDetector):
             frame = cutout
             results = results 
         elif self.object_detect:
-            results, OD_time = time_function(self.OD.score_frame, frame)
+            results, OD_time = time_function(self.OD.score_frame, frame) 
             # Make sure the results are not empty
             if len(results[0]) == 0:
                 results = "NA"
@@ -746,7 +744,8 @@ class RTSPStream(AprilDetector):
                 straw_level = predicted[0]*10
             
             # We smooth the straw level
-            straw_level = self.helpers._smooth_level(straw_level, 'straw')
+            if self.smoothing:
+                straw_level = self.helpers._smooth_level(straw_level, 'straw')
             print(straw_level)
             x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)      
             if self.recording_req:
