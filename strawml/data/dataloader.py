@@ -16,7 +16,8 @@ from strawml.models.straw_classifier import chute_cropper as cc
 class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True, inc_edges: bool = False,
                  random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21,
-                 continuous: bool = False, subsample: float = 1.0, augment_probability: float = 0.5, override_statistics: tuple = (), greyscale: bool = False, sensor: bool = False) -> torch.utils.data.Dataset:
+                 continuous: bool = False, subsample: float = 1.0, augment_probability: float = 0.5, override_statistics: tuple = (), greyscale: bool = False, sensor: bool = False,
+                 balance_dataset: bool = False) -> torch.utils.data.Dataset:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
@@ -48,6 +49,39 @@ class Chute(torch.utils.data.Dataset):
         # Sort frame_names
         frame_names = sorted(frame_names, key=lambda x: int(x.split('_')[1]))
 
+
+        # Balance the dataset by reducing the number of frames in the dataset to a threshold based on the minimum class count
+        if balance_dataset:
+            print("Getting minimum class count")
+            class_counts = {}
+            for idx in frame_names:
+                fullness = self.frames[idx]['annotations']['fullness'][...]
+                fullness = fullness.item()
+                increment = 1/(self.num_classes_straw-1)
+                possible_fullness = np.arange(0, 1.01, increment)
+                fullness_converted = self.get_closest_value(fullness, possible_fullness)
+                if fullness_converted in class_counts:
+                    class_counts[fullness_converted] += 1
+                else:
+                    class_counts[fullness_converted] = 1
+            
+            min_class_count = min(400, min(class_counts.values()) + 400)
+            print(f"Balancing dataset to: {min_class_count} maximum samples per class")
+            
+            frame_names_balanced = []
+            balanced_class_counts = {}
+            for idx in frame_names:
+                fullness = self.frames[idx]['annotations']['fullness'][...]
+                fullness = fullness.item()
+                if balanced_class_counts.get(fullness, 0) < min_class_count:
+                    frame_names_balanced.append(idx)
+                    balanced_class_counts[fullness] = balanced_class_counts.get(fullness, 0) + 1
+                
+            frame_names = frame_names_balanced
+            print(f'Balanced class counts: {balanced_class_counts}')
+            print(f'Balanced dataset size: {len(frame_names)}')
+            
+        
         # If data purpose is straw, we remove all cropped images from the dataset
         # if self.data_purpose == "straw":
         #     # Remove all images that have been cropped
@@ -746,12 +780,13 @@ if __name__ == '__main__':
     # train_set.plot_data(frame_idx=9)
     
     print("---- STRAW DETECTION DATASET ----")
-    print("Extracting statistics for straw dataset with heatmaps and greyscale images")
-    # data_path = f'/work3/davos/data/train.hdf5'
     data_path = 'data/processed/train.hdf5'
+    # data_path = f'/work3/davos/data/train.hdf5'
+
+    print("Extracting statistics for straw dataset with heatmaps and greyscale images")
     train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=False, inc_edges=False,
-                         random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
-                         num_classes_straw=11, continuous=True, subsample=1.0, augment_probability=1.0, greyscale=False)
+                         random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), 
+                         num_classes_straw=21, continuous=True, subsample=1.0, augment_probability=1.0, greyscale=False, balance_dataset = True)
     
     print('Testing normalizing')
     train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
