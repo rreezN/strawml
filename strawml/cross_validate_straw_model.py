@@ -680,8 +680,8 @@ if __name__ == '__main__':
     
     # Is this how we want to do it?
     ## NOTE SET NAME OF WORK3 USER
-    pers_id = "s194247"
-    # pers_id = "davos"
+    # pers_id = "s194247"
+    pers_id = "davos"
     if args.hpc:
         path_to_data = f'/work3/{pers_id}/data/'
         if not os.path.exists(path_to_data):
@@ -730,7 +730,7 @@ if __name__ == '__main__':
     # test_set = dl.Chute(data_path=args.data_path, data_type='val', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
     #                     random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont)
-    sensor_set = dl.Chute(data_path=f'work3/{pers_id}/data/sensors.hdf5', data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
+    sensor_set = dl.Chute(data_path=sensor_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                           random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=1.0,
                           augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics, greyscale=args.greyscale)
     
