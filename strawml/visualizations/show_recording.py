@@ -25,7 +25,28 @@ from strawml.data.make_dataset import decode_binary_image
 from matplotlib.gridspec import GridSpec
 from scipy.stats import gaussian_kde
 import seaborn as sns
+from matplotlib.collections import PatchCollection
 
+# define an object that will be used by the legend
+class MulticolorPatch(object):
+    def __init__(self, colors):
+        self.colors = colors
+class MulticolorPatchHandler(object):
+    def legend_artist(self, legend, orig_handle, fontsize, handlebox):
+        width, height = handlebox.width, handlebox.height
+        patches = []
+        for i, c in enumerate(orig_handle.colors):
+            patches.append(plt.Rectangle([width/len(orig_handle.colors) * i - handlebox.xdescent, 
+                                          -handlebox.ydescent],
+                           width / len(orig_handle.colors),
+                           height, 
+                           facecolor=c, 
+                           edgecolor='none'))
+
+        patch = PatchCollection(patches,match_original=True)
+
+        handlebox.add_artist(patch)
+        return patch
 
 class JointPlot:
     def __init__(self, x, label_data, name1_data, name2_data, name1, name2, marginal_x=True, marginal_y=True, plot_data=True):
@@ -87,16 +108,15 @@ class JointPlot:
             ax_joint.fill_between(self.x, self.name1_data - 5, self.name1_data + 5, color='lightblue', alpha=0.5)
             ax_joint.fill_between(self.x, self.name2_data - 5, self.name2_data + 5, color='lightcoral', alpha=0.5)
             # add the confidence intervals to the legend
-            ax_joint.plot([], [], color='lightblue', alpha=0.5, label='Data Threshold (+-5%)')
-            ax_joint.plot([], [], color='lightcoral', alpha=0.5)
+            # ax_joint.plot([], [], color=['lightblue', 'lightcoral'], alpha=0.5, label='Data Threshold (+-5%)')
 
-            # Highlight the areas where the sensor and model data overlap when within 5% of each other
-            overlap = np.where((self.name1_data >= self.name2_data - 5) & (self.name1_data <= self.name2_data + 5))
-            # Highlight the entire vertical area where the sensor and model data overlap
-            for i in overlap[0]:
-                ax.axvline(x=self.x[i], color='goldenrod', linestyle='-', alpha=0.2)
-            # add the highlighted area to the legend
-            ax_joint.plot([], [], color='goldenrod', linestyle='-', alpha=0.2, label='Overlap points (w. Threshold)')
+            # # Highlight the areas where the sensor and model data overlap when within 5% of each other
+            # overlap = np.where((self.name1_data >= self.name2_data - 5) & (self.name1_data <= self.name2_data + 5))
+            # # Highlight the entire vertical area where the sensor and model data overlap
+            # for i in overlap[0]:
+            #     ax.axvline(x=self.x[i], color='goldenrod', linestyle='-', alpha=0.2)
+            # # add the highlighted area to the legend
+            # ax_joint.plot([], [], color='goldenrod', linestyle='-', alpha=0.2, label='Overlap points (w. Threshold)')
             
             if self.marginal_x and ax_marginal_x:
                 ax_marginal_x.grid()
@@ -107,19 +127,42 @@ class JointPlot:
                 ax_marginal_y.grid()
                 sns.kdeplot(self.name1_data, ax=ax_marginal_y, color='royalblue', fill=True, vertical=True)
                 sns.kdeplot(self.name2_data, ax=ax_marginal_y, color='indianred', fill=True, vertical=True)
+                sns.kdeplot(self.label_data, ax=ax_marginal_y, color='black', fill=False, vertical=True, linestyle='--', linewidth=1.5)
                 ax_marginal_y.axis('off')
 
             ax_joint.grid()
             ax_joint.set_xlabel("Time")
             ax_joint.set_ylabel("Data")
+
             # Shrink current axis's height by 10% on the bottom
             box = ax_joint.get_position()
             ax_joint.set_position([box.x0, box.y0 + box.height * 0.1,
-                            box.width, box.height * 0.9])
+                                box.width, box.height * 0.9])
 
-            # Put a legend below current axis
-            ax_joint.legend(loc='upper center', bbox_to_anchor=(0.5, 1.12),
-                    fancybox=True, shadow=True, ncol=5)
+            # Get current handles and labels
+            handles, labels = ax_joint.get_legend_handles_labels()
+            # place the data threshold legend at position 2
+            sorted_handles_labels = list(zip(handles, labels))
+            sorted_handles_labels.insert(1, (MulticolorPatch(['lightblue', 'lightcoral']), r'Data Threshold ($\pm$5%)'))
+            # calculate accuracy of the model in terms of +- 5% threshold wrt. label data
+            accuracy_name1 = np.mean((self.name1_data >= self.label_data - 5) & (self.name1_data <= self.label_data + 5)) * 100
+            accuracy_name2 = np.mean((self.name2_data >= self.label_data - 5) & (self.name2_data <= self.label_data + 5)) * 100
+            # add the accuracy to the legend
+            sorted_handles_labels.append((MulticolorPatch(['royalblue', 'black', 'royalblue']), f'Accuracy {self.name1}: {accuracy_name1:.2f}%'))
+            sorted_handles_labels.append((MulticolorPatch(['indianred', 'black', 'indianred']), f'Accuracy {self.name2}: {accuracy_name2:.2f}%'))
+
+            sorted_handles_labels = sorted(
+                sorted_handles_labels, 
+                key=lambda hl: "accuracy" in hl[1]
+            )
+            
+            print(sorted_handles_labels)
+            # Unzip sorted handles and labels
+            sorted_handles, sorted_labels = zip(*sorted_handles_labels)
+
+            # Put a legend below the current axis
+            ax_joint.legend(sorted_handles, sorted_labels, handler_map={MulticolorPatch: MulticolorPatchHandler()}, loc='upper center', 
+                            bbox_to_anchor=(0.5, 1.12), fancybox=True, shadow=True, ncol=3)
             
             if ax is None:
                 plt.tight_layout()
@@ -128,7 +171,7 @@ class JointPlot:
             # draw line through 0 to indicate when the model is over or under predicting
             ax_joint.axhline(0, color='black', linestyle='--')
             # axes[2].plot(x_axis_data, sensor_data - model_data, label='Delta', c=cs[0], linestyle='-')
-            ax_joint.plot(self.x, self.name1_data - self.name2_data, label='Delta (Smooth)', c="mediumseagreen", linestyle='-')
+            ax_joint.plot(self.x, self.name1_data - self.name2_data, label=f'Delta ({self.name1} - {self.name2})', c="mediumseagreen", linestyle='-')
             # Highlight the areas where the sensor and model data overlap when within 5% of each other, meaning where the delta is within 5% of 0
             overlap = np.where((self.name1_data - self.name2_data >= -5) & (self.name1_data - self.name2_data <= 5))
             # Highlight the entire vertical area where the sensor and model data overlap
@@ -181,7 +224,9 @@ def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv
     # We then load the data from the file path
     errors = 0
     with h5py.File(file_path, 'r') as f:
-        for key in f.keys():
+        keys = list(f.keys())
+        keys = sorted(keys, key=lambda x: int(x.split('_')[1]))
+        for key in keys:
             try:
                 label_data = np.append(label_data, f[key]['straw_percent'][...])
                 if name1 == 'scada':
@@ -223,16 +268,24 @@ def _smooth_data(sensor_data, model_data):
 
     return smoothed_sensor_data, smoothed_model_data, x_axis
 
-def _print_summary_statistics(sensor_data, model_data):
+def _print_summary_statistics(name1, name2, name1_data, name2_data, label_data):
     print(f"\nSummary Statistics:")
-    print(f"  -- Sensor Data: Mean:          {np.mean(sensor_data):.2f}, STD: {np.std(sensor_data):.2f}")
-    print(f"  -- Model Data: Mean:           {np.mean(model_data):.2f}, STD: {np.std(model_data):.2f}")
-    print(f"  -- Delta: Mean:                {np.mean(sensor_data - model_data):.2f}, STD: {np.std(sensor_data - model_data):.2f}")
-    # print("\n")
-    # print(f"  -- Smoothed Sensor Data: Mean: {np.mean(smooth_sensor_data):.2f}, STD: {np.std(smooth_sensor_data):.2f}")
-    # print(f"  -- Smoothed Model Data: Mean:  {np.mean(smooth_model_data):.2f}, STD: {np.std(smooth_model_data):.2f}")
-    # print(f"  -- Delta: Mean:                {np.mean(smooth_sensor_data - smooth_model_data):.2f}, STD: {np.std(smooth_sensor_data - smooth_model_data):.2f}")
-    # print("NOTE: Negative values in the delta indicate that the model's predictions are higher than the sensor data.\n")
+    print(f"  -- Sensor Data:   Mean:  {np.mean(name1_data):.2f}, STD: {np.std(name1_data):.2f}")
+    print(f"  -- Model Data:    Mean:  {np.mean(name2_data):.2f}, STD: {np.std(name2_data):.2f}")
+    print(f"  -- Delta:         Mean:  {np.mean(name1_data - name2_data):.2f}, STD: {np.std(name1_data - name2_data):.2f}")
+
+    # Print accuracies with different thresholds, for all labels, labels below 50% and labels above 50%
+    percentages = [2.5, 5, 10]
+    data = [name1_data, name2_data]
+    for percentage in percentages:
+        for i, name in enumerate([name1, name2]):
+            print(f"\nAccuracy (+-{percentage}%) for {name}:")
+            accuracy = np.mean((data[i] >= label_data - percentage) & (data[i] <= label_data + percentage)) * 100
+            print(f"  -- Accuracy:                      {accuracy:.2f}%")
+            accuracy_below_50 = np.mean((label_data < 50) & (data[i] >= label_data - percentage) & (data[i] <= label_data + percentage)) * 100
+            print(f"  -- Accuracy for labels below 50%: {accuracy_below_50:.2f}%")
+            accuracy_above_50 = np.mean((label_data >= 50) & (data[i] >= label_data - percentage) & (data[i] <= label_data + percentage)) * 100
+            print(f"  -- Accuracy for labels above 50%: {accuracy_above_50:.2f}%")
 
 def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', time_step:int = 5, delta:bool = True):  
     # We first define the figure on which we wish to plot the data
@@ -250,7 +303,7 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
     if delta:
         JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, plot_data=False).plot(axes[1])
 
-    _print_summary_statistics(name1_data, name2_data)
+    _print_summary_statistics(name1, name2, name1_data, name2_data, label_data)
     fig.suptitle(f"Recording: {name}", y=0.92, fontsize=20)
 
     # Adjust vertical spacing between subplots
@@ -261,4 +314,4 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
 
 if __name__ == '__main__':
     file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox.hdf5"
-    main(file_path, name="", name1='yolo', name2='yolo_cutout', time_step=5, delta=True)
+    main(file_path, name="sensors", name1='scada', name2='convnextv2', time_step=5, delta=True)
