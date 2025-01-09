@@ -420,7 +420,7 @@ class RTSPStream(AprilDetector):
             # Check if hf[timestamp]['label'] exists for the first timestamp. 
             # If it does we do not need to get labels again
             if 'straw_percent' in hf[timestamps[0]].keys():
-                get_labels = False
+                get_labels = False # False
             print(get_labels)
             self.recording_req = True
             for timestamp in timestamps:
@@ -443,19 +443,26 @@ class RTSPStream(AprilDetector):
         3. run the normal _process_hdf5_frame 
         """
         try:
+            if timestamp == 'frame_200':
+                print("Frame 200")
             straw_bbox = hf[timestamp]['annotations']['bbox_straw'][...]
             straw_level = self.helpers._get_pixel_to_straw_level(frame, straw_bbox, object=False)[0]
+            if "straw_percent" in hf[timestamp]:
+                del hf[timestamp]["straw_percent"]
             hf[timestamp].create_dataset('straw_percent', data=straw_level)
-        except:
+        except Exception as e:
+            t = "straw_percent" in hf[timestamp]
+            if t:
+                del hf[timestamp]["straw_percent"]
             hf[timestamp].create_dataset('straw_percent', data=0)
-            print(f"{timestamp}: No bbox found for straw level")
+            print(f"{timestamp}: {e}, replaced: {t}")
         self._process_hdf5_frame(frame, hf, timestamp, hdf5_model_save_name, frame_time)
 
     def _process_hdf5_frame(self, frame: np.ndarray, hf, timestamp, hdf5_model_save_name, frame_time) -> None:
         if frame is None:
             print("Frame is None. Skipping...")
             self._update_information(frame_time)
-            return
+            return  
         with self.lock:
             self.frame = frame
 
@@ -465,13 +472,21 @@ class RTSPStream(AprilDetector):
             # print shape of cutout
         else:
             frame_drawn, cutout = frame, None
+
+        if not self.use_cutout and not self.object_detect:
+            try:
+                bbox = torch.from_numpy(hf[timestamp]["annotations"]["bbox_chute"][()]).to(self.device)
+                results = [0,[bbox]]
+            except Exception as e:
+                print(f"Error in getting bbox: {e}")
+                return
         
         # If not tags have been found we go to the next frame
         if len(self.tag_ids) == 0:
             self._display_frame(frame_drawn)
             return
 
-        frame_drawn = self._process_frame_content(frame, frame_drawn, cutout)
+        frame_drawn = self._process_frame_content(frame, frame_drawn, cutout, results)
 
         # Display frame and overlay text
         self._display_frame(frame_drawn)
@@ -621,12 +636,12 @@ class RTSPStream(AprilDetector):
                 continue
             self.information[key]["text"] = ""
 
-    def _process_frame_content(self, frame: np.ndarray, frame_drawn: np.ndarray, cutout) -> np.ndarray:
+    def _process_frame_content(self, frame: np.ndarray, frame_drawn: np.ndarray, cutout, results=None) -> np.ndarray:
         """Handle specific processing like AprilTags, Object Detection, etc."""
         # Object Detection
         if cutout is not None:
             frame = cutout
-            results = None 
+            results = results 
         elif self.object_detect:
             results, OD_time = time_function(self.OD.score_frame, frame)
             # Make sure the results are not empty
@@ -634,7 +649,7 @@ class RTSPStream(AprilDetector):
                 results = "NA"
             self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
         else:
-            results = "NA"
+            results = results
 
         # Predictor of the straw level
         if self.with_predictor:
@@ -650,10 +665,7 @@ class RTSPStream(AprilDetector):
             # If the output is not empty, we can plot the boxes and get the straw level
             if len(output[0]) != 0:
                 x_pixel, y_pixel = output[1][0][-1].cpu().numpy()
-                # cv2.line(frame, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 300, int(y_pixel)), (92, 92, 205), 2)
-                # cv2.imshow("frame", frame)
-                # cv2.waitKey(0)
-                # Extract the straw level from the pixel values of the bbox
+
                 if cutout is not None:
                     straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level_cutout(frame, output)
                 else:
@@ -734,7 +746,7 @@ class RTSPStream(AprilDetector):
             
             # We smooth the straw level
             straw_level = self.helpers._smooth_level(straw_level, 'straw')
-            
+            print(straw_level)
             x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)      
             if self.recording_req:
                 self.prediction_dict["predicted"] = {straw_level: (x_pixel, y_pixel)}
@@ -910,9 +922,9 @@ if __name__ == "__main__":
     # ### YOLO PREDICTOR
     RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
         rtsp=False , # Only used when the stream is from an RTSP source
-        make_cutout=True, use_cutout=True, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
+        make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
         detect_april=True, yolo_straw=False, yolo_straw_model="models/obb_cutout_best.pt",
-        with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
+        with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnextv2_regressor/', regressor=True, edges=False, heatmap=False,
         device='cuda',
         smoothing=False,
         hdf5_model_save_name='convnextv2')(video_path="data/interim/sensors_with_strawbbox.hdf5")

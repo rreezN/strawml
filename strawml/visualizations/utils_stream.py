@@ -12,7 +12,7 @@ from asyncua import Client
 import copy
 import time
 from strawml.data.image_utils import SpecialRotate, rotate_point
-
+import h5py
 
 class AprilDetectorHelpers:
     def __init__(self, april_detector_instance):
@@ -300,10 +300,10 @@ class AprilDetectorHelpers:
     
     def _load_normalisation_constants(self):
         # Loads the normalisation constants from data/processed/statistics.yaml
-        with open("data/processed/statistics.yaml", 'r') as file:
-            data = yaml.safe_load(file)
-            mean = data['mean']
-            std = data['std']
+        with h5py.File("data/processed/train.hdf5", "r") as file:
+            # data = yaml.safe_load(file)
+            mean = file.attrs['mean']
+            std = file.attrs['std']
         return mean, std
         
     def _load_camera_params(self):
