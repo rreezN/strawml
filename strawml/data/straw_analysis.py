@@ -243,8 +243,8 @@ def plot_class_distribution(class_dict: dict, frames: h5py.File, direction: str 
             plt.xlim(0, max(np.array(counts['original']) + np.array(counts['augmented'])) + 10)
         else:
             print(f'Original: {total_original} | Sensors: {total_sensors}')
-            plt.barh(classes, counts['original'], align='center', label='Human', height=4, left=left, alpha=0.5)
-            plt.barh(classes, counts['sensors'], align='center', label='Sensors', height=4, left=left, alpha=0.5)
+            plt.barh(classes, counts['original'], align='center', label='Annotation', height=4, left=left, alpha=0.5)
+            plt.barh(classes, counts['sensors'], align='center', label='Sensor', height=4, left=left, alpha=0.5)
             plt.xlim(0, max(max(counts['original'])+ 10, max(counts['sensors']) + 10))
         
         # plt.legend(loc='lower center', bbox_to_anchor=(0.5, -0.35), ncol=2)
@@ -268,8 +268,8 @@ def plot_class_distribution(class_dict: dict, frames: h5py.File, direction: str 
             plt.ylim(0, max(np.array(counts['original']) + np.array(counts['augmented'])) + 10)
         else:
             print(f'Original: {total_original} | Sensors: {total_sensors}')
-            plt.bar(classes, counts['sensors'], align='center', label='Sensors', width=4, bottom=bottom, alpha=0.5)
-            plt.bar(classes, counts['original'], align='center', label='Human', width=4, bottom=bottom, alpha=0.5)
+            plt.bar(classes, counts['original'], align='center', label='Annotation', width=4, bottom=bottom, alpha=0.5)
+            plt.bar(classes, counts['sensors'], align='center', label='Sensor', width=4, bottom=bottom, alpha=0.5)
             plt.ylim(0, max(max(counts['original'])+ 10, max(counts['sensors']) + 10))
         
         # plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=2)
@@ -277,6 +277,7 @@ def plot_class_distribution(class_dict: dict, frames: h5py.File, direction: str 
         plt.ylabel('Count')
         plt.xlabel('Class')
     
+    plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=2)
     plt.title(f'Straw Class Distribution ({frames.filename}), total: {total_frames} frames')
     plt.savefig('reports/figures/class_distribution.png', dpi=300)
     plt.show()
@@ -711,6 +712,8 @@ def plot_tsne(frames: h5py.File, class_dict: dict) -> None:
     plt.savefig('reports/figures/straw_analysis/data/tsne.png', dpi=300)
     plt.show()
 
+
+
 # TODO:
 # - Look into some feature engineering
 #    - Histogram of Oriented Gradients (HOG)
@@ -725,7 +728,7 @@ def plot_tsne(frames: h5py.File, class_dict: dict) -> None:
 
 
 if __name__ == '__main__':
-    frames = h5py.File('data/processed/train.hdf5', 'r')
+    frames = h5py.File('data/processed/sensors_with_strawbbox.hdf5', 'r')
     class_dictionary = get_frames_by_class(frames)
     
     ## These functions create plots of the dataset for the straw level monitoring model ##
