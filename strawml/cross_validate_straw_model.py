@@ -601,6 +601,7 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'only_head': args.only_head,
             'num_hidden_layers': args.num_hidden_layers,
             'num_neurons': args.num_neurons,
+            'balanced_dataset': args.balanced_dataset
         })
     
     global LOG_DICT
@@ -663,6 +664,7 @@ def get_args():
     parser.add_argument('--only_head', action='store_true', help='Only train the head of the model')
     parser.add_argument('--num_hidden_layers', type=int, default=0, help='Number of hidden layers for the regressor. Default: 0 (in->out)')
     parser.add_argument('--num_neurons', type=int, default=512, help='Number of neurons for the regressor')
+    parser.add_argument('--balanced_dataset', action='store_true', help='Balance the dataset setting the maximum number of samples in each class to a max of 400')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -719,7 +721,7 @@ if __name__ == '__main__':
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
                          num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, 
-                         augment_probability=args.augment_probability, greyscale=args.greyscale)
+                         augment_probability=args.augment_probability, greyscale=args.greyscale, balance_dataset=args.balanced_dataset)
     
     mean, std = train_set.train_mean, train_set.train_std
     if args.inc_heatmap:
