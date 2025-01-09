@@ -299,7 +299,7 @@ if __name__ == '__main__':
         case 'cnn':
             model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=args.num_classes_straw, use_sigmoid=args.use_sigmoid)
         case 'convnextv2':
-            model = timm.create_model('convnextv2_base.fcmae_ft_in22k_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
+            model = timm.create_model('convnextv2_base.fcmae_ft_in22k_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw)
         case 'convnext':
             model = timm.create_model('convnext_small.in12k_ft_in1k_384', in_chans=input_channels, num_classes=args.num_classes_straw, pretrained=args.pretrained)
         case 'vit':
@@ -317,8 +317,8 @@ if __name__ == '__main__':
         feature_size = torch.flatten(features, 1).shape[1]
         feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
         
-        model.load_state_dict(torch.load(f'{model_path}/{args.model}_feature_extractor_best.pth', weights_only=True))
-        feature_regressor.load_state_dict(torch.load(f'{model_path}/{args.model}_regressor_best.pth', weights_only=True))
+        model.load_state_dict(torch.load(f'{model_path}/{args.model}_feature_extractor_v2_L_layers_sig_best_sensor.pth', weights_only=True))
+        feature_regressor.load_state_dict(torch.load(f'{model_path}/{args.model}_regressor_v2_L_layers_sig_best_sensor.pth', weights_only=True))
         
     else:
         feature_regressor = None
