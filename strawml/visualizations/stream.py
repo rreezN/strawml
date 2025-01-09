@@ -90,7 +90,8 @@ class AprilDetector:
             std=[1 / s for s in self.std]
         )
         self.transform = transforms.Compose([
-            transforms.ToDtype(torch.float32, scale=False),
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
             transforms.Normalize(mean=self.mean, std=self.std)
         ])
         
