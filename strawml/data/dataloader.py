@@ -786,7 +786,7 @@ if __name__ == '__main__':
     print("Extracting statistics for straw dataset with heatmaps and greyscale images")
     train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=False, inc_edges=False,
                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), 
-                         num_classes_straw=21, continuous=True, subsample=1.0, augment_probability=1.0, greyscale=False, balance_dataset = True)
+                         num_classes_straw=21, continuous=True, subsample=1.0, augment_probability=1.0, greyscale=False, balance_dataset=False)
     
     print('Testing normalizing')
     train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
