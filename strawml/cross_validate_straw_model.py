@@ -573,8 +573,9 @@ def initialize_wandb(args: argparse.Namespace) -> None:
     """Initialize the Weights and Biases logging.
     """
     wandb.login()
+    project = 'cv-testrun' if not args.is_sweep else 'testsweep'
     wandb.init(
-        project='cv-testrun',
+        project=project,
         entity='meliora',
         config={
             'learning_rate': args.lr,
@@ -636,22 +637,22 @@ def get_args():
     """
     parser = argparse.ArgumentParser(description='Train the CNN classifier model.')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
-    parser.add_argument('--epochs', type=int, default=25, help='Number of epochs to train for')
+    parser.add_argument('--epochs', type=int, default=20, help='Number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.00001, help='Learning rate for training')
     parser.add_argument('--model_path', type=str, default='models/pretrained/convnextv2_atto_1k_224_ema.pth', help='Path to load the model from')
     parser.add_argument('--save_path', type=str, default='models/', help='Path to save the model to')
-    parser.add_argument('--data_path', type=str, default='data/interim/chute_detection.hdf5', help='Path to the training data')
+    parser.add_argument('--data_path', type=str, default='train.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', action='store_true', help='Include heatmaps in the training data')
     parser.add_argument('--inc_edges', action='store_true', help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--no_wandb', action='store_true', help='Do not use Weights and Biases for logging')
-    parser.add_argument('--model', type=str, default='vit', help='Model to use for training', choices=['cnn', 'convnext', 'convnextv2', 'vit', 'eva02', 'caformer'])
-    parser.add_argument('--image_size', type=int, default=[1370, 204], help='Image size for the model (only for CNN)', nargs=2)
-    parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
+    parser.add_argument('--model', type=str, default='convnextv2', help='Model to use for training', choices=['cnn', 'convnext', 'convnextv2', 'vit', 'eva02', 'caformer'])
+    parser.add_argument('--image_size', type=int, default=[672, 208], help='Image size for the model (only for CNN)', nargs=2)
+    parser.add_argument('--num_classes_straw', type=int, default=21, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
     parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class')
-    parser.add_argument('--folds', type=int, default=5, help='Number of folds for cross-validation')
+    parser.add_argument('--folds', type=int, default=4, help='Number of folds for cross-validation')
     parser.add_argument('--data_subsample', type=float, default=1, help='Amount of the data to subsample for training (1.0 = 100%, 0.5 = 50%)')
-    parser.add_argument('--augment_probability', type=float, default=0.5, help='Probability of augmenting the data')
+    parser.add_argument('--augment_probability', type=float, default=0.0, help='Probability of augmenting the data')
     parser.add_argument('--use_sigmoid', action='store_true', help='Use a sigmoid activation function for the output')
     parser.add_argument('--use_wce', action='store_true', help='Use weighted cross-entropy loss')
     parser.add_argument('--optim', type=str, default='adam', help='Optimizer to use for training', choices=['adam', 'adamw', 'sgd', 'soap', 'adopt'])
@@ -755,6 +756,9 @@ if __name__ == '__main__':
         initialize_wandb(args)
         if args.is_sweep:
             wandb.config.update(args, allow_val_change=True)
+            print(f"lr: ", args.lr)
+            print(f'batch_size: ', args.batch_size)
+            args.id = args.id + wandb.run.name
         
     for fold, (train_idx, val_idx) in enumerate(kf.split(train_set)):
         if not args.no_wandb:
