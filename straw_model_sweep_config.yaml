@@ -2,7 +2,7 @@ program: strawml/cross_validate_straw_model.py
 name: convnextv2
 method: bayes
 metric:
-  goal: minimize
+  goal: maximize
   name: best_sensor_accuracy
 parameters:
   lr:

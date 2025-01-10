@@ -23,4 +23,4 @@ module load matplotlib/3.8.3-numpy-1.26.4-python-3.10.13
 # NOTE: needs to have been built with the same numpy / SciPy  version as above!
 source ~/strawml/.venv/bin/activate
 
-wandb agent meliora/straw_sweep/fxk9fdq6 --count 1
+wandb agent meliora/straw-sweep/6e7wbi89 --count 2
