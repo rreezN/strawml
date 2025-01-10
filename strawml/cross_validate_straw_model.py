@@ -665,6 +665,7 @@ def get_args():
     parser.add_argument('--num_hidden_layers', type=int, default=0, help='Number of hidden layers for the regressor. Default: 0 (in->out)')
     parser.add_argument('--num_neurons', type=int, default=512, help='Number of neurons for the regressor')
     parser.add_argument('--balanced_dataset', action='store_true', help='Balance the dataset setting the maximum number of samples in each class to a max of 400')
+    parser.add_argument('--is_sweep', action='store_true', help='Is this a sweep run?')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -752,6 +753,8 @@ if __name__ == '__main__':
     # WANDB
     if not args.no_wandb:
         initialize_wandb(args)
+        if args.is_sweep:
+            wandb.config.update(args, allow_val_change=True)
         
     for fold, (train_idx, val_idx) in enumerate(kf.split(train_set)):
         if not args.no_wandb:
