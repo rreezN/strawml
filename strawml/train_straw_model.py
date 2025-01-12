@@ -47,13 +47,16 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
     
     if args.cont:
         loss_fn = torch.nn.functional.mse_loss
-        best_accuracy = 1000000.0
+        best_accuracy = np.inf
     else:
         if args.use_wce:
-            ce_weights = torch.ones(args.num_classes_straw)
-            # TODO: Update weights based on data distribution
-            ce_weights[0, 1, 2] = 2.0
-            ce_weights[-3, -2, -1] = 2.0
+            total = len(train_loader.dataset)
+            class_counts = np.array(list(train_loader.dataset.class_counts.values()))
+            # Using CW_i = N / C_i 
+            ce_weights = torch.Tensor([total/class_counts]).flatten()
+            ce_weights = ce_weights.cuda() if torch.cuda.is_available() else ce_weights
+        else:
+            ce_weights = None
         loss_fn = torch.nn.functional.cross_entropy
         best_accuracy = 0.0
     
@@ -95,7 +98,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 output = feature_regressor(output)
                 # output = torch.clamp(output, 0, 1)
             
-            if args.use_wce:
+            if args.use_wce and not args.cont:
                 loss = loss_fn(output, fullness, weight=ce_weights)
             else:
                 loss = loss_fn(output, fullness)
