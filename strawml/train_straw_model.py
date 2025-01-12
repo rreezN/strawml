@@ -483,6 +483,10 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'pretrained': args.pretrained,
             'id': args.id,
             'greyscale': args.greyscale,
+            'only_head': args.only_head,
+            'num_hidden_layers': args.num_hidden_layers,
+            'num_neurons': args.num_neurons,
+            'balanced_dataset': args.balanced_dataset
         })
 
 
