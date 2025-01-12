@@ -511,6 +511,11 @@ def get_args():
     parser.add_argument('--id', type=str, default='', help='ID for the Weights and Biases run')
     parser.add_argument('--greyscale', action='store_true', help='Use greyscale images')
     parser.add_argument('--hpc', action='store_true', help='Run on the HPC')
+    parser.add_argument('--only_head', action='store_true', help='Only train the head of the model')
+    parser.add_argument('--num_hidden_layers', type=int, default=0, help='Number of hidden layers for the regressor. Default: 0 (in->out)')
+    parser.add_argument('--num_neurons', type=int, default=512, help='Number of neurons for the regressor')
+    parser.add_argument('--balanced_dataset', action='store_true', help='Balance the dataset setting the maximum number of samples in each class to a max of 400')
+    
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -537,15 +542,15 @@ if __name__ == '__main__':
     args.image_size = tuple(args.image_size)
     print(f'Using image size: {args.image_size}')
     
-    match args.model:
-        case 'cnn':
-            image_size = args.image_size
-        case 'convnextv2':
-            image_size = (224, 224)
-        case 'vit' | 'caformer':
-            image_size = (384, 384)
-        case 'eva02':
-            image_size = (448, 448)
+    # match args.model:
+    #     case 'cnn':
+    #         image_size = args.image_size
+    #     case 'convnextv2':
+    #         image_size = (224, 224)
+    #     case 'vit' | 'caformer':
+    #         image_size = (384, 384)
+    #     case 'eva02':
+    #         image_size = (448, 448)
             
     image_size = args.image_size
     
@@ -605,7 +610,7 @@ if __name__ == '__main__':
     if args.cont and args.model != 'cnn':
         features = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
         feature_size = torch.flatten(features, 1).shape[1]
-        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=args.use_sigmoid)
+        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=args.use_sigmoid, num_hidden_layers=args.num_hidden_layers, num_neurons=args.num_neurons)
     else:
         feature_regressor = None
     
@@ -619,7 +624,7 @@ if __name__ == '__main__':
         in_feats = in_feats.cuda() if torch.cuda.is_available() else in_feats
         features = model.forward_features(in_feats)
         feature_size = torch.flatten(features, 1).shape[1]
-        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=args.use_sigmoid, num_hidden_layers=args.num_hidden_layers, num_neurons=args.num_neurons)
         model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor{id}_best.pth', weights_only=True))
         feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor{id}_best.pth', weights_only=True))
         
