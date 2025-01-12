@@ -48,6 +48,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
     if args.cont:
         loss_fn = torch.nn.functional.mse_loss
         best_accuracy = np.inf
+        best_sensor_accuracy = 0.0
     else:
         if args.use_wce:
             total = len(train_loader.dataset)
@@ -153,6 +154,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             val_lossses = []
             current_iteration = 0
             batch_times = []
+            
+            outputs = []
+            fullnesses = []
             for (frame_data, target) in val_iterator:
                 current_iteration += 1
                 # TRY: using only the edge image
@@ -187,6 +191,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 
                 val_loss = loss_fn(output, fullness)
                 val_lossses.append(val_loss.item())
+                
+                outputs += output.flatten().detach().cpu().numpy().tolist()
+                fullnesses += fullness.flatten().detach().cpu().numpy().tolist()
                     
                 if not args.cont:
                     output = torch.nn.functional.softmax(output, dim=1)
@@ -210,10 +217,21 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             average_time = sum(batch_times) / len(batch_times)
             
             if args.cont:
+                # Calculate accuracy of the model
+                # Any prediction within x% of the true value is considered correct
+                acceptable = 0.1
+                accuracies = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
                 print(f'Epoch: {epoch+1}, Average Inference Time: {average_time:.6f} Validation Loss: {sum(val_lossses)/len(val_lossses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')
                 if sum(val_lossses)/len(val_lossses) < best_accuracy:
                     best_accuracy = sum(val_lossses)/len(val_lossses)
                     print(f'New best loss: {best_accuracy}')
+                    if not args.no_wandb:
+                        wandb.log(step=epoch+1, data={'best_val_loss': best_accuracy})
+                if accuracies > best_sensor_accuracy:
+                    best_sensor_accuracy = accuracies
+                    print(f'New best sensor accuracy: {best_sensor_accuracy:.2f}%')
+                    if not args.no_wandb:
+                        wandb.log(step=epoch+1, data={'best_sensor_accuracy': best_sensor_accuracy})
                     id = f'_{args.id}' if args.id != '' else ''
                     if args.model != 'cnn':
                         model_folder = f'{args.save_path}{args.model}_regressor/'
@@ -233,9 +251,6 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                         torch.save(model.state_dict(), model_save_path)
                         if not args.no_wandb:
                             wandb.save(model_save_path)
-                            
-                    if not args.no_wandb:
-                        wandb.log(step=epoch+1, data={'best_val_loss': best_accuracy})
             else:
                 accuracy = 100 * correct /total
                 correct = correct.detach().cpu()
@@ -486,7 +501,8 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'only_head': args.only_head,
             'num_hidden_layers': args.num_hidden_layers,
             'num_neurons': args.num_neurons,
-            'balanced_dataset': args.balanced_dataset
+            'balanced_dataset': args.balanced_dataset,
+            'load_model': args.load_model
         })
 
 
@@ -522,6 +538,7 @@ def get_args():
     parser.add_argument('--num_hidden_layers', type=int, default=0, help='Number of hidden layers for the regressor. Default: 0 (in->out)')
     parser.add_argument('--num_neurons', type=int, default=512, help='Number of neurons for the regressor')
     parser.add_argument('--balanced_dataset', action='store_true', help='Balance the dataset setting the maximum number of samples in each class to a max of 400')
+    parser.add_argument('--load_model', type=str, default='', help='Load a model from path to continue training. If cont is set, the path should point to a folder containing the feature extractor and regressor')
     
     return parser.parse_args()
 
@@ -623,6 +640,17 @@ if __name__ == '__main__':
         feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=args.use_sigmoid, num_hidden_layers=args.num_hidden_layers, num_neurons=args.num_neurons)
     else:
         feature_regressor = None
+    
+    if args.load_model != '':
+        if args.cont:
+            model_path = f'{args.load_model}/{args.model}_feature_extractor.pth'
+            model.load_state_dict(torch.load(model_path, weights_only=True))
+            if args.model != 'cnn':
+                regressor_path = f'{args.load_model}/{args.model}_regressor.pth'
+                feature_regressor.load_state_dict(torch.load(regressor_path, weights_only=True))
+        else:
+            model_path = f'{args.load_model}/{args.model}_classifier.pth'
+            model.load_state_dict(torch.load(model_path, weights_only=True))
     
     train_model(args, model, train_loader, sensor_loader, feature_regressor)
     
