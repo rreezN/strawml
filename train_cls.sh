@@ -1,7 +1,7 @@
 #!/bin/sh
-#BSUB -J straw_classifier
-#BSUB -o straw_classifier%J.out
-#BSUB -e straw_classifier%J.err
+#BSUB -J continue_training
+#BSUB -o continue_training%J.out
+#BSUB -e continue_training%J.err
 #BSUB -q gpuv100
 #BSUB -gpu "num=1:mode=exclusive_process"
 #BSUB -n 4
