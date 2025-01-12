@@ -1,7 +1,7 @@
 #!/bin/sh
-#BSUB -J adamw
-#BSUB -o adamw%J.out
-#BSUB -e adamw%J.err
+#BSUB -J yolo-logical-sweep-run
+#BSUB -o yolo-logical-sweep-run%J.out
+#BSUB -e yolo-logical-sweep-run%J.err
 #BSUB -q gpuv100
 #BSUB -gpu "num=1:mode=exclusive_process"
 #BSUB -n 4
@@ -13,7 +13,8 @@
 
 # load a module
 # replace VERSION 
-module load python3/3.10.12
+module load python3/3.10.13
+
 
 # load CUDA (for GPU support)
 # load the correct CUDA for the pytorch version you have installed
@@ -24,4 +25,4 @@ module load matplotlib/3.8.3-numpy-1.26.4-python-3.10.13
 # NOTE: needs to have been built with the same numpy / SciPy  version as above!
 source venv/bin/activate
 
-python3 strawml/sweep_chute_detect.py
+python3 strawml/train_chute_detect.py
