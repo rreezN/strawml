@@ -23,4 +23,4 @@ module load matplotlib/3.8.3-numpy-1.26.4-python-3.10.13
 # NOTE: needs to have been built with the same numpy / SciPy  version as above!
 source ~/strawml/.venv/bin/activate
 
-python3 strawml/train_straw_model.py --model convnextv2 --lr 0.00003972055115132435 --batch_size 8 --image_size 672 208 --id best_convnextv2 --num_hidden_layers 3 --use_sigmoid --balanced_dataset --data_subsample 1.0 --optim adam --augment_probability 0.0 --cont --use_wce --hpc --epochs 150 --folds 4 --pretrained --data_path train.hdf5
+python3 strawml/train_straw_model.py --model convnextv2 --lr 0.00003972055115132435 --batch_size 8 --image_size 672 208 --id best_convnextv2 --num_hidden_layers 3 --use_sigmoid --balanced_dataset --data_subsample 1.0 --optim adam --augment_probability 0.0 --cont --use_wce --hpc --epochs 150 --pretrained --data_path train.hdf5
