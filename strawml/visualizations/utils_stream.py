@@ -20,19 +20,22 @@ class AprilDetectorHelpers:
 
     def _initialize_information_dict(self) -> dict:
         temp = {
-            "FPS":              {"text": "", "font_scale": 1,   "font_thicknesss": 2, "position": (10, 40)},
-            "scada_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 75)},
-            "scada_smooth":     {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (250, 75)},
-            "straw_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 100)},
-            "straw_smooth":     {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (250, 100)},
-            "undistort_time":   {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 125)},
-            "april":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 150)},
-            "od":               {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 175)},
-            "prep":             {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 200)},
-            "model":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 225)},
-            "frame_time":       {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 250)},
-            "RAM":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 275)},
-            "CPU":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 300)},
+            "FPS":              {"text": "", "font_scale": 1,   "font_thicknesss": 2, "position": (10, 40), "color": (255, 0, 0)},
+            "scada_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 75), "color": (255, 0, 0)},
+            "scada_smooth":     {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (300, 75), "color": (255, 0, 0)},
+            "yolo_level":       {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 100), "color": (255, 0, 0)},
+            "yolo_smooth":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (300, 100), "color": (255, 0, 0)},
+            "predictor_level":  {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 125), "color": (255, 0, 0)},
+            "predictor_smooth": {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (300, 125), "color": (255, 0, 0)},
+            "undistort_time":   {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 150), "color": (255, 0, 0)},
+            "april":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 175), "color": (255, 0, 0)},
+            "od":               {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 200), "color": (255, 0, 0)},
+            "prep":             {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 225), "color": (255, 0, 0)},
+            "yolo_model":       {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 250), "color": (255, 0, 0)},
+            "predictor_model":  {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (300, 250), "color": (255, 0, 0)},
+            "frame_time":       {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 275), "color": (255, 0, 0)},
+            "RAM":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 300), "color": (255, 0, 0)},
+            "CPU":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 325), "color": (255, 0, 0)},
 
         }
         return temp
@@ -475,6 +478,8 @@ class AprilDetectorHelpers:
 
         # Resize and add batch dimension
         cutout_image = self.ADI.resize(cutout_image).unsqueeze(0)
+        
+        # cutout_image *= 255
 
         return cutout_image
     
@@ -653,9 +658,15 @@ class AprilDetectorHelpers:
         normalized_weights = [w / total_weight for w in weights]
         return normalized_weights
 
-    def _smooth(self, level, history):
+    def _smooth(self, level, history, time_stamp = None):
         # Get the current timestamp
-        current_time = time.time()
+        if time_stamp is not None:
+            try: 
+                current_time = float(time_stamp)
+            except:
+                current_time = time.time()
+        else:
+            current_time = time.time()
 
         # Add the new prediction with its timestamp
         history.append((current_time, level))
@@ -673,22 +684,29 @@ class AprilDetectorHelpers:
             avg_prediction = np.convolve(predictions, weights[::-1], mode='valid')
         else:
             avg_prediction = 0  # Default if no predictions are in the window
+        
         return avg_prediction
     
-    def _smooth_level(self, level: float | None, id:str):
+    def _smooth_level(self, level: float | None, id:str, time_stamp = None):
         """Smooth the straw level using a queue."""
         if id == 'scada':
             if level is not None:
                 self.ADI.information["scada_level"]["text"] = f'(T2) Scada Level: {level:.2f} %'
             else:
                 self.ADI.information["scada_level"]["text"] = f'(T2) Scada Level: NA'
-            return self._smooth(level, self.ADI.scada_smoothing_queue)[0]
-        elif id == 'straw':
+            return self._smooth(level, self.ADI.scada_smoothing_queue, time_stamp = time_stamp)[0]
+        elif id == 'yolo':
             if level is not None:
-                self.ADI.information["straw_level"]["text"] = f'(T2) Straw Level: {level:.2f} %'
+                self.ADI.information["yolo_level"]["text"] = f'(T2) YOLO Level: {level:.2f} %'
             else:
-                self.ADI.information["straw_level"]["text"] = f'(T2) Straw Level: NA'
-            return self._smooth(level, self.ADI.straw_smoothing_queue)[0]
+                self.ADI.information["yolo_level"]["text"] = f'(T2) YOLO Level: NA'
+            return self._smooth(level, self.ADI.yolo_smoothing_queue, time_stamp = time_stamp)[0]
+        elif id == 'predictor':
+            if level is not None:
+                self.ADI.information["predictor_level"]["text"] = f'(T2) Predictor Level: {level:.2f} %'
+            else:
+                self.ADI.information["predictor_level"]["text"] = f'(T2) Predictor Level: NA'
+            return self._smooth(level, self.ADI.predictor_smoothing_queue, time_stamp = time_stamp)[0]
                 
     def _grab_scada_url_n_id(self):
         # Read the url from the scada.txt file
