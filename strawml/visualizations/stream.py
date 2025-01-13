@@ -1153,6 +1153,7 @@ def main(args: Namespace) -> None:
         print(f"Running with smoothing: {args.smoothing}")
     elif args.mode == 'fps_test':
         args.fps_test = True
+        args.window = True
         args.make_cutout = True
         args.yolo_threshold = 0.2
         args.detect_april = True
@@ -1165,6 +1166,7 @@ def main(args: Namespace) -> None:
             raise ValueError(f"Cannot run both YOLO and Predictor at the same time for mode: {args.mode}. Please choose **one**.")
     elif args.mode == 'file_predict':
         args.make_cutout = True
+        args.window = True
         args.yolo_threshold = 0.2
         args.detect_april = True
         if args.video_path is None:
@@ -1175,12 +1177,17 @@ def main(args: Namespace) -> None:
             print(f"NOTE. **hdf5_model_save_name** is only used when the video_path leads to an hdf5 file.")
     elif args.mode == 'record':
         args.record = True
+        args.window = True
+        args.rtsp = True
         args.make_cutout = True
         args.yolo_threshold = 0.2
         args.detect_april = True
         if args.yolo_straw and args.with_predictor:
             raise ValueError(f"Cannot run both YOLO and Predictor at the same time for mode: {args.mode}. Please choose **one**.")
-
+        if args.with_predictor:
+            args.object_detect = True
+            args.regressor = True
+        
     with open("fiducial_marker/april_config.json", "r") as file:
         config = json.load(file)
 
@@ -1195,16 +1202,35 @@ def main(args: Namespace) -> None:
     )
 
     # ### YOLO PREDICTOR
-    RTSPStream(record=args.record, record_threshold=args.record_threshold, detector=detector, ids=config["ids"], window=args.window, credentials_path='data/hkvision_credentials.txt', 
-        rtsp=args.rtsp , # Only used when the stream is from an RTSP source
-        make_cutout=args.make_cutout, use_cutout=args.use_cutout, object_detect=args.object_detect, od_model_name="models/obb_chute_best.pt", yolo_threshold=args.yolo_threshold,
-        detect_april=args.detect_april, yolo_straw=args.yolo_straw, yolo_straw_model="models/obb_best.pt",
-        with_predictor=args.with_predictor , predictor_model='convnextv2', model_load_path='models/convnextv2_regressor/', regressor=args.regressor, edges=args.edges, heatmap=args.heatmap,
-        device=args.device,
-        smoothing=args.smoothing,
-        save_as_new_hdf5=args.save_as_new_hdf5, process_like_recording=args.process_like_recording, with_annotations=args.with_annotations, fps_test=args.fps_test, 
-        hdf5_model_save_name = args.hdf5_model_save_name # Only used when a single model is used for predictions
-        )(video_path=args.video_path)
+    RTSPStream(record=args.record, 
+               record_threshold=args.record_threshold, 
+               detector=detector, 
+               ids=config["ids"], 
+               window=args.window, 
+               credentials_path='data/hkvision_credentials.txt', 
+               rtsp=args.rtsp , # Only used when the stream is from an RTSP source
+               make_cutout=args.make_cutout, 
+               use_cutout=args.use_cutout, 
+               object_detect=args.object_detect, 
+               od_model_name="models/obb_chute_best.pt", 
+               yolo_threshold=args.yolo_threshold,
+               detect_april=args.detect_april, 
+               yolo_straw=args.yolo_straw, 
+               yolo_straw_model="models/obb_best.pt",
+               with_predictor=args.with_predictor, 
+               predictor_model='convnextv2', 
+               model_load_path='models/convnextv2_regressor/', 
+               regressor=args.regressor, 
+               edges=args.edges, 
+               heatmap=args.heatmap,
+               device=args.device,
+               smoothing=args.smoothing,
+               save_as_new_hdf5=args.save_as_new_hdf5, 
+               process_like_recording=args.process_like_recording, 
+               with_annotations=args.with_annotations, 
+               fps_test=args.fps_test, 
+               hdf5_model_save_name = args.hdf5_model_save_name # Only used when a single model is used for predictions
+            )(video_path=args.video_path)
 
     # # ### YOLO PREDICTOR STREAM
     # RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
