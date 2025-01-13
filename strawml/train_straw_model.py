@@ -47,13 +47,17 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
     
     if args.cont:
         loss_fn = torch.nn.functional.mse_loss
-        best_accuracy = 1000000.0
+        best_accuracy = np.inf
+        best_sensor_accuracy = 0.0
     else:
         if args.use_wce:
-            ce_weights = torch.ones(args.num_classes_straw)
-            # TODO: Update weights based on data distribution
-            ce_weights[0, 1, 2] = 2.0
-            ce_weights[-3, -2, -1] = 2.0
+            total = len(train_loader.dataset)
+            class_counts = np.array(list(train_loader.dataset.class_counts.values()))
+            # Using CW_i = N / C_i 
+            ce_weights = torch.Tensor([total/class_counts]).flatten()
+            ce_weights = ce_weights.cuda() if torch.cuda.is_available() else ce_weights
+        else:
+            ce_weights = None
         loss_fn = torch.nn.functional.cross_entropy
         best_accuracy = 0.0
     
@@ -95,7 +99,7 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 output = feature_regressor(output)
                 # output = torch.clamp(output, 0, 1)
             
-            if args.use_wce:
+            if args.use_wce and not args.cont:
                 loss = loss_fn(output, fullness, weight=ce_weights)
             else:
                 loss = loss_fn(output, fullness)
@@ -150,6 +154,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             val_lossses = []
             current_iteration = 0
             batch_times = []
+            
+            outputs = []
+            fullnesses = []
             for (frame_data, target) in val_iterator:
                 current_iteration += 1
                 # TRY: using only the edge image
@@ -184,6 +191,9 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 
                 val_loss = loss_fn(output, fullness)
                 val_lossses.append(val_loss.item())
+                
+                outputs += output.flatten().detach().cpu().numpy().tolist()
+                fullnesses += fullness.flatten().detach().cpu().numpy().tolist()
                     
                 if not args.cont:
                     output = torch.nn.functional.softmax(output, dim=1)
@@ -207,10 +217,23 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
             average_time = sum(batch_times) / len(batch_times)
             
             if args.cont:
+                # Calculate accuracy of the model
+                # Any prediction within x% of the true value is considered correct
+                acceptable = 0.1
+                outputs = np.array(outputs)
+                fullnesses = np.array(fullnesses)
+                accuracies = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
                 print(f'Epoch: {epoch+1}, Average Inference Time: {average_time:.6f} Validation Loss: {sum(val_lossses)/len(val_lossses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')
                 if sum(val_lossses)/len(val_lossses) < best_accuracy:
                     best_accuracy = sum(val_lossses)/len(val_lossses)
                     print(f'New best loss: {best_accuracy}')
+                    if not args.no_wandb:
+                        wandb.log(step=epoch+1, data={'best_val_loss': best_accuracy})
+                if accuracies > best_sensor_accuracy:
+                    best_sensor_accuracy = accuracies
+                    print(f'New best sensor accuracy: {best_sensor_accuracy:.2f}%')
+                    if not args.no_wandb:
+                        wandb.log(step=epoch+1, data={'best_sensor_accuracy': best_sensor_accuracy})
                     id = f'_{args.id}' if args.id != '' else ''
                     if args.model != 'cnn':
                         model_folder = f'{args.save_path}{args.model}_regressor/'
@@ -230,9 +253,6 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                         torch.save(model.state_dict(), model_save_path)
                         if not args.no_wandb:
                             wandb.save(model_save_path)
-                            
-                    if not args.no_wandb:
-                        wandb.log(step=epoch+1, data={'best_val_loss': best_accuracy})
             else:
                 accuracy = 100 * correct /total
                 correct = correct.detach().cpu()
@@ -480,6 +500,11 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'pretrained': args.pretrained,
             'id': args.id,
             'greyscale': args.greyscale,
+            'only_head': args.only_head,
+            'num_hidden_layers': args.num_hidden_layers,
+            'num_neurons': args.num_neurons,
+            'balanced_dataset': args.balanced_dataset,
+            'load_model': args.load_model
         })
 
 
@@ -511,6 +536,12 @@ def get_args():
     parser.add_argument('--id', type=str, default='', help='ID for the Weights and Biases run')
     parser.add_argument('--greyscale', action='store_true', help='Use greyscale images')
     parser.add_argument('--hpc', action='store_true', help='Run on the HPC')
+    parser.add_argument('--only_head', action='store_true', help='Only train the head of the model')
+    parser.add_argument('--num_hidden_layers', type=int, default=0, help='Number of hidden layers for the regressor. Default: 0 (in->out)')
+    parser.add_argument('--num_neurons', type=int, default=512, help='Number of neurons for the regressor')
+    parser.add_argument('--balanced_dataset', action='store_true', help='Balance the dataset setting the maximum number of samples in each class to a max of 400')
+    parser.add_argument('--load_model', type=str, default='', help='Load a model from path to continue training. If cont is set, the path should point to a folder containing the feature extractor and regressor')
+    
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -518,18 +549,20 @@ if __name__ == '__main__':
     
     # Is this how we want to do it?
     if args.hpc:
-        path_to_data = f'/work3/davos/data/'
+        # user = 'davos'
+        user = 's194247'
+        path_to_data = f'/work3/{user}/data/'
         if not os.path.exists(path_to_data):
             raise FileNotFoundError(f'Path to data not found: {path_to_data}')
         os.makedirs(f'{path_to_data}', exist_ok=True)
         args.data_path = path_to_data + args.data_path
         if not os.path.exists(args.data_path):
             raise FileNotFoundError(f'Data path not found: {args.data_path}')
-        args.save_path = f'/work3/davos/models/'
+        args.save_path = f'/work3/{user}/models/'
         os.makedirs(args.save_path, exist_ok=True)
         if not os.path.exists(args.save_path):
             raise FileNotFoundError(f'Save path not found: {args.save_path}')
-        sensor_path = f'/work3/davos/data/sensors.hdf5'
+        sensor_path = f'/work3/{user}/data/sensors.hdf5'
         if not os.path.exists(sensor_path):
             raise FileNotFoundError(f'Sensor data path not found: {sensor_path}')
         
@@ -537,21 +570,22 @@ if __name__ == '__main__':
     args.image_size = tuple(args.image_size)
     print(f'Using image size: {args.image_size}')
     
-    match args.model:
-        case 'cnn':
-            image_size = args.image_size
-        case 'convnextv2':
-            image_size = (224, 224)
-        case 'vit' | 'caformer':
-            image_size = (384, 384)
-        case 'eva02':
-            image_size = (448, 448)
+    # match args.model:
+    #     case 'cnn':
+    #         image_size = args.image_size
+    #     case 'convnextv2':
+    #         image_size = (224, 224)
+    #     case 'vit' | 'caformer':
+    #         image_size = (384, 384)
+    #     case 'eva02':
+    #         image_size = (448, 448)
             
     image_size = args.image_size
     
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
-                         num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=0.5, greyscale=args.greyscale)
+                         num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=0.5, greyscale=args.greyscale,
+                         balance_dataset=args.balanced_dataset)
     # test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
     #                     random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=0.0)
@@ -605,9 +639,20 @@ if __name__ == '__main__':
     if args.cont and args.model != 'cnn':
         features = model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
         feature_size = torch.flatten(features, 1).shape[1]
-        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=args.use_sigmoid)
+        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=args.use_sigmoid, num_hidden_layers=args.num_hidden_layers, num_neurons=args.num_neurons)
     else:
         feature_regressor = None
+    
+    if args.load_model != '':
+        if args.cont:
+            model_path = f'{args.load_model}/{args.model}_feature_extractor.pth'
+            model.load_state_dict(torch.load(model_path, weights_only=True))
+            if args.model != 'cnn':
+                regressor_path = f'{args.load_model}/{args.model}_regressor.pth'
+                feature_regressor.load_state_dict(torch.load(regressor_path, weights_only=True))
+        else:
+            model_path = f'{args.load_model}/{args.model}_classifier.pth'
+            model.load_state_dict(torch.load(model_path, weights_only=True))
     
     train_model(args, model, train_loader, sensor_loader, feature_regressor)
     
@@ -619,7 +664,7 @@ if __name__ == '__main__':
         in_feats = in_feats.cuda() if torch.cuda.is_available() else in_feats
         features = model.forward_features(in_feats)
         feature_size = torch.flatten(features, 1).shape[1]
-        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+        feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=args.use_sigmoid, num_hidden_layers=args.num_hidden_layers, num_neurons=args.num_neurons)
         model.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_feature_extractor{id}_best.pth', weights_only=True))
         feature_regressor.load_state_dict(torch.load(f'{args.save_path}/{args.model}_regressor/{args.model}_regressor{id}_best.pth', weights_only=True))
         

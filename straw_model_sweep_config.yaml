@@ -1,0 +1,45 @@
+program: strawml/cross_validate_straw_model.py
+name: convnextv2
+method: bayes
+metric:
+  goal: maximize
+  name: best_sensor_accuracy
+parameters:
+  lr:
+    min: 0.000001
+    max: 0.0001
+  batch_size:
+    values: [4, 8, 12]
+
+command:
+- python3
+- ${program}
+- --model 
+- convnextv2
+- --image_size 
+- 672 
+- 208
+- --id
+- sweep
+- --num_hidden_layers
+- 3
+- --use_sigmoid
+- --balanced_dataset
+- --data_subsample
+- 1.0
+- --optim 
+- adam
+- --augment_probability
+- 0.0
+- --cont
+- --use_wce
+- --hpc
+- --epochs 
+- 20
+- --folds 
+- 4
+- --pretrained
+- --data_path 
+- train.hdf5
+- --is_sweep
+- ${args}
