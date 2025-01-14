@@ -220,6 +220,8 @@ def train_model(args, model: torch.nn.Module, train_loader: DataLoader, val_load
                 # Calculate accuracy of the model
                 # Any prediction within x% of the true value is considered correct
                 acceptable = 0.1
+                outputs = np.array(outputs)
+                fullnesses = np.array(fullnesses)
                 accuracies = np.sum(np.abs(outputs - fullnesses) < acceptable) / len(outputs)
                 print(f'Epoch: {epoch+1}, Average Inference Time: {average_time:.6f} Validation Loss: {sum(val_lossses)/len(val_lossses)}, Last predictions -- Fullness: {torch.mean(fullness).item()}, Prediction: {torch.mean(output).item()}')
                 if sum(val_lossses)/len(val_lossses) < best_accuracy:
