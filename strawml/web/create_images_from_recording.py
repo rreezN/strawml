@@ -81,4 +81,4 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
 
 
 if __name__ == '__main__':
-    create_images_from_recording('data/processed/recording.hdf5', 'data/processed/recordings', False)
+    create_images_from_recording('data/processed/recording - person on picture.hdf5', 'data/processed/recordings', False)

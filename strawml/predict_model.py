@@ -252,7 +252,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     parser.add_argument('--model', type=str, default='convnextv2', help='Model to use for predicting', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
     parser.add_argument('--image_size', type=tuple, default=(672, 208), help='Image size for the model (only for CNN)')
-    parser.add_argument('--num_classes_straw', type=int, default=11, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
+    parser.add_argument('--num_classes_straw', type=int, default=21, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
     parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class (only for CNN model currently)')
     parser.add_argument('--use_sigmoid', action='store_true', help='Use sigmoid activation for the output layer')
     parser.add_argument('--num_hidden_layers', type=int, default=0, help='Number of hidden layers for the CNN model')
@@ -285,7 +285,7 @@ if __name__ == '__main__':
     
     test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, image_size=image_size,
                         random_state=args.seed, force_update_statistics=False, data_purpose='straw',
-                        num_classes_straw=args.num_classes_straw, continuous=args.cont, override_statistics=statistics, sensor=True)
+                        num_classes_straw=args.num_classes_straw, continuous=args.cont, override_statistics=statistics, sensor=True, augment_probability=0.0)
     
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
     
@@ -320,8 +320,8 @@ if __name__ == '__main__':
         feature_size = torch.flatten(features, 1).shape[1]
         feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, num_hidden_layers=args.num_hidden_layers, num_neurons=args.num_neurons, use_sigmoid=args.use_sigmoid)
         
-        model.load_state_dict(torch.load(f'{model_path}/{args.model}_feature_extractor_v2_L_layers_sig_best_sensor.pth', weights_only=True))
-        feature_regressor.load_state_dict(torch.load(f'{model_path}/{args.model}_regressor_v2_L_layers_sig_best_sensor.pth', weights_only=True))
+        model.load_state_dict(torch.load(f'{model_path}/{args.model}_feature_extractor_best.pth', weights_only=True))
+        feature_regressor.load_state_dict(torch.load(f'{model_path}/{args.model}_regressor_best.pth', weights_only=True))
         
     else:
         feature_regressor = None
