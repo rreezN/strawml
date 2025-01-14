@@ -30,7 +30,10 @@
         <button id="a" onclick="submitResponse('A')">A</button>
         <button id="b" onclick="submitResponse('B')">B</button>
         <button id="c" onclick="submitResponse('C')">C</button>
-        <button id="equal" onclick="submitResponse('Equal')">Equal</button>
+        <button id="ab" onclick="submitResponse('AB')">A=B</button>
+        <button id="ac" onclick="submitResponse('AC')">A=C</button>
+        <button id="bc" onclick="submitResponse('BC')">B=C</button>
+        <button id="equal" onclick="submitResponse('All Equal')">All Equal</button>
         <button id="skip" onclick="fetchRandomImage()">(S)kip</button>
     </div>
     <script>
@@ -83,7 +86,7 @@
                     submitResponse('C');
                     break;
                 case 'e':
-                    submitResponse('Equal');
+                    submitResponse('All Equal');
                     break;
                 case 's':
                     fetchRandomImage();
