@@ -146,4 +146,4 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
     print(f"{len(keys)} images saved to {output_folder}! Total size: {total_size_gb:.2f} GB")
 
 if __name__ == '__main__':
-    create_images_from_recording('data/processed/recording_vertical_all_frames_processed.hdf5', 'data/processed/recordings', False)
+    create_images_from_recording('data/processed/recording_rotated_all_frames_processed.hdf5', 'data/processed/recordings', False)
