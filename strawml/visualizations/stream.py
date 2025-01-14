@@ -131,7 +131,7 @@ class AprilDetector:
                 model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=num_classes, img_size=image_size)
         
         
-        model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_v2_L_layers_sig_best_sensor.pth', weights_only=True))
+        model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
         return model, image_size
 
     def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 3, num_neurons: int = 512) -> None:
@@ -141,8 +141,8 @@ class AprilDetector:
             feature_size = torch.flatten(features, 1).shape[1]
             self.regressor_model = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=use_sigmoid, num_hidden_layers=num_hidden_layers, num_neurons=num_neurons)
             
-            self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_v2_L_layers_sig_best_sensor.pth', weights_only=True))
-            self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor_v2_L_layers_sig_best_sensor.pth', weights_only=True))
+            self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
+            self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor.pth', weights_only=True))
             self.regressor_model.to(self.device)
         else:
             self.model.load_state_dict(torch.load(self.model_load_path, weights_only=True))
@@ -454,7 +454,10 @@ class RTSPStream(AprilDetector):
             # If it does we do not need to get labels again
             self.recording_req = True
             self.last_save_timestamp = timestamps[0]
-            for timestamp in tqdm(timestamps):
+            self.save_counter = 0
+            pbar = tqdm(timestamps)
+            for timestamp in pbar:
+                pbar.set_description(f"#Saved frames: {self.save_counter}")
                 frame_time = time.time()
                 self.prediction_dict = {}
                 frame = hf[timestamp]['image'][()]
@@ -590,8 +593,7 @@ class RTSPStream(AprilDetector):
         line_start, line_end, sensor_scada_data, scada_pixel_values = self._retrieve_scada_data(scada_level)
         self.recording_req =  (float(timestamp) - float(self.last_save_timestamp) >= self.record_threshold)
         if self.recording_req:
-            print(f"Recording: {self.recording_req}")
-            print(scada_pixel_values)
+            
             if scada_pixel_values[0] is not None:
                 self.prediction_dict = {}
                 self.prediction_dict["scada"] = {sensor_scada_data: [line_start, line_end]} # NOTE FILLING SCADA DATA HERE
@@ -617,6 +619,7 @@ class RTSPStream(AprilDetector):
 
         # save results from frame if recording requirement is met
         if self.recording_req:
+            self.save_counter += 1
             if self.save_as_new_hdf5:
                 self._save_frame_existing_hdf5(hf=None, timestamp=timestamp, path=path)
             else:
@@ -665,25 +668,29 @@ class RTSPStream(AprilDetector):
                 pred.create_dataset(t1_name, data=t1)
                 pred.create_dataset(t2_name, data=t2)
             else:
-                for key, value in self.prediction_dict.items():
-                    if key in group.keys():
-                        del group[key]
-                    predict_group = group.create_group(key)
-                    t1, t2 = list(value.items())[0]
-                    if key == 'attr.':
-                        t1_name = 'interpolated'
-                        t2_name = 'tags'
-                    else:
-                        t1_name = 'percent'
-                        t2_name = 'pixel'
-                    predict_group.create_dataset(t1_name, data=t1)
-                    predict_group.create_dataset(t2_name, data=t2)
-
+                try:
+                    for key, value in self.prediction_dict.items():
+                        if key in group.keys():
+                            del group[key]
+                        predict_group = group.create_group(key)
+                        t1, t2 = list(value.items())[0]
+                        if key == 'attr.':
+                            t1_name = 'interpolated'
+                            t2_name = 'tags'
+                        else:
+                            t1_name = 'percent'
+                            t2_name = 'pixel'
+                        predict_group.create_dataset(t1_name, data=t1)
+                        predict_group.create_dataset(t2_name, data=t2)
+                except Exception as e:
+                    print("###################")
+                    print(f"!ERROR! {timestamp}: {key},\n{t1_name}: {t1},\n{t2_name}: {t2}\n--- {e}")
+                    print("###################")
         if hf is not None:
             _save_results(hf, timestamp, hdf5_model_save_name=self.hdf5_model_save_name)
         else:
             with h5py.File(path.split(".")[0] + "_processed.hdf5", 'a') as hf:
-                print(f"Saving frame to {path.split('.')[0] + '_processed.hdf5'}")
+                # print(f"Saving frame to {path.split('.')[0] + '_processed.hdf5'}")
                 _save_results(hf, timestamp)
 
     def _process_frame(self, frame: np.ndarray, from_videofile: bool) -> None:
@@ -898,7 +905,7 @@ class RTSPStream(AprilDetector):
             if self.recording_req:
                 # Get coordiantes for the original data
                 self.prediction_dict["yolo"] = {0: [line_start, line_end]}
-                self.prediction_dict["attr."] = {False: None}
+                self.prediction_dict["attr."] = {False: np.nan}
                 # if no bbox is detected, we add 0 to the previous straw level smoothing predictions
                 angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
                 self.helpers._save_tag_0(angle)
@@ -1123,23 +1130,22 @@ def get_args() -> Namespace:
     parser.add_argument('--hdf5_model_save_name', type=str, default=None, help='The name of the model to save the predictions.')
     parser.add_argument('--video_path', type=str, default=None, help='The path to the video file.')
     return parser.parse_args()
-
+    # python .\strawml\visualizations\stream.py file_predict --smoothing --save_as_new_hdf5 --process_like_recording --video_path data/predictions/recording_rotated_all_frames.hdf5
 def main(args: Namespace) -> None:
     """
     The main function that runs the script based on the arguments provided.
-
-    ...
 
     Parameters
     ----------
     args    :   Namespace
         The arguments parsed by the ArgumentParser.
     """
-    if args.yolo_straw == False and args.with_predictor == False:
-        raise ValueError("At least one of the following must be True: yolo_straw, with_predictor")
+
     if args.mode == 'manual':
         pass
     elif args.mode == 'stream':
+        if args.yolo_straw == False and args.with_predictor == False:
+            raise ValueError("One of the following must be True: yolo_straw, with_predictor")
         args.record = False
         args.record_threshold = 5
         args.window = True
@@ -1152,6 +1158,8 @@ def main(args: Namespace) -> None:
             args.regressor = True
         print(f"Running with smoothing: {args.smoothing}")
     elif args.mode == 'fps_test':
+        if args.yolo_straw == False and args.with_predictor == False:
+            raise ValueError("One of the following must be True: yolo_straw, with_predictor")
         args.fps_test = True
         args.window = True
         args.make_cutout = True
@@ -1165,17 +1173,20 @@ def main(args: Namespace) -> None:
         if args.yolo_straw and args.with_predictor:
             raise ValueError(f"Cannot run both YOLO and Predictor at the same time for mode: {args.mode}. Please choose **one**.")
     elif args.mode == 'file_predict':
+        args.yolo_straw = True
+        args.with_predictor = True
         args.make_cutout = True
         args.window = True
         args.yolo_threshold = 0.2
         args.detect_april = True
+        args.regressor = True
+        args.object_detect = True
         if args.video_path is None:
             raise ValueError("The video_path must be provided for the FPS test.")
-        if args.hdf5_model_save_name is None:
-            raise ValueError("The hdf5_model_save_name must be provided. It is the entry name for the model predictions in the hdf5 file.")
-        else:
-            print(f"NOTE. **hdf5_model_save_name** is only used when the video_path leads to an hdf5 file.")
+        print(f"NOTE. **hdf5_model_save_name** is only used when the video_path leads to an hdf5 file.")
     elif args.mode == 'record':
+        if args.yolo_straw == False and args.with_predictor == False:
+            raise ValueError("One of the following must be True: yolo_straw, with_predictor")
         args.record = True
         args.window = True
         args.rtsp = True
