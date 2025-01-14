@@ -339,55 +339,113 @@ def rotate_image(frame_data: np.ndarray, bboxes: list = None):
     
     return frame_data
 
+def apply_barrel_distortion_to_multiple_obbs(image, obb_boxes, k1=None, k2=None):
+    """
+    Apply barrel distortion to an image and update multiple oriented bounding boxes.
+    
+    Args:
+        image (np.ndarray): Input image.
+        obb_boxes (list of arrays): List of bounding boxes, each as [x1, y1, x2, y2, x3, y3, x4, y4].
+        k1, k2 (float): Radial distortion coefficients. Randomly generated if None.
+    
+    Returns:
+        distorted_img (np.ndarray): Distorted image.
+        new_obb_boxes (list of arrays): Transformed oriented bounding boxes.
+    """
+    import random
+    h, w = image.shape[:2]
+
+    # Generate random distortion coefficients if not provided
+    # NOTE Positive values for barrel distortion and negative for pincushion distortion 
+    k1 = k1 if k1 is not None else random.uniform(0.5, 1) 
+    k2 = k2 if k2 is not None else random.uniform(0.5, 1)
+
+    # Camera matrix
+    K = np.array([[w, 0, w / 2],
+                  [0, h, h / 2],
+                  [0, 0, 1]], dtype=np.float32)
+
+    # Distortion coefficients
+    dist_coeffs = np.array([k1, k2, 0, 0], dtype=np.float32)
+
+    # Compute the new camera matrix
+    new_camera_matrix, _ = cv2.getOptimalNewCameraMatrix(K, dist_coeffs, (w, h), alpha=0)
+
+    # Generate distortion maps
+    map1, map2 = cv2.initUndistortRectifyMap(K, dist_coeffs, None, new_camera_matrix, (w, h), cv2.CV_32FC1)
+
+    # Apply the distortion to the image
+    distorted_img = cv2.remap(image, map1, map2, interpolation=cv2.INTER_LINEAR)
+
+    # Transform all oriented bounding boxes
+    if obb_boxes is not None:
+        new_obb_boxes = []
+        for obb in obb_boxes:
+            # Reshape the bounding box into vertices
+            vertices = np.array(obb, dtype=np.float32).reshape(-1, 2)
+
+            # Apply distortion to each vertex
+            vertices = vertices.reshape(-1, 1, 2)
+            distorted_vertices = cv2.undistortPoints(vertices, K, dist_coeffs, P=new_camera_matrix).reshape(-1, 2)
+
+            # Flatten back to the original format
+            new_obb = distorted_vertices.flatten().tolist()
+            new_obb_boxes.append(new_obb)
+
+        return distorted_img, new_obb_boxes
+    return distorted_img
+
 def distort_image(frame_data: np.ndarray, bboxes: list = None):
-    h, w = frame_data.shape[:2]
-    barrel_deformer = BarrelDeformer(w, h)
-    im_deformed = frame_data.copy()
+    return apply_barrel_distortion_to_multiple_obbs(frame_data, bboxes)
+
+    # h, w = frame_data.shape[:2]
+    # barrel_deformer = BarrelDeformer(w, h)
+    # im_deformed = frame_data.copy()
     
-    # Create channel for bbox where the corners of the bbox are set to 255, the rest is 0
-    if bboxes is not None:
-        bbox_chute = bboxes[0]
-        bbox_straw = bboxes[1]
-        bbox_chute = np.array(bbox_chute)
-        bbox_straw = np.array(bbox_straw)
+    # # Create channel for bbox where the corners of the bbox are set to 255, the rest is 0
+    # if bboxes is not None:
+    #     bbox_chute = bboxes[0]
+    #     bbox_straw = bboxes[1]
+    #     bbox_chute = np.array(bbox_chute)
+    #     bbox_straw = np.array(bbox_straw)
         
-        bbox_chute = bbox_chute.reshape(-1, 1, 2).astype(np.int32)
-        bbox_straw = bbox_straw.reshape(-1, 1, 2).astype(np.int32)
+    #     bbox_chute = bbox_chute.reshape(-1, 1, 2).astype(np.int32)
+    #     bbox_straw = bbox_straw.reshape(-1, 1, 2).astype(np.int32)
         
-        bbox_chute_channel = np.zeros((h, w), dtype=np.uint8)
-        bbox_straw_channel = np.zeros((h, w), dtype=np.uint8)
+    #     bbox_chute_channel = np.zeros((h, w), dtype=np.uint8)
+    #     bbox_straw_channel = np.zeros((h, w), dtype=np.uint8)
         
-        bbox_chute_channel[bbox_chute[:, 0, 1], bbox_chute[:, 0, 0]] = 255
-        bbox_straw_channel[bbox_straw[:, 0, 1], bbox_straw[:, 0, 0]] = 255
+    #     bbox_chute_channel[bbox_chute[:, 0, 1], bbox_chute[:, 0, 0]] = 255
+    #     bbox_straw_channel[bbox_straw[:, 0, 1], bbox_straw[:, 0, 0]] = 255
         
-        bbox_image = np.zeros((h, w, 3), dtype=np.uint8)
-        bbox_image[..., 0] = bbox_chute_channel
-        bbox_image[..., 1] = bbox_straw_channel
-        bbox_image[..., 2] = 0
+    #     bbox_image = np.zeros((h, w, 3), dtype=np.uint8)
+    #     bbox_image[..., 0] = bbox_chute_channel
+    #     bbox_image[..., 1] = bbox_straw_channel
+    #     bbox_image[..., 2] = 0
         
-    im_deformed = Image.fromarray(im_deformed)
-    im_deformed.putalpha(255)
-    im_deformed = ImageOps.deform(im_deformed, barrel_deformer)
-    im_deformed = np.array(im_deformed)
+    # im_deformed = Image.fromarray(im_deformed)
+    # im_deformed.putalpha(255)
+    # im_deformed = ImageOps.deform(im_deformed, barrel_deformer)
+    # im_deformed = np.array(im_deformed)
     
-    # Extract the positions of the bboxes from the deformed image
-    if bboxes is not None:
-        bbox_image = Image.fromarray(bbox_image)
-        bbox_image.putalpha(255)
-        bbox_image = ImageOps.deform(bbox_image, barrel_deformer)
-        bbox_image = np.array(bbox_image)
-        # bbox_image = im_deformed[:, :, 2:]
-        bbox_chute = np.argwhere(bbox_image[:, :, 0] != 0)
-        bbox_straw = np.argwhere(bbox_image[:, :, 1] != 0)
-        bboxes = [bbox_chute, bbox_straw]
+    # # Extract the positions of the bboxes from the deformed image
+    # if bboxes is not None:
+    #     bbox_image = Image.fromarray(bbox_image)
+    #     bbox_image.putalpha(255)
+    #     bbox_image = ImageOps.deform(bbox_image, barrel_deformer)
+    #     bbox_image = np.array(bbox_image)
+    #     # bbox_image = im_deformed[:, :, 2:]
+    #     bbox_chute = np.argwhere(bbox_image[:, :, 0] != 0)
+    #     bbox_straw = np.argwhere(bbox_image[:, :, 1] != 0)
+    #     bboxes = [bbox_chute, bbox_straw]
 
     # if bboxes is not None:
     #     bboxes = [barrel_deformer.transform_bbox(bbox) for bbox in bboxes]
     
-    if bboxes is not None:
-        return im_deformed, bboxes
+    # if bboxes is not None:
+    #     return im_deformed, bboxes
     
-    return im_deformed
+    # return im_deformed
 
 def distort_image_wand(frame_data: np.ndarray, bboxes: list = None):
     frame_data = frame_data.copy()
@@ -473,7 +531,6 @@ def create_noisy_dataset(hdf5: h5py, save_path: str):
             frame_data, bboxes = rotate_image(frame_data, bboxes)
             frame_data, bboxes = distort_image(frame_data, bboxes)
  
-        
         # Display the frame
         frame_data = cv2.resize(frame_data, (frame_data.shape[1]//2, frame_data.shape[0]//2))
         # Resize bboxes for display
@@ -507,7 +564,7 @@ def create_noisy_dataset(hdf5: h5py, save_path: str):
 
 if __name__ == '__main__':
     # Load the hdf5 file
-    path_to_hdf5 = 'data/processed/sensors.hdf5'
+    path_to_hdf5 = 'data/interim/sensors_with_strawbbox.hdf5'
     save_path = 'data/processed/noisy_sensors.hdf5'
     hf = h5py.File(path_to_hdf5, 'r')
     
