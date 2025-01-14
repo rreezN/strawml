@@ -50,7 +50,7 @@ class MulticolorPatchHandler(object):
         return patch
 
 class JointPlot:
-    def __init__(self, x, label_data, name1_data, name2_data, name1, name2, marginal_x=True, marginal_y=True, plot_data=True):
+    def __init__(self, x, label_data, name1_data, name2_data, name1, name2, marginal_x=True, marginal_y=True, plot_data=True, use_label=False):
         """
         Initializes the JointPlot object.
         
@@ -68,7 +68,7 @@ class JointPlot:
         self.plot_data = plot_data
         self.name1 = name1
         self.name2 = name2
-
+        self.use_label=use_label
         if name1 == 'scada':
             self.c1 = 'goldenrod'
         elif name1 == 'yolo':
@@ -115,7 +115,8 @@ class JointPlot:
 
         if self.plot_data:
             # Main scatter plot
-            ax_joint.plot(self.x, self.label_data, label=f"Annotated Data", c='darkslategray', linestyle='--')
+            if self.use_label:
+                ax_joint.plot(self.x, self.label_data, label=f"Annotated Data", c='darkslategray', linestyle='--')
             ax_joint.plot(self.x, self.name1_data, label=f"{self.name1} Data", c=self.c1, linestyle='-')
             ax_joint.plot(self.x, self.name2_data, label=f"{self.name2} Data", c=self.c2, linestyle='-')
             ax_joint.yaxis.tick_right()
@@ -142,7 +143,8 @@ class JointPlot:
                 ax_marginal_y.grid()
                 sns.kdeplot(self.name1_data, ax=ax_marginal_y, color=self.c1, fill=True, vertical=True)
                 sns.kdeplot(self.name2_data, ax=ax_marginal_y, color=self.c2, fill=True, vertical=True)
-                sns.kdeplot(self.label_data, ax=ax_marginal_y, color="darkslategray", fill=False, vertical=True, linestyle='--', linewidth=1.5)
+                if self.use_label:
+                    sns.kdeplot(self.label_data, ax=ax_marginal_y, color="darkslategray", fill=False, vertical=True, linestyle='--', linewidth=1.5)
                 ax_marginal_y.axis('off')
 
             ax_joint.grid()
@@ -162,11 +164,12 @@ class JointPlot:
             # Take the c1 color and add 0.5 alpha to it
             sorted_handles_labels.insert(1, (MulticolorPatch([self.c1, self.c2], 0.5), r'Data Threshold ($\pm$10%)'))
             # calculate accuracy of the model in terms of +- 5% threshold wrt. label data
-            accuracy_name1 = np.mean((self.name1_data >= self.label_data - 10) & (self.name1_data <= self.label_data + 10)) * 100
-            accuracy_name2 = np.mean((self.name2_data >= self.label_data - 10) & (self.name2_data <= self.label_data + 10)) * 100
-            # add the accuracy to the legend
-            sorted_handles_labels.append((MulticolorPatch([self.c1, 'darkslategray', self.c1], 1), f'Accuracy {self.name1}: {accuracy_name1:.2f}%'))
-            sorted_handles_labels.append((MulticolorPatch([self.c2, 'darkslategray', self.c2], 1), f'Accuracy {self.name2}: {accuracy_name2:.2f}%'))
+            if self.use_label:
+                accuracy_name1 = np.mean((self.name1_data >= self.label_data - 10) & (self.name1_data <= self.label_data + 10)) * 100
+                accuracy_name2 = np.mean((self.name2_data >= self.label_data - 10) & (self.name2_data <= self.label_data + 10)) * 100
+                # add the accuracy to the legend
+                sorted_handles_labels.append((MulticolorPatch([self.c1, 'darkslategray', self.c1], 1), f'Accuracy {self.name1}: {accuracy_name1:.2f}%'))
+                sorted_handles_labels.append((MulticolorPatch([self.c2, 'darkslategray', self.c2], 1), f'Accuracy {self.name2}: {accuracy_name2:.2f}%'))
 
             sorted_handles_labels = sorted(
                 sorted_handles_labels, 
@@ -225,7 +228,7 @@ def _validate_data(file_path:str):
                 missing_keys['yolo'].append(key)
     return missing_keys
 
-def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv2'):
+def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv2', use_label=False):
     """
     Load the data from the file path
     :param file_path: str: The file path to the data
@@ -248,24 +251,26 @@ def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv
             keys = sorted(keys, key=lambda x: float(x))
         for key in keys:
             try:
-                label_data = np.append(label_data, f[key]['straw_percent'][...])
-                if name1 == 'scada':
-                    name1_data = np.append(name1_data, f[key]['annotations']['sensor_fullness'][()]*100)
+                if use_label:
+                    label_data = np.append(label_data, f[key]['straw_percent'][...])
+                if name1 not in f[key].keys():
+                    name1_data = np.append(name1_data, np.array([0.0]))
                 else:
                     name1_data = np.append(name1_data, f[key][name1]['percent'][...])
                 if name2 not in f[key].keys():
                     name2_data = np.append(name2_data, np.array([0.0]))
                 else:
                     name2_data = np.append(name2_data, f[key][name2]['percent'][...])
-            except:
+            except Exception as e:
                 errors += 1
                 print(f"Error in loading data from key: {key}")
     
     print(f"Errors in loading data: {errors}")
     x_axis = np.arange(len(name1_data))
     # We then return the data
-    return label_data, name1_data, name2_data, x_axis
-
+    if use_label:
+        return label_data, name1_data, name2_data, x_axis
+    return None, name1_data, name2_data, x_axis
 def _smooth_data(sensor_data, model_data):
     """
     This function takes the data and smooths it out. It smooths by taking the average of the previous 5 data points.
@@ -290,27 +295,29 @@ def _smooth_data(sensor_data, model_data):
 
 def _print_summary_statistics(name1, name2, name1_data, name2_data, label_data):
     print(f"\nSummary Statistics:")
+    print(f"  -- Data Length:        #1:  {len(name1_data)}, #2: {len(name2_data)}")
     print(f"  -- {name1} Data:    Mean:  {np.mean(name1_data):.2f}, STD: {np.std(name1_data):.2f}")
     print(f"  -- {name2} Data:    Mean:  {np.mean(name2_data):.2f}, STD: {np.std(name2_data):.2f}")
     print(f"  -- Delta:           Mean:  {np.mean(name1_data - name2_data):.2f}, STD: {np.std(name1_data - name2_data):.2f}")
 
-    # Print accuracies with different thresholds, for all labels, labels below 50% and labels above 50%
-    percentages = [2.5, 5, 10]
-    data = [name1_data, name2_data]
-    for percentage in percentages:
-        for i, name in enumerate([name1, name2]):
-            print(f"\nAccuracy (+-{percentage}%) for {name}:")
-            accuracy = np.mean((data[i] >= label_data - percentage) & (data[i] <= label_data + percentage)) * 100
-            print(f"  -- Accuracy:                      {accuracy:.2f}%")
-            # accuracy_below_50 = np.mean((label_data < 50) & (data[i] >= label_data - percentage) & (data[i] <= label_data + percentage)) * 100
-            mask = label_data < 50
-            accuracy_below_50 = np.mean((data[i][mask] >= label_data[mask] - percentage) & (data[i][mask] <= label_data[mask] + percentage)) * 100
-            print(f"  -- Accuracy for labels below 50%: {accuracy_below_50:.2f}%")
-            mask = label_data >= 50
-            accuracy_above_50 = np.mean((data[i][mask] >= label_data[mask] - percentage) & (data[i][mask] <= label_data[mask] + percentage)) * 100
-            print(f"  -- Accuracy for labels above 50%: {accuracy_above_50:.2f}%")
+    if label_data is not None:
+        # Print accuracies with different thresholds, for all labels, labels below 50% and labels above 50%
+        percentages = [2.5, 5, 10]
+        data = [name1_data, name2_data]
+        for percentage in percentages:
+            for i, name in enumerate([name1, name2]):
+                print(f"\nAccuracy (+-{percentage}%) for {name}:")
+                accuracy = np.mean((data[i] >= label_data - percentage) & (data[i] <= label_data + percentage)) * 100
+                print(f"  -- Accuracy:                      {accuracy:.2f}%")
+                # accuracy_below_50 = np.mean((label_data < 50) & (data[i] >= label_data - percentage) & (data[i] <= label_data + percentage)) * 100
+                mask = label_data < 50
+                accuracy_below_50 = np.mean((data[i][mask] >= label_data[mask] - percentage) & (data[i][mask] <= label_data[mask] + percentage)) * 100
+                print(f"  -- Accuracy for labels below 50%: {accuracy_below_50:.2f}%")
+                mask = label_data >= 50
+                accuracy_above_50 = np.mean((data[i][mask] >= label_data[mask] - percentage) & (data[i][mask] <= label_data[mask] + percentage)) * 100
+                print(f"  -- Accuracy for labels above 50%: {accuracy_above_50:.2f}%")
 
-def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', time_step:int = 5, delta:bool = True):  
+def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', time_step:int = 5, delta:bool = True, use_label=False):  
     # We first define the figure on which we wish to plot the data
     if delta:
         fig, axes = plt.subplots(2, 1, figsize=(15, 10))
@@ -318,15 +325,15 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
         fig, axes = plt.subplots(1, 1, figsize=(10, 10))
 
     # We then load the data from the file path
-    label_data, name1_data, name2_data, x_axis = _retreive_data(file_path, name1=name1, name2=name2)
+    label_data, name1_data, name2_data, x_axis = _retreive_data(file_path, name1=name1, name2=name2, use_label=use_label)
     x_axis_data = x_axis * time_step
     # Plot the data on top of the figure
     if delta:
-        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True).plot(axes[0])
+        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=False).plot(axes[0])
     else:
-        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True).plot(axes)
+        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=False).plot(axes)
     if delta:
-        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, plot_data=False).plot(axes[1])
+        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, plot_data=False, use_label=False).plot(axes[1])
 
     _print_summary_statistics(name1, name2, name1_data, name2_data, label_data)
     fig.suptitle(f"Recording: {name}", y=0.92, fontsize=20)
@@ -338,6 +345,6 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
     plt.show()
 
 if __name__ == '__main__':
-    file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox.hdf5"
+    file_path = "D:/HCAI/msc/strawml/data/predictions/recording_vertical_all_frames_processed.hdf5"
     # file_path = "D:/HCAI/msc/strawml/data/predictions/recording_vertical_all_frames_processed.hdf5"
-    main(file_path, name="sensors", name1='yolo', name2='convnextv2', time_step=5, delta=False)
+    main(file_path, name="sensors", name1='scada', name2='convnextv2', time_step=5, delta=False, use_label=False)
