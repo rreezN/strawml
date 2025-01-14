@@ -205,7 +205,7 @@ def SpecialRotate(image, image_diff=None, bbox=None, angle=None, return_affine=F
     rotation_arr[0, 2] += bound_w/2 - image_center[0]
     rotation_arr[1, 2] += bound_h/2 - image_center[1]
 
-    rotated_image = cv2.warpAffine(image, rotation_arr, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255, 255))
+    rotated_image = cv2.warpAffine(image, rotation_arr, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 255))
     affine_warp = np.vstack((rotation_arr, np.array([0,0,1])))
     bbox_ = np.expand_dims(bbox.reshape(-1, 2), 1)
     bbox_ = cv2.perspectiveTransform(bbox_, affine_warp)
@@ -216,7 +216,7 @@ def SpecialRotate(image, image_diff=None, bbox=None, angle=None, return_affine=F
             return rotated_image, None, rotated_bbox, affine_warp
         return rotated_image, None, rotated_bbox
     
-    rotated_image_diff = cv2.warpAffine(image_diff, rotation_arr, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255, 255))
+    rotated_image_diff = cv2.warpAffine(image_diff, rotation_arr, (bound_w, bound_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 255))
     
     if return_affine:
         return rotated_image, rotated_image_diff, rotated_bbox, affine_warp

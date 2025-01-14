@@ -1,26 +1,29 @@
-from math import dist
 from __init__ import *
 # Misc.
 import os
 import cv2
 import time
 import h5py
+import json
+import timm
 import torch
 import queue
 import psutil
+import pickle
 import keyboard
 import threading
 import numpy as np
-from collections import deque
-from typing import Tuple, Optional, Any
-from torchvision.transforms import v2 as transforms
-
-# Model imports
-import timm
+from tqdm import tqdm
 import pupil_apriltags
+from collections import deque
+from pupil_apriltags import Detector
+from typing import Tuple, Optional, Any
+from argparse import ArgumentParser, Namespace
+from torchvision.transforms import v2 as transforms
 
 ## File imports
 from strawml.models.chute_finder.yolo import ObjectDetect
+from strawml.data.make_dataset import decode_binary_image
 import strawml.models.straw_classifier.cnn_classifier as cnn
 import strawml.models.straw_classifier.feature_model as feature_model
 from strawml.visualizations.utils_stream import AprilDetectorHelpers, AsyncStreamThread, time_function
@@ -52,7 +55,8 @@ class AprilDetector:
         self.model_load_path = model_load_path
         self.predictor_model = predictor_model
         self.frame_shape = frame_shape
-        self.model = None
+        self.yolo_model = None
+        self.model = None 
         self.q = queue.LifoQueue()
         self.fx, self.fy, self.cx, self.cy = None, None, None, None
         self.camera_params = self.helpers._load_camera_params()
@@ -70,8 +74,9 @@ class AprilDetector:
         # Setup prediction model if enabled YOLO is prioritized over the predictor
         if yolo_straw:
             self.setup_yolo_straw(yolo_straw_model)
-        elif with_predictor:
+        if with_predictor:
             self.setup_predictor()
+
 
     def setup_object_detection(self, od_model_name: str) -> None:
         """Setup object detection model."""
@@ -79,7 +84,7 @@ class AprilDetector:
 
     def setup_yolo_straw(self, yolo_straw_model: str) -> None:
         """Setup YOLO straw model."""
-        self.model = ObjectDetect(model_name=yolo_straw_model, yolo_threshold=self.yolo_threshold, device=self.device, verbose=False)
+        self.yolo_model = ObjectDetect(model_name=yolo_straw_model, yolo_threshold=self.yolo_threshold, device=self.device, verbose=False)
 
     def setup_predictor(self) -> None:
         """Setup the predictor model and related transformations."""
@@ -89,6 +94,7 @@ class AprilDetector:
             std=[1 / s for s in self.std]
         )
         self.transform = transforms.Compose([
+            transforms.ToImage(),
             transforms.ToDtype(torch.float32, scale=False),
             transforms.Normalize(mean=self.mean, std=self.std)
         ])
@@ -107,44 +113,50 @@ class AprilDetector:
             self.model.load_state_dict(torch.load(self.model_load_path, weights_only=True))
             self.model.to(self.device)
 
-    def load_predictor_model(self, input_channels: int, num_classes: int) -> torch.nn.Module:
+    def load_predictor_model(self, input_channels: int, num_classes: int, use_sigmoid: bool = True, image_size: tuple = (672, 208)) -> torch.nn.Module:
         """Load the appropriate model based on the predictor_model string."""
         model = None
         match self.predictor_model:
             case 'cnn':
-                image_size = (384, 384)
-                model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=num_classes)
+                model = cnn.CNNClassifier(image_size=image_size, input_channels=input_channels, output_size=num_classes, use_sigmoid=use_sigmoid)
             case 'convnextv2':
-                image_size = (224, 224)
-                model = timm.create_model('convnext_small.in12k_ft_in1k_384', pretrained=False, in_chans=input_channels, num_classes=num_classes)
+                model = timm.create_model('convnextv2_base.fcmae_ft_in22k_in1k_384', in_chans=input_channels, num_classes=num_classes)
+            case 'convnext':
+                model = timm.create_model('convnext_small.in12k_ft_in1k_384', in_chans=input_channels, num_classes=num_classes)
             case 'vit':
-                image_size = (384, 384)
-                model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', pretrained=False, in_chans=input_channels, num_classes=num_classes)
+                model = timm.create_model('vit_betwixt_patch16_reg4_gap_384.sbb2_e200_in12k_ft_in1k', in_chans=input_channels, num_classes=num_classes, img_size=image_size)
             case 'eva02':
-                image_size = (448, 448)
-                model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', pretrained=False, in_chans=input_channels, num_classes=num_classes)
+                model = timm.create_model('eva02_base_patch14_448.mim_in22k_ft_in22k_in1k', in_chans=input_channels, num_classes=num_classes, img_size=image_size)
             case 'caformer':
-                image_size = (384, 384)
-                model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=num_classes, pretrained=False)
+                model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=num_classes, img_size=image_size)
         
-        model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_overall_best.pth', weights_only=True))
+        
+        model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
         return model, image_size
 
-    def setup_regressor(self, image_size: tuple, input_channels: int) -> None:
+    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 3, num_neurons: int = 512) -> None:
         """Setup the regressor model."""
         if self.predictor_model != 'cnn':
             features = self.model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
             feature_size = torch.flatten(features, 1).shape[1]
-            self.regressor_model = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1)
+            self.regressor_model = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=use_sigmoid, num_hidden_layers=num_hidden_layers, num_neurons=num_neurons)
             
-            self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor_overall_best.pth', weights_only=True))
-            self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor_overall_best.pth', weights_only=True))
+            self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
+            self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor.pth', weights_only=True))
             self.regressor_model.to(self.device)
         else:
             self.model.load_state_dict(torch.load(self.model_load_path, weights_only=True))
         self.model.to(self.device)
 
-    def plot_boxes(self, results, frame, straw=False, straw_lvl=None, model_type: str = 'obb'):
+    def plot_straw_level(self, frame_drawn, line_start, line_end, straw_level, color=(225, 105, 65)) -> np.ndarray:
+        cv2.line(frame_drawn, line_start, line_end, color, 2)
+        if straw_level is None:
+            cv2.putText(frame_drawn, "NA", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
+        else:
+            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
+        return frame_drawn
+    
+    def plot_boxes(self, results, frame, model_type: str = 'obb'):
         """
         Takes a frame and its results as input, and plots the bounding boxes and label on to the frame.
         :param results: contains labels and coordinates predicted by model on the given frame.
@@ -165,21 +177,14 @@ class AprilDetector:
             if 'obb' in model_type:
                 x1, y1, x2, y2, x3, y3, x4, y4 = cord[i].flatten()
                 x1, y1, x2, y2, x3, y3, x4, y4 = int(x1), int(y1), int(x2), int(y2), int(x3), int(y3), int(x4), int(y4)
-                if straw:
-                    cv2.line(frame, (x1, y1), (x4, y4), (127,0,255), 2)
-                    if type(straw_lvl) == str:
-                        cv2.putText(frame, f"{straw_lvl}", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
-
-                    else:                        
-                        cv2.putText(frame, f"{straw_lvl:.2f} %", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (127, 0, 255), 2, cv2.LINE_AA)
-                else:                        
-                    # draw lines between the corners
-                    cv2.line(frame, (x1, y1), (x2, y2), (138,43,226), 2)
-                    cv2.line(frame, (x2, y2), (x3, y3), (138,43,226), 2)
-                    cv2.line(frame, (x3, y3), (x4, y4), (138,43,226), 2)
-                    cv2.line(frame, (x4, y4), (x1, y1), (138,43,226), 2)
-                    # plot label on the object
-                    cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                      
+                # draw lines between the cornersq
+                cv2.line(frame, (x1, y1), (x2, y2), (138,43,226), 2)
+                cv2.line(frame, (x2, y2), (x3, y3), (138,43,226), 2)
+                cv2.line(frame, (x3, y3), (x4, y4), (138,43,226), 2)
+                cv2.line(frame, (x4, y4), (x1, y1), (138,43,226), 2)
+                # plot label on the object
+                cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
             else:
                 x1, y1, x2, y2 = cord[i].flatten()
                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
@@ -253,7 +258,7 @@ class AprilDetector:
             number_tags, chute_tags = self.helpers._classify_tags(tags)
             if len(number_tags) == 0 or len(chute_tags) == 0:
                 return frame, None
-            
+            frame_ = frame.copy()
             # Step 2: Draw detected tags on the frame
             frame_drawn = self.helpers._draw_tags(frame, number_tags, chute_tags)
             
@@ -262,8 +267,7 @@ class AprilDetector:
             
             # Step 4: Optionally create and return the cutout
             if make_cutout:
-                return self.helpers._handle_cutouts(frame_drawn, chute_tags, use_cutout)
-
+                return self.helpers._handle_cutouts(frame_drawn, frame_, chute_tags, use_cutout)
             return frame_drawn, None        
         except Exception as e:
             print(f"ERROR in draw: {e}")
@@ -278,15 +282,21 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
+    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False, smoothing:bool=True, save_as_new_hdf5: bool=True, process_like_recording:bool=True, with_annotations:bool=False, fps_test:bool=False, hdf5_model_save_name:str =["yolo"]) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, yolo_straw=yolo_straw, yolo_straw_model=yolo_straw_model, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         self.record = record
+        self.save_as_new_hdf5 = save_as_new_hdf5
+        self.with_annotations = with_annotations
+        self.process_like_recording = process_like_recording
         self.recording_req = False
         self.record_threshold = record_threshold
+        self.fps_test = fps_test
+        self.hdf5_model_save_name = hdf5_model_save_name
         if record:
             self.recording_queue = queue.Queue()
-            self.scada_smoothing_queue = deque(maxlen=5)
-        self.straw_smoothing_queue = deque(maxlen=5)
+        self.scada_smoothing_queue = deque(maxlen=5)
+        self.yolo_smoothing_queue = deque(maxlen=5)
+        self.predictor_smoothing_queue = deque(maxlen=5)
         self.rtsp = rtsp
         self.yolo_straw = yolo_straw
         self.wanted_tags = ids
@@ -300,9 +310,11 @@ class RTSPStream(AprilDetector):
         self.regressor = regressor
         self.predictor_model = predictor_model
         self.frame = None
+        self.smoothing = smoothing
         self.should_abort_immediately = False
         self.threads = []
         self.information = self.helpers._initialize_information_dict()
+        self.last_save_timestamp = 0
         
     def create_capture(self, credentials_path: str) -> cv2.VideoCapture:
         """
@@ -366,6 +378,25 @@ class RTSPStream(AprilDetector):
         self._setup_display()
         self._process_frames_from_videofile()
 
+    def display_frame_from_hdf5(self, path: str) -> None:
+        """
+        Display the frames with the detected AprilTags.
+        """
+
+        # Start by running through the first 50 frames to get the tags
+        with h5py.File(path, 'r') as hf:
+            timestamps = list(hf.keys())
+            for timestamp in timestamps[:50]:
+                frame = hf[timestamp]['image'][()]
+                frame = decode_binary_image(frame)
+                # change from bgr to rgb
+                self.frame = frame
+        # pause to allow for the apriltag detect thread to catch up
+        print("Waiting for AprilTag detection to catch up...")
+        time.sleep(3)
+        self._setup_display()
+        self._process_frames_from_hdf5(path)
+
     def _setup_display(self) -> None:
         """Set up display settings and initialize variables for both modes."""
         self.font = cv2.FONT_HERSHEY_SIMPLEX
@@ -373,6 +404,17 @@ class RTSPStream(AprilDetector):
         self.box_color = (255, 255, 255)  # White color for box
         self.frame_count = 0
         self.start_time = time.time()
+        self.yolo_color = (225, 105, 65)
+        self.scada_color = (32, 165, 218)
+        self.predictor_color = (80, 73, 149)
+
+        self.information["scada_level"]["color"] = self.scada_color
+        self.information["scada_smooth"]["color"] = self.scada_color
+        self.information["yolo_level"]["color"] = self.yolo_color
+        self.information["yolo_smooth"]["color"] = self.yolo_color
+        self.information["predictor_level"]["color"] = self.predictor_color
+        self.information["predictor_smooth"]["color"] = self.predictor_color
+
         if self.record:
             self.since_last_save = time.time()
 
@@ -393,72 +435,346 @@ class RTSPStream(AprilDetector):
                 break
             self._process_frame(frame, from_videofile=True)
 
+    def _process_frames_from_hdf5(self, path: str) -> None:
+        """Process frames from an HDF5 file."""
+        if self.fps_test:
+            # NOTE if this is true, then we only need to load the image, run inference and then continue. We do not need to save anything.
+            # Then we also wish to create a dictionary that explains the different durations of loading image, processing image and then total image time
+            # we must ensure that only one model is running at a time otherwise the results will be skewed and not accurate
+            self.fps_test_results = {"fps": [], "load_time": [], "inference_time": [], "postprocess_time": [], "total_time": []}
+
+        with h5py.File(path, 'r+') as hf:
+            timestamps = list(hf.keys())
+            # sort timestamps
+            if "frame" == timestamps[0].split("_")[0]:
+                timestamps = sorted(timestamps, key=lambda x: int(x.split('_')[1]))
+            else:
+                timestamps = sorted(timestamps, key=lambda x: float(x))
+            # Check if hf[timestamp]['label'] exists for the first timestamp. 
+            # If it does we do not need to get labels again
+            self.recording_req = True
+            self.last_save_timestamp = timestamps[0]
+            self.save_counter = 0
+            pbar = tqdm(timestamps)
+            for timestamp in pbar:
+                pbar.set_description(f"#Saved frames: {self.save_counter}")
+                frame_time = time.time()
+                self.prediction_dict = {}
+                frame = hf[timestamp]['image'][()]
+                frame = decode_binary_image(frame) # process the frame
+                if self.fps_test:
+                    self.fps_test_results["load_time"].append(time.time() - frame_time)
+                    self._process_fps_test(frame, frame_time)
+                else:
+                    if self.with_annotations:
+                        self._process_sensor_hdf5_frame(frame, hf, path, timestamp, frame_time)
+                    else:
+                        self._process_hdf5_frame(frame, hf, path, timestamp, frame_time)
+        if self.fps_test:
+            print(f"Results: {self.fps_test_results}")
+            # save the results to a file
+            with open("fps_test_results.pkl", "wb") as f:
+                pickle.dump(self.fps_test_results, f)
+        self.close_threads()
+
+    def _process_fps_test(self, frame, frame_time) -> None:
+        if self.yolo_straw:
+            return self._process_fps_test_yolo(frame, frame_time)
+        if self.with_predictor:
+            return self._process_fps_test_predictor(frame, frame_time)
+        
+    def _process_fps_test_yolo(self, frame, frame_time) -> None:
+        # Get yolo results
+        frame_drawn = self._yolo_model(frame, frame, None)
+        self._update_information(frame_time)
+        self._display_frame(frame_drawn)
+
+    def _process_fps_test_predictor(self, frame, frame_time) -> None:
+        # Get predictor results
+        results, OD_time = time_function(self.OD.score_frame, frame)
+        # Make sure the results are not empty
+        if len(results[0]) == 0:
+            results = "NA"
+        self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
+        frame_drawn = self._predictor_model(frame, frame, results)
+        self._update_information(frame_time)
+        self._display_frame(frame_drawn)
+
+    def _process_sensor_hdf5_frame(self, frame: np.ndarray, hf, path, timestamp, frame_time) -> None:
+        """ 
+        Special function for just processing sensor data. 
+        It needs to do a series of operations on the existing sensor file.
+        1. Retrieve existing annotated bbox and calculate the straw level
+        2. Save the straw level as label to the existing group
+        3. run the normal _process_hdf5_frame 
+        """
+        try:
+            # Load and calculate the straw level based on the bbox and the fullness score
+            straw_bbox = hf[timestamp]['annotations']['bbox_straw'][...]
+            straw_level_calculated = self.helpers._get_pixel_to_straw_level(frame, straw_bbox, object=False)[0]
+            straw_level_calculated_line = self.helpers._get_straw_to_pixel_level(straw_level_calculated)
+            straw_level =  hf[timestamp]['annotations']['fullness'][...] * 100
+            straw_level_line = self.helpers._get_straw_to_pixel_level(straw_level)
+            # prepare the straw level for saving by checking if the group already exists and
+            # if they do we delete them and replace them with the new values
+            if "straw_percent" in hf[timestamp].keys():
+                del hf[timestamp]["straw_percent"]
+            if "straw_level_calculated" in hf[timestamp].keys():
+                del hf[timestamp]["straw_level_calculated"]
+            hf[timestamp].create_dataset('straw_percent', data={straw_level: straw_level_line})
+            hf[timestamp].create_dataset('straw_level_calculated', data={straw_level_calculated: straw_level_calculated_line})
+        except Exception as e:
+            t1 = "straw_percent" in hf[timestamp].keys()
+            t2 = "straw_level_calculated" in hf[timestamp].keys()
+            if t1:
+                del hf[timestamp]["straw_percent"]
+            if t2:
+                del hf[timestamp]["straw_level_calculated"]
+            straw_level = 0
+            straw_level_line = self.helpers._get_straw_to_pixel_level(straw_level)
+            hf[timestamp].create_dataset('straw_percent', data={straw_level: straw_level_line})
+            hf[timestamp].create_dataset('straw_level_calculated', data={straw_level: straw_level_line})
+            print(f"{timestamp}: {e}, replaced: {t1, t2}")
+        self._process_hdf5_frame(frame, hf, path, timestamp, frame_time)
+
+    def _process_hdf5_frame(self, frame, hf, path, timestamp, frame_time) -> None:
+
+        results = None 
+        if frame is None:
+            print("Frame is None. Skipping...")
+            self._update_information(frame_time)
+            return  
+        with self.lock:
+            self.frame = frame
+
+        # Find Apriltags
+        if self.detect_april and self.tags is not None:
+            frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
+            # print shape of cutout
+        else:
+            frame_drawn, cutout = frame, None
+
+        if self.yolo_straw and self.with_predictor:
+            return self._process_hdf5_frame_with_yolo_and_predictor(frame, frame_drawn, cutout, hf, path, timestamp, frame_time)
+        
+        if not self.use_cutout and not self.object_detect:
+            try:
+                bbox = torch.from_numpy(hf[timestamp]["annotations"]["bbox_chute"][()]).to(self.device)
+                results = [0,[bbox]]
+            except Exception as e:
+                print(f"Error in getting bbox: {e}")
+                return
+        
+        # If not tags have been found we go to the next frame
+        if len(self.tag_ids) == 0:
+            self._display_frame(frame_drawn)
+            return
+        
+        frame_drawn = self._process_frame_content(frame, frame_drawn, cutout, results, time_stamp=timestamp)
+
+        # Display frame and overlay text
+        self._update_information(frame_time)
+        self._display_frame(frame_drawn)
+        # # Now we save the frame
+        if self.recording_req:
+            if self.save_as_new_hdf5:
+                self._save_frame_existing_hdf5(hf=None, timestamp=timestamp, path=path)
+            else:
+                self._save_frame_existing_hdf5(hf, timestamp, path)
+
+    def _process_hdf5_frame_with_yolo_and_predictor(self, frame, frame_drawn, cutout, hf, path, timestamp, frame_time) -> None:
+        # If not tags have been found we go to the next frame
+        if len(self.tag_ids) == 0:
+            self._display_frame(frame_drawn)
+            return
+
+        # Process scada data        
+        scada_level = hf[timestamp]["scada"]["percent"][()]
+        line_start, line_end, sensor_scada_data, scada_pixel_values = self._retrieve_scada_data(scada_level)
+        self.recording_req =  (float(timestamp) - float(self.last_save_timestamp) >= self.record_threshold)
+        if self.recording_req:
+            
+            if scada_pixel_values[0] is not None:
+                self.prediction_dict = {}
+                self.prediction_dict["scada"] = {sensor_scada_data: [line_start, line_end]} # NOTE FILLING SCADA DATA HERE
+                self.last_save_timestamp = timestamp
+
+        cv2.line(frame_drawn, line_start, line_end, self.scada_color , 2)
+        cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, self.scada_color, 2, cv2.LINE_AA)
+        # Get yolo results
+        frame_drawn = self._yolo_model(frame, frame_drawn, None) # NOTE FILLING YOLO DATA HERE
+
+        # Get predictor results
+        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results, OD_time = time_function(self.OD.score_frame, frame)
+        # Make sure the results are not empty
+        if len(results[0]) == 0:
+            results = "NA"
+        self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
+        frame_drawn = self._predictor_model(frame, frame_drawn, results) # NOTE FILLING CONVNEXTV2 DATA HERE
+
+        # Display frame and overlay text
+        self._update_information(frame_time)
+        self._display_frame(frame_drawn)
+
+        # save results from frame if recording requirement is met
+        if self.recording_req:
+            self.save_counter += 1
+            if self.save_as_new_hdf5:
+                self._save_frame_existing_hdf5(hf=None, timestamp=timestamp, path=path)
+            else:
+                self._save_frame_existing_hdf5(hf, timestamp, path)
+
+    def _save_frame_existing_hdf5(self, hf, timestamp, path) -> None:
+        """
+        Function to save the frame to an existing HDF5 file.
+
+        Parameters:
+        -----------
+        hf : h5py.File
+            The HDF5 file object.
+        timestamp : str
+            The timestamp of the frame
+        """
+        def _save_results(hf, timestamp, hdf5_model_save_name = None):
+            # check if the timestamp already exists in the file
+            if not timestamp in hf.keys():
+                group = hf.create_group(timestamp)
+            else:
+                group = hf[timestamp]
+
+            # Save the image to the group if it does not exist
+            if not "image" in group.keys():
+                img = cv2.imencode('.jpg', self.frame)[1]
+                group.create_dataset('image', data=img)
+
+            if hdf5_model_save_name is not None:
+                if self.yolo_straw:
+                    t = self.prediction_dict["yolo"]
+                elif self.with_predictor:
+                    t = self.prediction_dict["convnextv2"]
+
+                t1_name = 'percent'
+                t2_name = 'pixel'
+                t1, t2 = list(t.keys())[0], list(t.values())[0]
+
+                # first check if group model_name already exists
+                if hdf5_model_save_name in hf[timestamp]:
+                    # remove the group
+                    del hf[timestamp][hdf5_model_save_name]
+
+                # then we create the group and add the datasets
+                pred = hf[timestamp].create_group(hdf5_model_save_name)
+                pred.create_dataset(t1_name, data=t1)
+                pred.create_dataset(t2_name, data=t2)
+            else:
+                try:
+                    for key, value in self.prediction_dict.items():
+                        if key in group.keys():
+                            del group[key]
+                        predict_group = group.create_group(key)
+                        t1, t2 = list(value.items())[0]
+                        if key == 'attr.':
+                            t1_name = 'interpolated'
+                            t2_name = 'tags'
+                        else:
+                            t1_name = 'percent'
+                            t2_name = 'pixel'
+                        predict_group.create_dataset(t1_name, data=t1)
+                        predict_group.create_dataset(t2_name, data=t2)
+                except Exception as e:
+                    print("###################")
+                    print(f"!ERROR! {timestamp}: {key},\n{t1_name}: {t1},\n{t2_name}: {t2}\n--- {e}")
+                    print("###################")
+        if hf is not None:
+            _save_results(hf, timestamp, hdf5_model_save_name=self.hdf5_model_save_name)
+        else:
+            with h5py.File(path.split(".")[0] + "_processed.hdf5", 'a') as hf:
+                # print(f"Saving frame to {path.split('.')[0] + '_processed.hdf5'}")
+                _save_results(hf, timestamp)
+
     def _process_frame(self, frame: np.ndarray, from_videofile: bool) -> None:
         """Process a single frame for display."""
         if frame is None:
             print("Frame is None. Skipping...")
             return
+        # Lock and set the frame for thread safety
+        with self.lock:
+            self.frame = frame
+
         # Clear the queue in RTSP mode to avoid lag
         if not from_videofile and self.rtsp:
             self.q.queue.clear()
+
         frame_time = time.time()
+
+        # Find Apriltags
+        if self.detect_april and self.tags is not None:
+            frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
+        else:
+            frame_drawn, cutout = frame, None
         
+        # If not tags have been found we go to the next frame
+        if len(self.tag_ids) == 0:
+            self._display_frame(frame_drawn)
+            return
+        
+        # Get scada data
         display_scada_line = False
         if self.record:
             try:
-                # Get scada
                 sensor_scada_data = self.scada_thread.get_recent_value()
-                sensor_scada_data = self.helpers._smooth_level(sensor_scada_data, 'scada')
-                self.information["scada_level"]["text"] = f'(TScada) SCADA: {sensor_scada_data:.2f}%'
-                # Get pixel values for scada
-                scada_pixel_values = self.helpers._get_straw_to_pixel_level(sensor_scada_data)
-                # Record sensor data if enabled
+                line_start, line_end, sensor_scada_data, scada_pixel_values = self._retrieve_scada_data(sensor_scada_data)
+                
                 self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
-                if self.recording_req:
-                    # Init recording file
+                if self.recording_req and scada_pixel_values[0] is not None:
                     self.prediction_dict = {}
-                    # Save the scada data and pixel values
-                    self.prediction_dict["scada"] = {sensor_scada_data: scada_pixel_values}
+                    self.prediction_dict["scada"] = {sensor_scada_data: [line_start, line_end]}
                     # Reset the time
                     self.since_last_save = time.time()
                 display_scada_line = True
             except Exception as e:
                 print(f'Error while trying to get scada data: {e}')
-                    
-        # Lock and set the frame for thread safety
-        with self.lock:
-            self.frame = frame
+                
+        # Process frame (Object Detection, Predictor, etc.)
+        frame_drawn = self._process_frame_content(frame, frame_drawn, cutout)
 
-        # Process frame (AprilTags, Object Detection, Predictor, etc.)
-        frame_drawn = self._process_frame_content(frame)
+        # Draw sensor_scada_data on frame based on scada_pixel_values
+        if display_scada_line and scada_pixel_values[0] is not None:
+            cv2.line(frame_drawn, line_start, line_end, (32,165,218), 2)
+            cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (32,165,218), 2, cv2.LINE_AA)
 
         # Update FPS and resource usage information
         self._update_information(frame_time)
 
-        # Draw sensor_scada_data on frame based on scada_pixel_values
-        if display_scada_line and self.record:
-            if type(scada_pixel_values) != str:
-                pix_x = scada_pixel_values[0]
-                scada_pixel_values = (pix_x+100, scada_pixel_values[1])
-                
-                # Get angle of self.chute_numbers
-                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
-                line_start = (int(scada_pixel_values[0]), int(scada_pixel_values[1]))
-                line_end = (int(scada_pixel_values[0]) + 100, int(scada_pixel_values[1]))
-                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-
-                cv2.line(frame_drawn, line_start, line_end, (255, 4, 0), 2)
-                cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(scada_pixel_values[0]) + 110, int(scada_pixel_values[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 4, 0), 2, cv2.LINE_AA)
-
         # Display frame and overlay text
         self._display_frame(frame_drawn)
+    
+        if self.recording_req:
+            self._save_frame
 
-        
-        if self.record and self.recording_req:
-            self._save_frame()
         # Clean up resources
         torch.cuda.empty_cache()
-    
+
+    def _retrieve_scada_data(self, sensor_scada_data, time_stamp = None) -> None:
+        # Get scada
+        if self.smoothing:
+            sensor_scada_data = self.helpers._smooth_level(sensor_scada_data, 'scada', time_stamp = time_stamp)
+            self.information["scada_smooth"]["text"] = f'(T2) Smoothed Scada Level: {sensor_scada_data:.2f}%'
+        # Get pixel values for scada
+        scada_pixel_values = self.helpers._get_straw_to_pixel_level(sensor_scada_data)
+        if scada_pixel_values[0] is not None:
+            # Record sensor data if enabled
+            scada_pixel_values_ = (scada_pixel_values[0], scada_pixel_values[1])
+            # Get angle of self.chute_numbers
+            angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+            line_start = (int(scada_pixel_values_[0]), int(scada_pixel_values_[1]))
+            line_end = (int(scada_pixel_values_[0])+300, int(scada_pixel_values_[1]))
+            line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+        else:
+            line_start, line_end = (None,None), (None,None)
+        return line_start, line_end, sensor_scada_data, scada_pixel_values
+
     def _save_frame(self) -> None:
         path = "data/recording/"
         if not os.path.exists(path):
@@ -494,56 +810,114 @@ class RTSPStream(AprilDetector):
                 continue
             self.information[key]["text"] = ""
 
-    def _process_frame_content(self, frame: np.ndarray) -> np.ndarray:
+    def _process_frame_content(self, frame: np.ndarray, frame_drawn: np.ndarray, cutout, results=None, time_stamp = None) -> np.ndarray:
         """Handle specific processing like AprilTags, Object Detection, etc."""
-        # Apriltags
-        if self.detect_april and self.tags is not None:
-            frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
-        else:
-            frame_drawn, cutout = frame, None
-
         # Object Detection
         if cutout is not None:
             frame = cutout
-            results = None
+            results = results 
         elif self.object_detect:
-            results, OD_time = time_function(self.OD.score_frame, frame)
+            results, OD_time = time_function(self.OD.score_frame, frame) 
             # Make sure the results are not empty
             if len(results[0]) == 0:
                 results = "NA"
-            self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s' if results else "NA"
+            self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
         else:
-            results = "NA"
+            results = results
 
         # Predictor of the straw level
-        if results != "NA":
-            if self.with_predictor:
-                frame_drawn = self._process_predictions(frame, results, frame_drawn)
-            if self.object_detect:
-                frame_drawn = self.plot_boxes(results, frame_drawn, straw=False, straw_lvl=None, model_type="obb")
+        if self.with_predictor:
+            return self._predictor_model(frame, frame_drawn, results, time_stamp)
         elif self.yolo_straw:
-            output, inference_time = time_function(self.model.score_frame, frame)
-            # If the output is not empty, we can plot the boxes and get the straw level
-            if len(output[0]) != 0:
-                # Extract the straw level from the pixel values of the bbox
-                straw_level = self.helpers._get_pixel_to_straw_level(frame_drawn, output)
-                if straw_level == "NA": # If the straw level is not detected, we add None to the previous straw level smoothing predictions
-                    straw_level = self.helpers._smooth_level(None, 'straw')
-                else: # otherwise we add the detected straw level to the smoothing predictions and get the smoothed straw level
-                    straw_level = self.helpers._smooth_level(straw_level, 'straw')
-                # Plot the boxes and straw level on the frame
-                frame_drawn = self.plot_boxes(output, frame_drawn, straw=True, straw_lvl=straw_level, model_type="obb")
+            return self._yolo_model(frame, frame_drawn, cutout, time_stamp)
                 
-                if type(straw_level) == str:
-                    self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level}'
-                else:
-                    self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
-                self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
-        return frame_drawn
+    def _predictor_model(self, frame: np.ndarray, frame_drawn: np.ndarray, results: list, time_stamp=None) -> None:
+        if results != "NA":
+            frame_drawn = self._process_predictions(frame, results, frame_drawn, time_stamp = time_stamp)
+            if self.object_detect:
+                frame_drawn = self.plot_boxes(results, frame_drawn, model_type="obb")
+            return frame_drawn
+        else:
+            return frame_drawn
 
-    def _process_predictions(self, frame, results, frame_drawn):
+    def _yolo_model(self, frame: np.ndarray, frame_drawn: np.ndarray, cutout, time_stamp=None) -> None:
+        output, inference_time = time_function(self.yolo_model.score_frame, frame)
+        # If the output is not empty, we can plot the boxes and get the straw level
+        if self.fps_test:
+            start = time.time()
+        if len(output[0]) != 0:
+            x_pixel, y_pixel = output[1][0][-1].cpu().numpy()
+
+            if cutout is not None:
+                straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level_cutout(frame, output)
+            else:
+                straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level(frame_drawn, output)
+
+            self.information["yolo_level"]["text"] = f'(T2) YOLO Level: {straw_level:.2f} %'
+            # Smooth the data
+            if self.smoothing:
+                straw_level = self.helpers._smooth_level(straw_level, 'yolo', time_stamp = time_stamp)
+                if straw_level is None:
+                    self.information["yolo_smooth"]["text"] = f'(T2) Smoothed Straw Level: NA'
+                else:
+                    self.information["yolo_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
+            
+            # Since the new straw level might be a smoothed value, we need to update the pixel values of the straw level. We do this everytime to ensure that the overlay is based on the same pixel values all the time. Otherwise the overlay would shift from being based on the bbox pixel values vs. based on the tags.
+            x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
+            if x_pixel is None:
+                return frame_drawn
+            
+            # Define the overlay lines and orientation
+            line_start = (int(x_pixel), int(y_pixel))
+            line_end = (int(x_pixel) + 300, int(y_pixel))
+            angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+            line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+            
+            # Plot the line on the frame
+            frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level, self.yolo_color)
+
+            if self.recording_req:
+                # Get coordiantes for the original data
+                self.prediction_dict["yolo"] = {straw_level: [line_start, line_end]}
+                self.prediction_dict["attr."] = {interpolated: chute_nrs}
+
+            if self.fps_test:
+                self.fps_test_results["inference_time"].append(inference_time)
+                self.fps_test_results["postprocess_time"].append(time.time() - start)
+            
+            self.information["yolo_model"]["text"] = f'(T2) YOLO Time: {inference_time:.2f} s'
+        else:
+            if self.smoothing:
+                straw_level = self.helpers._smooth_level(0, 'yolo', time_stamp = time_stamp)
+                self.information["yolo_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
+            else:
+                straw_level = 0
+            x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
+            if x_pixel is None:
+                return frame_drawn
+            line_start = (int(x_pixel), int(y_pixel))
+            line_end = (int(x_pixel) + 300, int(y_pixel))
+            angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+            line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+            # Plot the boxes and straw level on the frame
+            frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level, self.yolo_color)
+            self.information["yolo_model"]["text"] = f'(T2) YOLO Time: {inference_time:.2f} s'
+            if self.recording_req:
+                # Get coordiantes for the original data
+                self.prediction_dict["yolo"] = {0: [line_start, line_end]}
+                self.prediction_dict["attr."] = {False: np.nan}
+                # if no bbox is detected, we add 0 to the previous straw level smoothing predictions
+                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                self.helpers._save_tag_0(angle)
+            if self.fps_test:
+                self.fps_test_results["inference_time"].append(np.nan)
+                self.fps_test_results["postprocess_time"].append(time.time() - start)
+        return frame_drawn
+        
+    def _process_predictions(self, frame, results, frame_drawn, time_stamp=None) -> np.ndarray:
         """Run model predictions and update overlay."""
         cutout_image, prep_time = time_function(self.helpers._prepare_for_inference, frame, results)
+
         if cutout_image is not None:
             if self.regressor:
                 if self.predictor_model != 'cnn':
@@ -559,30 +933,52 @@ class RTSPStream(AprilDetector):
                 output = output.detach().cpu()
                 _, predicted = torch.max(output, 1)
                 straw_level = predicted[0]*10
-            
+            if self.fps_test:
+                start = time.time()
+            self.information["predictor_level"]["text"] = f'(T2) Predictor Level: {straw_level:.2f} %'
             # We smooth the straw level
-            straw_level = self.helpers._smooth_level(straw_level, 'straw')
-            
-            x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)      
-            if self.record and self.recording_req:
-                self.prediction_dict["predicted"] = {straw_level: (x_pixel, y_pixel)}
+            if self.smoothing:
+                straw_level = self.helpers._smooth_level(straw_level, 'predictor', time_stamp = time_stamp)
+                self.information["predictor_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
+
+            x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
+
+            if x_pixel is not None:
+                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                line_start = (int(x_pixel), int(y_pixel))
+                line_end = (int(x_pixel)+300, int(y_pixel))
+                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+            else:
+                line_start, line_end = (None,None), (None,None)
+
+            if self.recording_req:
+                self.prediction_dict["convnextv2"] = {straw_level: [line_start, line_end]}
             # Draw line and text for straw level
-            cv2.line(frame_drawn, (int(x_pixel), int(y_pixel)), (int(x_pixel) + 100, int(y_pixel)), (92, 92, 205), 2)
-            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(x_pixel) + 110, int(y_pixel)), cv2.FONT_HERSHEY_SIMPLEX, 1,  (92, 92, 205), 2, cv2.LINE_AA)
-            self.information["straw_level"]["text"] = f'(T2) Straw Level: {straw_level:.2f} %'
-            self.information["model"]["text"] = f'(T2) Inference Time: {inference_time:.2f} s'
+            cv2.line(frame_drawn, line_start, line_end, self.predictor_color, 2)
+            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (line_end[0] + 10, line_end[1]), cv2.FONT_HERSHEY_SIMPLEX, 1,  self.predictor_color, 2, cv2.LINE_AA)
+            self.information["predictor_model"]["text"] = f'(T2) Predictor Time: {inference_time:.2f} s'
             self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
+
+            if self.fps_test:
+                self.fps_test_results["inference_time"].append(inference_time + prep_time)
+                self.fps_test_results["postprocess_time"].append(time.time() - start)
+
         return frame_drawn
 
     def _update_information(self, frame_time):
         """Update frame processing information."""
-        elapsed_time = time.time() - self.start_time
-        fps = self.frame_count / elapsed_time
-        self.frame_count += 1
+        total_time = time.time() - frame_time
+        self.information["frame_time"]["text"] = f'(T2) Total Frame Time: {total_time:.2f} s'
+
+        fps = 1 / total_time
         self.information["FPS"]["text"] = f'(T2) FPS: {fps:.2f}'
-        self.information["frame_time"]["text"] = f'(T2) Total Frame Time: {time.time() - frame_time:.2f} s'
+
         self.information["RAM"]["text"] = f'(TM) Total RAM Usage: {np.round(psutil.virtual_memory().used / 1e9, 2)} GB'
         self.information["CPU"]["text"] = f'(TM) Total CPU Usage: {psutil.cpu_percent()} %'
+
+        if self.fps_test:
+            self.fps_test_results["fps"].append(fps)
+            self.fps_test_results["total_time"].append(total_time)
 
     def _display_frame(self, frame_drawn, with_text=True, fx=0.6, fy=0.6):
         """Resize and display the processed frame."""
@@ -600,7 +996,7 @@ class RTSPStream(AprilDetector):
                 pos = val["position"]
                 box_coords = ((pos[0], pos[1] - text_height - baseline), (pos[0] + text_width, pos[1] + baseline)) # Calculate the box coordinates
                 cv2.rectangle(frame_drawn, box_coords[0], box_coords[1], self.box_color, cv2.FILLED) # Draw the white box                    
-                cv2.putText(frame_drawn, val["text"], pos, self.font, font_scale, self.text_color, font_thickness, cv2.LINE_AA) # Draw the text over the box
+                cv2.putText(frame_drawn, val["text"], pos, self.font, font_scale, val["color"], font_thickness, cv2.LINE_AA) # Draw the text over the box
 
         cv2.imshow('Video', frame_drawn)
         cv2.waitKey(1)
@@ -612,7 +1008,8 @@ class RTSPStream(AprilDetector):
         self.lock.release()
         for thread in self.threads:
             thread.join()
-        self.cap.release()
+        if self.cap is not None:
+            self.cap.release()
         cv2.destroyAllWindows()
         print("EXIT: Stream has been terminated...")
 
@@ -641,17 +1038,33 @@ class RTSPStream(AprilDetector):
                 if not os.path.exists(video_path):
                     print("The video path does not exist.")
                     return
-                self.cap = cv2.VideoCapture(video_path)
-                print("START: Videofile loaded")
-                if self.detect_april:
-                    self.thread1 = threading.Thread(target=self.find_tags)
-                    self.thread1.start()
-                    self.threads.append(self.thread1)
-                if self.record:
-                    self.scada_thread = AsyncStreamThread(server_keys='data/opcua_server.txt')
-                    self.scada_thread.start()
-                    self.threads.append(self.scada_thread)
-                self.display_frame_from_videofile()
+                # Check if the file mp4 or hdf5
+                if video_path.endswith('.mp4'):
+                    self.cap = cv2.VideoCapture(video_path)
+                    print("START: Videofile loaded")
+                    if self.detect_april:
+                        self.thread1 = threading.Thread(target=self.find_tags)
+                        self.thread1.start()
+                        self.threads.append(self.thread1)
+                    if self.record:
+                        self.scada_thread = AsyncStreamThread(server_keys='data/opcua_server.txt')
+                        self.scada_thread.start()
+                        self.threads.append(self.scada_thread)
+                    self.display_frame_from_videofile()
+                elif video_path.endswith('.hdf5'):
+                    print("START: hdf5 File loading...")
+                    if self.detect_april:
+                        self.thread1 = threading.Thread(target=self.find_tags)
+                        self.thread1.start()
+                        self.threads.append(self.thread1)
+                    self.display_frame_from_hdf5(video_path)
+                while True:
+                    if keyboard.is_pressed('q'):
+                        self.close_threads()
+                        break
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        self.close_threads()
+                        break
             else:
                 if cap is not None:
                     self.cap = cap
@@ -689,11 +1102,106 @@ class RTSPStream(AprilDetector):
                 cv2.waitKey(0)
             return tags
 
-if __name__ == "__main__":
-    from pupil_apriltags import Detector
-    import json
+def get_args() -> Namespace:
+    # Create the parser
+    parser = ArgumentParser()
+    # Add arguments to the parser
+    parser.add_argument('mode', type=str, choices=['manual', 'stream', 'fps_test', 'file_predict', 'record'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
+    parser.add_argument('--record', action='store_true', help='Record the stream to an hdf5 file.')
+    parser.add_argument('--record_threshold', type=int, default=5, help='The time in seconds to record the stream.')
+    parser.add_argument('--window', action='store_true', help='Display the frames in a window.')
+    parser.add_argument('--rtsp', action='store_true', help='Use an RTSP stream.')
+    parser.add_argument('--make_cutout', action='store_true', help='Make a cutout of the detected AprilTags.')
+    parser.add_argument('--use_cutout', action='store_true', help='Use the cutout for predictions.')
+    parser.add_argument('--object_detect', action='store_true', help='Use object detection for predictions.')
+    parser.add_argument('--yolo_threshold', type=float, default=0.2, help='The threshold for object detection.')
+    parser.add_argument('--detect_april', action='store_true', help='Detect AprilTags in the frames.')
+    parser.add_argument('--yolo_straw', action='store_true', help='Use YOLO for straw level detection.')
+    parser.add_argument('--with_predictor', action='store_true', help='Use the predictor for straw level detection.')
+    parser.add_argument('--regressor', action='store_true', help='Use the regressor for straw level detection.')
+    parser.add_argument('--edges', action='store_true', help='Use edge detection for predictions.')
+    parser.add_argument('--heatmap', action='store_true', help='Use a heatmap for predictions.')
+    parser.add_argument('--device', type=str, default='cuda', choices=['cpu', 'cuda'], help='The device to use for predictions.')
+    parser.add_argument('--smoothing', action='store_true', help='Smooth the predictions.')
+    parser.add_argument('--save_as_new_hdf5', action='store_true', help='Save the frames to a new hdf5 file.')
+    parser.add_argument('--process_like_recording', action='store_true', help='Process the frames like a recording.')
+    parser.add_argument('--with_annotations', action='store_true', help='Use the annotations for predictions.')
+    parser.add_argument('--fps_test', action='store_true', help='Run the FPS test.')
+    parser.add_argument('--hdf5_model_save_name', type=str, default=None, help='The name of the model to save the predictions.')
+    parser.add_argument('--video_path', type=str, default=None, help='The path to the video file.')
+    return parser.parse_args()
+    # python .\strawml\visualizations\stream.py file_predict --smoothing --save_as_new_hdf5 --process_like_recording --video_path data/predictions/recording_rotated_all_frames.hdf5
+def main(args: Namespace) -> None:
+    """
+    The main function that runs the script based on the arguments provided.
+
+    Parameters
+    ----------
+    args    :   Namespace
+        The arguments parsed by the ArgumentParser.
+    """
+
+    if args.mode == 'manual':
+        pass
+    elif args.mode == 'stream':
+        if args.yolo_straw == False and args.with_predictor == False:
+            raise ValueError("One of the following must be True: yolo_straw, with_predictor")
+        args.record = False
+        args.record_threshold = 5
+        args.window = True
+        args.rtsp = True
+        args.make_cutout = True
+        args.yolo_threshold = 0.2
+        args.detect_april = True
+        if args.with_predictor:
+            args.object_detect = True
+            args.regressor = True
+        print(f"Running with smoothing: {args.smoothing}")
+    elif args.mode == 'fps_test':
+        if args.yolo_straw == False and args.with_predictor == False:
+            raise ValueError("One of the following must be True: yolo_straw, with_predictor")
+        args.fps_test = True
+        args.window = True
+        args.make_cutout = True
+        args.yolo_threshold = 0.2
+        args.detect_april = True
+        if args.with_predictor:
+            args.object_detect = True
+            args.regressor = True
+        if args.video_path is None:
+            raise ValueError("The video_path must be provided for the FPS test.")
+        if args.yolo_straw and args.with_predictor:
+            raise ValueError(f"Cannot run both YOLO and Predictor at the same time for mode: {args.mode}. Please choose **one**.")
+    elif args.mode == 'file_predict':
+        args.yolo_straw = True
+        args.with_predictor = True
+        args.make_cutout = True
+        args.window = True
+        args.yolo_threshold = 0.2
+        args.detect_april = True
+        args.regressor = True
+        args.object_detect = True
+        if args.video_path is None:
+            raise ValueError("The video_path must be provided for the FPS test.")
+        print(f"NOTE. **hdf5_model_save_name** is only used when the video_path leads to an hdf5 file.")
+    elif args.mode == 'record':
+        if args.yolo_straw == False and args.with_predictor == False:
+            raise ValueError("One of the following must be True: yolo_straw, with_predictor")
+        args.record = True
+        args.window = True
+        args.rtsp = True
+        args.make_cutout = True
+        args.yolo_threshold = 0.2
+        args.detect_april = True
+        if args.yolo_straw and args.with_predictor:
+            raise ValueError(f"Cannot run both YOLO and Predictor at the same time for mode: {args.mode}. Please choose **one**.")
+        if args.with_predictor:
+            args.object_detect = True
+            args.regressor = True
+        
     with open("fiducial_marker/april_config.json", "r") as file:
         config = json.load(file)
+
     detector = Detector(
         families=config["dict_type"],
         nthreads=config["nthreads"],
@@ -704,32 +1212,47 @@ if __name__ == "__main__":
         debug=config["debug"]
     )
 
-    # video_path = "data/raw/Pin drum Chute 2_HKVision_HKVision_20241102105959_20241102112224_1532587042.mp4"
-    video_path = "C:/Users/ikaos/OneDrive/Desktop/strawml/data/raw/stream-2024-09-23-10h11m28s.mp4"
-    # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-    #            rtsp=False, # Only used when the stream is from an RTSP source
-    #            make_cutout=False, object_detect=True, od_model_name="models/yolov11_obb_m8100btb_best.pt", yolo_threshold=0.2,
-    #            detect_april=False,
-    #            with_predictor=True, predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
-    
-    # ### YOLO PREDICTOR (VIDEOFILE)
-    # RTSPStream(detector, config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-    #         rtsp=False , # Only used when the stream is from an RTSP source
-    #         make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-    #         detect_april=True, yolo_straw=True, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
-    #         with_predictor=False , predictor_model='vit', model_load_path='models/vit_regressor/', regressor=True, edges=True, heatmap=False)(video_path=video_path)
-    
-    ### CONVNEXTV2 PREDICTOR
-    # RTSPStream(record=False, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-    #         rtsp=True , # Only used when the stream is from an RTSP source
-    #         make_cutout=False, use_cutout=False, object_detect=True, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-    #         detect_april=True, yolo_straw=False, yolo_straw_model="models/yolov11-straw-detect-obb.pt",
-    #         with_predictor=True , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False)()
-    
     # ### YOLO PREDICTOR
-    RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
-        rtsp=True , # Only used when the stream is from an RTSP source
-        make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
-        detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
-        with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
-        device='cuda')()
+    RTSPStream(record=args.record, 
+               record_threshold=args.record_threshold, 
+               detector=detector, 
+               ids=config["ids"], 
+               window=args.window, 
+               credentials_path='data/hkvision_credentials.txt', 
+               rtsp=args.rtsp , # Only used when the stream is from an RTSP source
+               make_cutout=args.make_cutout, 
+               use_cutout=args.use_cutout, 
+               object_detect=args.object_detect, 
+               od_model_name="models/obb_chute_best.pt", 
+               yolo_threshold=args.yolo_threshold,
+               detect_april=args.detect_april, 
+               yolo_straw=args.yolo_straw, 
+               yolo_straw_model="models/obb_best.pt",
+               with_predictor=args.with_predictor, 
+               predictor_model='convnextv2', 
+               model_load_path='models/convnextv2_regressor/', 
+               regressor=args.regressor, 
+               edges=args.edges, 
+               heatmap=args.heatmap,
+               device=args.device,
+               smoothing=args.smoothing,
+               save_as_new_hdf5=args.save_as_new_hdf5, 
+               process_like_recording=args.process_like_recording, 
+               with_annotations=args.with_annotations, 
+               fps_test=args.fps_test, 
+               hdf5_model_save_name = args.hdf5_model_save_name # Only used when a single model is used for predictions
+            )(video_path=args.video_path)
+
+    # # ### YOLO PREDICTOR STREAM
+    # RTSPStream(record=True, record_threshold=5, detector=detector, ids=config["ids"], window=True, credentials_path='data/hkvision_credentials.txt', 
+    #     rtsp=True , # Only used when the stream is from an RTSP source
+    #     make_cutout=True, use_cutout=False, object_detect=False, od_model_name="models/yolov11-chute-detect-obb.pt", yolo_threshold=0.2,
+    #     detect_april=True, yolo_straw=True, yolo_straw_model="models/obb_best.pt",
+    #     with_predictor=False , predictor_model='convnextv2', model_load_path='models/convnext_regressor/', regressor=True, edges=False, heatmap=False,
+    #     device='cuda')()
+
+
+if __name__ == "__main__":
+    args = get_args()
+    main(args)
+

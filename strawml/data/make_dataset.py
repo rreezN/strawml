@@ -414,9 +414,16 @@ def hdf5_to_yolo(hdf5_file: str,
                 elif annotation_types[-1] == 'whole':
                     # Save the image to a file
                     cv2.imwrite(f'{save_path}/{key}/{frame}.jpg', image)
-                    bbox = hf[f"frame_{frame}"]['annotations'][annotation_types[0]][...]
-                    if len(bbox) == 0:
+                    try:
+                        bbox = hf[f"frame_{frame}"]['annotations'][annotation_types[0]][...]
+                    except:
+                        bbox = None
+                    
+                    if bbox is None or len(bbox) == 0:
+                        with open( f'{save_path}/{key}/{frame}.txt', 'w') as f:
+                            pass
                         continue
+                    
                     # normalize the bounding box coordinates to values between 0 and 1 
                     for j in range(len(bbox)):
                         bbox[j] /= image.shape[1] if j % 2 == 0 else image.shape[0]

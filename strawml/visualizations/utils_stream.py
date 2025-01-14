@@ -11,8 +11,8 @@ import asyncio
 from asyncua import Client
 import copy
 import time
-from strawml.data.image_utils import SpecialRotate
-
+from strawml.data.image_utils import SpecialRotate, rotate_point
+import h5py
 
 class AprilDetectorHelpers:
     def __init__(self, april_detector_instance):
@@ -20,17 +20,22 @@ class AprilDetectorHelpers:
 
     def _initialize_information_dict(self) -> dict:
         temp = {
-            "FPS":              {"text": "", "font_scale": 1,   "font_thicknesss": 2, "position": (10, 40)},
-            "scada_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 75)},
-            "straw_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 100)},
-            "undistort_time":   {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 125)},
-            "april":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 150)},
-            "od":               {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 175)},
-            "prep":             {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 200)},
-            "model":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 225)},
-            "frame_time":       {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 250)},
-            "RAM":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 275)},
-            "CPU":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 300)},
+            "FPS":              {"text": "", "font_scale": 1,   "font_thicknesss": 2, "position": (10, 40), "color": (255, 0, 0)},
+            "scada_level":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 75), "color": (255, 0, 0)},
+            "scada_smooth":     {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (300, 75), "color": (255, 0, 0)},
+            "yolo_level":       {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 100), "color": (255, 0, 0)},
+            "yolo_smooth":      {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (300, 100), "color": (255, 0, 0)},
+            "predictor_level":  {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 125), "color": (255, 0, 0)},
+            "predictor_smooth": {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (300, 125), "color": (255, 0, 0)},
+            "undistort_time":   {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 150), "color": (255, 0, 0)},
+            "april":            {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 175), "color": (255, 0, 0)},
+            "od":               {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 200), "color": (255, 0, 0)},
+            "prep":             {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 225), "color": (255, 0, 0)},
+            "yolo_model":       {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 250), "color": (255, 0, 0)},
+            "predictor_model":  {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (300, 250), "color": (255, 0, 0)},
+            "frame_time":       {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 275), "color": (255, 0, 0)},
+            "RAM":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 300), "color": (255, 0, 0)},
+            "CPU":              {"text": "", "font_scale": 0.5, "font_thicknesss": 1, "position": (10, 325), "color": (255, 0, 0)},
 
         }
         return temp
@@ -159,11 +164,11 @@ class AprilDetectorHelpers:
         bottom_right = corners[2]
         return (top_right + bottom_right) / 2
     
-    def _handle_cutouts(self, frame: np.ndarray, chute_tags: list, use_cutout: bool):
+    def _handle_cutouts(self, frame_drawn:  np.ndarray, frame: np.ndarray, chute_tags: list, use_cutout: bool):
         """Handles creation of a cutout based on chute tags."""
         tag_graph = TagGraphWithPositionsCV(self.ADI.tag_connections, chute_tags, self)
         tag_graph.account_for_missing_tags()
-        overlay_frame = tag_graph.draw_overlay(frame)
+        overlay_frame = tag_graph.draw_overlay(frame_drawn)
         cutout = tag_graph.crop_to_size(frame)
         return (overlay_frame, cutout) if use_cutout else (overlay_frame, None)
 
@@ -298,10 +303,10 @@ class AprilDetectorHelpers:
     
     def _load_normalisation_constants(self):
         # Loads the normalisation constants from data/processed/statistics.yaml
-        with open("data/processed/statistics.yaml", 'r') as file:
-            data = yaml.safe_load(file)
-            mean = data['mean']
-            std = data['std']
+        with h5py.File("data/processed/train.hdf5", "r") as file:
+            # data = yaml.safe_load(file)
+            mean = file.attrs['mean']
+            std = file.attrs['std']
         return mean, std
         
     def _load_camera_params(self):
@@ -355,6 +360,9 @@ class AprilDetectorHelpers:
             tags: List of detected tags in the current frame.
         """
         tag_ids = np.array([int(tag.tag_id) for tag in tags])
+        if len(tag_ids) == 0:
+            self._reset_tags()
+            return
         accumulated_error = 0
 
         for t in self.ADI.tag_ids:
@@ -367,9 +375,9 @@ class AprilDetectorHelpers:
             accumulated_error += np.linalg.norm(np.array(detected_tag.center) - np.array(prev_tag.center))
         
         # First we make sure that the tags are not empty
-        if len(self.ADI.tag_ids) != 0:
-            if accumulated_error / len(self.ADI.tag_ids) > 10: # Threshold for accumulated error is 10 pixels
-                self._reset_tags()
+        # if len(self.ADI.tag_ids) != 0:
+        if accumulated_error / (len(self.ADI.tag_ids) + 1e-6) > 10: # Threshold for accumulated error is 10 pixels
+            self._reset_tags()
 
     def _reset_tags(self) -> None:
         """
@@ -470,23 +478,45 @@ class AprilDetectorHelpers:
 
         # Resize and add batch dimension
         cutout_image = self.ADI.resize(cutout_image).unsqueeze(0)
+        
+        # cutout_image *= 255
 
         return cutout_image
     
-    def _get_pixel_to_straw_level(self, frame, straw_bbox):
+    def _save_tag_0(self, angle):
+        """Get the tag with ID 0 from the detected tags."""
+        for tag in self.ADI.detected_tags:
+            if tag.tag_id == 0:
+                x,y = tag.center
+                line_start, line_end = (x+100, y), (x+200, y)
+                line_start, line_end = self._rotate_line(line_start, line_end, angle)
+                self.ADI.prediction_dict["yolo"] = {0: [line_start, line_end]}
+                self.ADI.prediction_dict["attr."] = {False: sorted(self.ADI.chute_numbers.keys())}
+                break
+
+    def _get_pixel_to_straw_level_cutout(self, frame, straw_bbox):
+        """ Finds the straw level based on height of the frame and the height of the straw_bbox."""
+        h, w = frame.shape[:2]
+        bbox_height = ((straw_bbox[1][0][0][1] + straw_bbox[1][0][-1][1])/2).cpu().numpy()
+        return (h - bbox_height)/h * 100, False, None
+
+    def _get_pixel_to_straw_level(self, frame, straw_bbox, object=True):
         """ Finds the straw level based on the detected tags in the chute. """
+        if object:            
+            # We extract the straw_bbox from the results with the highest confidence
+            straw_cord = straw_bbox[1][torch.argmax(straw_bbox[2])]
+            bbox = straw_cord.cpu().numpy().flatten()
+        else:
+            bbox = straw_bbox
+
         chute_numbers_ = self.ADI.chute_numbers.copy()
         if not len(chute_numbers_) >= 2:
-            return "NA"
-            
-        _, straw_cord,_ , _ = straw_bbox
-        straw_cord = straw_cord[0].flatten()
-        
+            return None, False, sorted(chute_numbers.keys())
         angle = self._get_tag_angle(list(chute_numbers_.values()))
         # from radians to degrees
         angle = np.degrees(angle)
+        
         # Rotate the frame to the angle of the chute and the bbox
-        bbox = straw_bbox[1][0].cpu().numpy().flatten()
         _, _, bbox_, affine_warp = SpecialRotate(image=frame, bbox=bbox, angle=angle, return_affine=True) # type: ignore
         c_nr = np.expand_dims(np.array(list(chute_numbers_.values())).reshape(-1, 2), 1)
         warped_chute_numbers = cv2.perspectiveTransform(c_nr, affine_warp).squeeze(1)
@@ -513,36 +543,24 @@ class AprilDetectorHelpers:
         distance_dict_under = dict(sorted(distance_dict_under.items(), reverse=True))
         distance_dict_above = dict(sorted(distance_dict_above.items()))
         
-        # get the two closest tags
-        tag_under, tag_above = list(distance_dict_under.values())[0], list(distance_dict_above.values())[0]
-
         # there are three cases to consider, no detected tags under, no detected tags above, and detected tags both above and under
         # lets first make a check to i see if the closest tag under is 10. Meaning then we should clip it to 10        
         if len(distance_dict_under) == 0:
+            tag_above = list(distance_dict_above.values())[0]
             if tag_above == 0:
-                x_mean = chute_numbers_[tag_above][0]
-                straw_level = 0.0
+                return 0.0, False, sorted(chute_numbers.keys())
             else:
-                x_mean = 0
-                straw_level = "NA"
-            if self.ADI.record and self.ADI.recording_req:
-                straw_top = (bbox[1] + bbox[-1]) / 2
-                self.ADI.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
-                self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
-            return straw_level
+                return None, False, sorted(chute_numbers.keys())
         elif len(distance_dict_above) == 0:
+            tag_under = list(distance_dict_under.values())[0]
             if tag_under == 10:
-                x_mean = chute_numbers_[tag_under][0]
-                straw_level = 100
+                return 100, False, sorted(chute_numbers.keys())
             else:
-                x_mean = 0
-                straw_level = "NA"
-            if self.ADI.record and self.ADI.recording_req:
-                straw_top = (bbox[1] + bbox[-1]) / 2
-                self.ADI.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
-                self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
-            return straw_level
+                return None, False, sorted(chute_numbers.keys())
         
+        # get the two closest tags
+        tag_under, tag_above = list(distance_dict_under.values())[0], list(distance_dict_above.values())[0]
+
         # we get the difference between the two tags ids to see if we are missing tags inbetween
         tag_diff = tag_above - tag_under
         if tag_diff > 1:
@@ -557,14 +575,7 @@ class AprilDetectorHelpers:
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
         straw_level = (tag_diff * (y_under-straw_top) / (y_under-y_over) + tag_under)*10
         
-        if self.ADI.record and self.ADI.recording_req:
-            # Get coordiantes for the original data
-            x_mean = (chute_numbers_[tag_under][0] + chute_numbers_[tag_above][0]) / 2
-            straw_top = (bbox[1] + bbox[-1]) / 2
-            self.ADI.prediction_dict["yolo"] = {straw_level: (x_mean, straw_top)}
-            self.ADI.prediction_dict["attr."] = {interpolated: sorted(chute_numbers.keys())}
-        
-        return straw_level
+        return straw_level, interpolated, sorted(chute_numbers.keys())
     
     def _get_straw_to_pixel_level(self, straw_level):
         # We know that the self.chute_numbers are ordered from 0 to 10. We can use this to calculate the pixel value of the straw level
@@ -574,57 +585,129 @@ class AprilDetectorHelpers:
         chute_numbers = self.ADI.chute_numbers.copy()
         # make sure there are chute numbers to work with, otherwise we return
         if not len(chute_numbers) >= 2:
-            return "NA"
+            return None, None
 
         # First we divide the straw level by 10 to get it on the same scale as the tag ids
         straw_level = straw_level / 10
 
-        # We then get the two closest tags
-        tag_under, tag_over = int(straw_level), int(straw_level) + 1
-        
-        # next we find the two closest tags in chute_numbers based on the tag ids
-        # First we create a list for the values that are less or equal to the tag_under and greater than the tag_over
-        tag_under_list = [key for key, _ in chute_numbers.items() if key <= tag_under]
-        tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
+        if int(straw_level) == 10:
+            # Handle edge case when straw level is at the top
+            tag_under_closest = 9
+            tag_over_closest = 10
+        else:
+            # Determine closest tags
+            tag_under, tag_over = int(straw_level), int(straw_level) + 1
 
-        # next we order them
-        tag_under_list = sorted(tag_under_list, reverse=True)
-        tag_over_list = sorted(tag_over_list)
-        
-        # Then we see if the tag_under_closest is above or below the straw level
-        tag_under_closest = tag_under_list[0]
-        tag_over_closest = tag_over_list[0]
+            # Find the closest tags in chute_numbers
+            tag_under_list = [key for key, _ in chute_numbers.items() if key <= tag_under]
+            tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
+
+            if not tag_under_list or not tag_over_list:
+                return None, None
+
+            tag_under_list = sorted(tag_under_list, reverse=True)
+            tag_over_list = sorted(tag_over_list)
+
+            tag_under_closest = tag_under_list[0]
+            tag_over_closest = tag_over_list[0]
 
         # calculate difference between tag ids
         tag_diff = tag_over_closest - tag_under_closest
-        if tag_diff > 1:
-            interpolated = True
-        else:
-            interpolated = False
-        
-        # get the distance between the two closest tags
-        y_under = chute_numbers[tag_under_closest][1]
-        y_over = chute_numbers[tag_over_closest][1]
-        
         # get the pixel value of the straw level
         excess = straw_level - tag_under_closest
-        pixel_straw_level_x = (chute_numbers[tag_under_closest][0] + chute_numbers[tag_over_closest][0]) / 2
+
+        # get the distance between the two closest tags
+        x_under, y_under = chute_numbers[tag_under_closest]
+        x_over, y_over = chute_numbers[tag_over_closest]
+        
+        # Get x
+        if x_under > x_over:
+            x_range = np.linspace(x_over, x_under, 1001)
+            pixel_straw_level_x = x_range[1000 - int(np.round(excess*1000))].astype(float)
+        else:
+            x_range = np.linspace(x_under, x_over, 1001)
+            pixel_straw_level_x = x_range[int(np.round(excess*1000))].astype(float)
+
+        # Get y
         pixel_straw_level_y = y_under - (y_under - y_over) * excess/tag_diff
         
         return (pixel_straw_level_x, pixel_straw_level_y)
+    
+    def create_weight_list(self, length, decay_factor=1.5):
+        """
+        Create a weight list of specified length where:
+        - The first entry has the highest weight.
+        - Remaining weights decrease based on the decay factor.
+        - The total sum equals 1.
 
-    def _smooth_level(self, level: float | None, id:str):
+        Args:
+            length (int): Length of the weight list.
+            decay_factor (float): Controls the rate of decrease. Higher values make weights drop faster.
+
+        Returns:
+            list: A list of weights summing to 1.
+        """
+        if length == 0:
+            return []
+        
+        # Generate decreasing weights
+        weights = [1 / (decay_factor ** i) for i in range(length)]
+        
+        # Normalize to ensure the sum is exactly 1
+        total_weight = sum(weights)
+        normalized_weights = [w / total_weight for w in weights]
+        return normalized_weights
+
+    def _smooth(self, level, history, time_stamp = None):
+        # Get the current timestamp
+        if time_stamp is not None:
+            try: 
+                current_time = float(time_stamp)
+            except:
+                current_time = time.time()
+        else:
+            current_time = time.time()
+
+        # Add the new prediction with its timestamp
+        history.append((current_time, level))
+
+        # Remove entries older than 1 second
+        while history and history[0][0] < current_time - 1:
+            history.popleft()
+
+        # Compute the weighted average of the remaining predictions
+        if history:
+            predictions = [pred for _, pred in history]
+            weights = self.create_weight_list(len(predictions))
+            filtered_p_w = [(pi, wi) for pi, wi in zip(predictions, weights) if pi is not None]
+            predictions, weights = zip(*filtered_p_w)
+            avg_prediction = np.convolve(predictions, weights[::-1], mode='valid')
+        else:
+            avg_prediction = 0  # Default if no predictions are in the window
+        
+        return avg_prediction
+    
+    def _smooth_level(self, level: float | None, id:str, time_stamp = None):
         """Smooth the straw level using a queue."""
         if id == 'scada':
-            self.ADI.scada_smoothing_queue.append(level)
-            filtered_data = [x for x in self.ADI.scada_smoothing_queue if x is not None]
-            return np.mean(filtered_data)
-        elif id == 'straw':
-            self.ADI.straw_smoothing_queue.append(level)
-            filtered_data = [x for x in self.ADI.straw_smoothing_queue if x is not None]
-            return np.mean(filtered_data)
+            if level is not None:
+                self.ADI.information["scada_level"]["text"] = f'(T2) Scada Level: {level:.2f} %'
+            else:
+                self.ADI.information["scada_level"]["text"] = f'(T2) Scada Level: NA'
+            return self._smooth(level, self.ADI.scada_smoothing_queue, time_stamp = time_stamp)[0]
+        elif id == 'yolo':
+            if level is not None:
+                self.ADI.information["yolo_level"]["text"] = f'(T2) YOLO Level: {level:.2f} %'
+            else:
+                self.ADI.information["yolo_level"]["text"] = f'(T2) YOLO Level: NA'
+            return self._smooth(level, self.ADI.yolo_smoothing_queue, time_stamp = time_stamp)[0]
+        elif id == 'predictor':
+            if level is not None:
+                self.ADI.information["predictor_level"]["text"] = f'(T2) Predictor Level: {level:.2f} %'
+            else:
+                self.ADI.information["predictor_level"]["text"] = f'(T2) Predictor Level: NA'
+            return self._smooth(level, self.ADI.predictor_smoothing_queue, time_stamp = time_stamp)[0]
                 
-    
     def _grab_scada_url_n_id(self):
         # Read the url from the scada.txt file
         data_path = 'data/opcua_server.txt'
@@ -749,6 +832,8 @@ class TagGraphWithPositionsCV:
             if tag_id == 11:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.left_tags))
+                    if len(intersection) == 0:
+                        return None
                     p1 = intersection[0]
                     p2 = intersection[1]
                     x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
@@ -762,6 +847,8 @@ class TagGraphWithPositionsCV:
             if tag_id == 15:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.right_tags))
+                    if len(intersection) == 0:
+                        return None
                     p1 = intersection[0]
                     p2 = intersection[1]
                     x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
@@ -775,6 +862,8 @@ class TagGraphWithPositionsCV:
             if tag_id == 22:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.left_tags))[::-1]
+                    if len(intersection) == 0:
+                        return None
                     p1 = intersection[0]
                     p2 = intersection[1]
                     x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
@@ -788,6 +877,8 @@ class TagGraphWithPositionsCV:
             if tag_id == 26:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.right_tags))[::-1]
+                    if len(intersection) == 0:
+                        return None
                     p1 = intersection[0]
                     p2 = intersection[1]
 
