@@ -53,8 +53,16 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
                 yolo_percent = yolo_group['percent'][...].item()
                 yolo_line = yolo_group['pixel'][...]
             else: # TODO: This needs handling because yolo bboxes are just not recorded if they don't exist
-                yolo_percent = 0.0
+                yolo_percent = None
                 yolo_line = None
+            
+            if 'convnextv2' in f[keys[i]].keys():
+                convnextv2_group = f[keys[i]]['convnextv2']
+                convnextv2_percent = convnextv2_group['percent'][...].item()
+                convnextv2_line = convnextv2_group['pixel'][...]
+            else:
+                convnextv2_percent = None
+                convnextv2_line = None
             
             line_thickness = 5
             font_scale = 2
@@ -63,25 +71,36 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
                 scada_coords_left = (int(scada_line[0][0]), int(scada_line[0][1]))
                 scada_coords_right = (int(scada_line[1][0]), int(scada_line[1][1]))
                 image = cv2.line(image, scada_coords_left, scada_coords_right, (0, 255, 0), line_thickness)
-                image = cv2.putText(image, f'{scada_percent:.2f}%', scada_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), line_thickness)
+                # image = cv2.putText(image, f'{scada_percent:.2f}%', scada_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), line_thickness)
+                text_coords = (scada_coords_left[0] - 50, scada_coords_left[1])
+                image = cv2.putText(image, 'A', scada_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), line_thickness)
             if yolo_line is not None:
-                yolo_coords_left = (int(yolo_line[1][0]), int(yolo_line[1][1]))
-                yolo_coords_right = (int(yolo_line[0][0]), int(yolo_line[0][1]))
+                yolo_coords_left = (int(yolo_line[0][0]), int(yolo_line[0][1]))
+                yolo_coords_right = (int(yolo_line[1][0]), int(yolo_line[1][1]))
                 image = cv2.line(image, yolo_coords_left, yolo_coords_right, (0, 0, 255), line_thickness)
-                image = cv2.putText(image, f'{yolo_percent:.2f}%', yolo_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness)
-            else:
+                # image = cv2.putText(image, f'{yolo_percent:.2f}%', yolo_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness)
+                text_coords = (yolo_coords_left[0] - 50, yolo_coords_left[1])
+                image = cv2.putText(image, 'B', yolo_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness)
+            if convnextv2_line is not None:
+                convnextv2_coords_left = (int(convnextv2_line[0][0]), int(convnextv2_line[0][1]))
+                convnextv2_coords_right = (int(convnextv2_line[1][0]), int(convnextv2_line[1][1]))
+                image = cv2.line(image, convnextv2_coords_left, convnextv2_coords_right, (255, 0, 0), line_thickness)
+                # image = cv2.putText(image, f'{convnextv2_percent:.2f}%', convnextv2_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 0, 0), line_thickness)
+                text_coords = (convnextv2_coords_left[0] - 50, convnextv2_coords_left[1])
+                image = cv2.putText(image, 'C', convnextv2_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 0, 0), line_thickness)
+            # else:
                 # print(f'No yolo line for {i}:{keys[i]}')
-                if scada_line is not None:
-                    yolo_coords_left = scada_coords_left
-                    yolo_coords_right = scada_coords_right
-                    yolo_coords_left = (yolo_coords_left[0], image.shape[0]-line_thickness-64)
-                    yolo_coords_right = (yolo_coords_right[0], image.shape[0]-line_thickness-64)
-                else: # If there are no scada or yolo lines, just put the text in the bottom middle
-                    yolo_coords_left = (int(image.shape[1]//2)-50, image.shape[0]-line_thickness-64)
-                    yolo_coords_right = (int(image.shape[1]//2)+50, image.shape[0]-line_thickness-64)
+                # if scada_line is not None:
+                #     yolo_coords_left = scada_coords_left
+                #     yolo_coords_right = scada_coords_right
+                #     yolo_coords_left = (yolo_coords_left[0], image.shape[0]-line_thickness-64)
+                #     yolo_coords_right = (yolo_coords_right[0], image.shape[0]-line_thickness-64)
+                # else: # If there are no scada or yolo lines, just put the text in the bottom middle
+                #     yolo_coords_left = (int(image.shape[1]//2)-50, image.shape[0]-line_thickness-64)
+                #     yolo_coords_right = (int(image.shape[1]//2)+50, image.shape[0]-line_thickness-64)
                     
-                image = cv2.line(image, yolo_coords_left, yolo_coords_right, (0, 0, 255), line_thickness)
-                image = cv2.putText(image, f'0.0%',  yolo_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness)
+                # image = cv2.line(image, yolo_coords_left, yolo_coords_right, (0, 0, 255), line_thickness)
+                # image = cv2.putText(image, f'0.0%',  yolo_coords_right, cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), line_thickness)
             
             # Resize the image
             image_width = image.shape[1]
@@ -106,7 +125,9 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
             yolo_string = ''
             if yolo_percent is not None:
                 yolo_string = f"yolo_percent={yolo_percent:.2f}"
-            percent = f"{scada_string}, {yolo_string}"
+            if convnextv2_percent is not None:
+                convnextv2_string = f"convnextv2_percent={convnextv2_percent:.2f}"
+            percent = f"{scada_string}, {yolo_string}, {convnextv2_string}"
             exif_dict["0th"][piexif.ImageIFD.ImageDescription] = percent
             exif_bytes = piexif.dump(exif_dict)
 
@@ -125,4 +146,4 @@ def create_images_from_recording(data_path: str, output_folder: str, show_images
     print(f"{len(keys)} images saved to {output_folder}! Total size: {total_size_gb:.2f} GB")
 
 if __name__ == '__main__':
-    create_images_from_recording('data/processed/recording - rotated.hdf5', 'data/processed/recordings', False)
+    create_images_from_recording('data/processed/recording_vertical_all_frames_processed.hdf5', 'data/processed/recordings', False)

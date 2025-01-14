@@ -35,8 +35,9 @@ def upload_to_cloudinary(cloudinary_txt: str, image_folder: str, tags: str = '')
         exif_decoded = exif_decoded.split(', ')
         scada_percent = exif_decoded[0].split('=')[-1]
         yolo_percent = exif_decoded[1].split('=')[-1]
+        convnextv2_percent = exif_decoded[2].split('=')[-1]
         
-        new_tags = og_tags + [f'scada:{scada_percent}', f'yolo:{yolo_percent}']
+        new_tags = og_tags + [f'scada:{scada_percent}', f'yolo:{yolo_percent}', f'convnextv2:{convnextv2_percent}']
         
         if new_tags != []:
             upload_result = cloudinary.uploader.upload(f'{image_folder}/{images_to_upload[i]}', asset_folder='strawml', public_id=id, overwrite=True, resource_type='image', tags=new_tags)
@@ -51,4 +52,4 @@ def upload_to_cloudinary(cloudinary_txt: str, image_folder: str, tags: str = '')
     print('Upload complete!')
 
 if __name__ == '__main__':
-    upload_to_cloudinary('data/cloudinary.txt', 'data/processed/recordings', tags=['rotated', 'weak_smoothing', "bugged_line"])
+    upload_to_cloudinary('data/cloudinary.txt', 'data/processed/recordings', tags=['upright', 'strong_smoothing'])

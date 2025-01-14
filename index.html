@@ -24,12 +24,13 @@
 </head>
 <body>
     <h1>Straw Level Monitor Evaluation</h1>
-    <p>Select which line best fits the straw level in the chute. Press (R)ed for the red line, (G)reen for the green line or (E)qual if they are equal. If you are unsure, press (S)kip</p>
+    <p>Select which line best fits the straw level in the chute. Press A, B or C. If you are unsure, press (S)kip</p>
     <img id="random-image" alt="Random Image">
     <div>
-        <button id="red" onclick="submitResponse('Red')">(R)ed</button>
-        <button id="equal" onclick="submitResponse('Equal')">(E)qual</button>
-        <button id="green" onclick="submitResponse('Green')">(G)reen</button>
+        <button id="a" onclick="submitResponse('A')">A</button>
+        <button id="b" onclick="submitResponse('B')">B</button>
+        <button id="c" onclick="submitResponse('C')">C</button>
+        <button id="equal" onclick="submitResponse('Equal')">Equal</button>
         <button id="skip" onclick="fetchRandomImage()">(S)kip</button>
     </div>
     <script>
@@ -72,14 +73,17 @@
     
         function handleHotkeys(event) {
             switch (event.key) {
-                case 'r':
-                    submitResponse('Red');
+                case 'a':
+                    submitResponse('A');
+                    break;
+                case 'b':
+                    submitResponse('B');
+                    break;
+                case 'c':
+                    submitResponse('C');
                     break;
                 case 'e':
                     submitResponse('Equal');
-                    break;
-                case 'g':
-                    submitResponse('Green');
                     break;
                 case 's':
                     fetchRandomImage();
@@ -103,12 +107,15 @@
                 } else if (tag.startsWith('scada:')) {
                     scadaValue = tag.split(':')[1];
                     return false; // Exclude this tag
+                } else if (tag.startsWith('convnextv2:')) {
+                    convnextv2Value = tag.split(':')[1];
+                    return false; // Exclude this tag
                 }
                 return true; // Keep this tag
             });
 
             // Send the response to the Google Apps Script Web App URL without waiting for the response
-            fetch('https://script.google.com/macros/s/AKfycbwbyko2B2-FBi2EZkHIlTTlVutXMEHW3iVXIGxRAzzdzyOi5LvlFU4UeVVdsAIPid5z/exec', {
+            fetch('https://script.google.com/macros/s/AKfycby1Z2WNCHeKMsb3K7094B6jVg_Yju8QnWA9AXUPo5Sck3qVztJJwbyigeP3dCLWYwIg/exec', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
@@ -117,6 +124,7 @@
                     'imageUrl': imageUrl,
                     'tags': tags.join(','),
                     'yolo': yoloValue ? parseFloat(yoloValue).toFixed(2) : '',
+                    'convnextv2': convnextv2Value ? parseFloat(convnextv2Value).toFixed(2) : '',
                     'scada': scadaValue ? parseFloat(scadaValue).toFixed(2) : '',
                     'choice': choice
                 })
