@@ -759,7 +759,10 @@ class MainApplication(ttk.Frame):
         Returns:
             list: The sorted image list, by frame number.
         """
-        return sorted(image_list, key=lambda x: int(x.split('_')[1]))
+        if "frame" == image_list[0].split("_")[0]:
+            return sorted(image_list, key=lambda x: int(x.split('_')[1]))
+        else:
+            return sorted(image_list, key=lambda x: float(x))
     
     def update_progress_bar(self) -> None:
         """Updates the progress bar and label with the current image number and total number of images.
@@ -1006,4 +1009,5 @@ if __name__ == '__main__':
     root.resizable(False, False)
     MainApplication(root, images_hdf5=args.images, output_hdf5=args.output, annotate_straw=args.straw, sensor_data=args.sensor).pack(side="top", fill="both", expand=True)
     root.mainloop()
+    # python .\strawml\annotate\annotate_gui.py --data/predictions/recording_rotated_all_frames_processed.hdf5 --output data/interim/recording_rotated_all_frames_processed_straw_annotated.hdf5 --straw
     
