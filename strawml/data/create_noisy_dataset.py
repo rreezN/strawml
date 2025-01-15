@@ -495,20 +495,22 @@ def create_noisy_dataset(hdf5: h5py, save_path: str):
     # Create a new hdf5 file to store the noisy data
     noisy_hf = h5py.File(save_path, 'w')
     
-    pbar = tqdm(total=len(frame_names), desc='Creating noisy dataset')
+    pbar = tqdm(frame_names, desc='Creating noisy dataset')
     # Loop through all the keys in the hdf5 file
-    for current_frame in tqdm(frame_names):
+    for current_frame in pbar:
         # Get the frame
         frame = hdf5[current_frame]
         frame_data = decode_binary_image(frame['image'][...])
         frame_data = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
         
         bbox_chute = frame['annotations']['bbox_chute'][...]
-        bbox_straw = frame['annotations']['bbox_straw'][...]
+        if 'bbox_straw' in frame['annotations']:
+            bbox_straw = frame['annotations']['bbox_straw'][...]
         
         bboxes = [bbox_chute, bbox_straw]
         
-        num_changes = np.random.randint(1, 7)
+        # num_changes = np.random.randint(1, 7)
+        num_changes = 2
 
         changes = np.random.choice(['lens_flare', 'random_augmet', 'dust', 'scratches', 'people', 'partial_gaussian_blur', 'distort'], 
                                    num_changes, replace=False)
@@ -532,14 +534,14 @@ def create_noisy_dataset(hdf5: h5py, save_path: str):
             frame_data, bboxes = distort_image(frame_data, bboxes)
  
         # Display the frame
-        frame_data = cv2.resize(frame_data, (frame_data.shape[1]//2, frame_data.shape[0]//2))
+        # frame_data = cv2.resize(frame_data, (frame_data.shape[1]//2, frame_data.shape[0]//2))
         # Resize bboxes for display
-        bboxes = [[x//2 for x in bbox] for bbox in bboxes]
-        frame_data = cv2.cvtColor(frame_data, cv2.COLOR_RGB2BGR)
-        frame_data = cv2.polylines(frame_data, [np.array(bboxes[0]).reshape(-1, 1, 2).astype(np.int32)], True, (0, 255, 0), 2)
-        frame_data = cv2.polylines(frame_data, [np.array(bboxes[1]).reshape(-1, 1, 2).astype(np.int32)], True, (255, 255, 0), 2)
-        cv2.imshow('frame', frame_data)
-        cv2.waitKey(0)
+        # bboxes = [[x//2 for x in bbox] for bbox in bboxes]
+        # frame_data = cv2.cvtColor(frame_data, cv2.COLOR_RGB2BGR)
+        # frame_data = cv2.polylines(frame_data, [np.array(bboxes[0]).reshape(-1, 1, 2).astype(np.int32)], True, (0, 255, 0), 2)
+        # frame_data = cv2.polylines(frame_data, [np.array(bboxes[1]).reshape(-1, 1, 2).astype(np.int32)], True, (255, 255, 0), 2)
+        # cv2.imshow('frame', frame_data)
+        # cv2.waitKey(0)
         
         # Save the frame to the new hdf5 file
         # Image and image diff
@@ -551,7 +553,8 @@ def create_noisy_dataset(hdf5: h5py, save_path: str):
         frame_group.create_group('annotations')
         anno_group = frame_group['annotations']
         anno_group.create_dataset('bbox_chute', data=hdf5[current_frame]['annotations']['bbox_chute'][...])
-        anno_group.create_dataset('bbox_straw', data=hdf5[current_frame]['annotations']['bbox_straw'][...])
+        if 'bbox_straw' in hdf5[current_frame]['annotations']:
+            anno_group.create_dataset('bbox_straw', data=hdf5[current_frame]['annotations']['bbox_straw'][...])
         anno_group.create_dataset('fullness', data=hdf5[current_frame]['annotations']['fullness'][...])
         anno_group.create_dataset('obstructed', data=hdf5[current_frame]['annotations']['obstructed'][...])
         anno_group.create_dataset('sensor_fullness', data=hdf5[current_frame]['annotations']['sensor_fullness'][...])
@@ -564,8 +567,8 @@ def create_noisy_dataset(hdf5: h5py, save_path: str):
 
 if __name__ == '__main__':
     # Load the hdf5 file
-    path_to_hdf5 = 'data/interim/sensors_with_strawbbox.hdf5'
-    save_path = 'data/processed/noisy_sensors.hdf5'
+    path_to_hdf5 = 'data/processed/sensors.hdf5'
+    save_path = 'data/processed/noisy_3.hdf5'
     hf = h5py.File(path_to_hdf5, 'r')
     
     create_noisy_dataset(hf, save_path)
