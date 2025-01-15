@@ -50,7 +50,7 @@ class MulticolorPatchHandler(object):
         return patch
 
 class JointPlot:
-    def __init__(self, x, label_data, name1_data, name2_data, name1, name2, marginal_x=True, marginal_y=True, plot_data=True, use_label=False):
+    def __init__(self, x, label_data, name1_data, name2_data, name1, name2, marginal_x=True, marginal_y=True, plot_data=True, use_label=False, label_as="scada", with_threshold=True):
         """
         Initializes the JointPlot object.
         
@@ -68,7 +68,9 @@ class JointPlot:
         self.plot_data = plot_data
         self.name1 = name1
         self.name2 = name2
-        self.use_label=use_label
+        self.use_label = use_label
+        self.label_as = label_as
+        self.with_threshold=with_threshold
         if name1 == 'scada':
             self.c1 = 'goldenrod'
         elif name1 == 'yolo':
@@ -116,13 +118,14 @@ class JointPlot:
         if self.plot_data:
             # Main scatter plot
             if self.use_label:
-                ax_joint.plot(self.x, self.label_data, label=f"Annotated Data", c='darkslategray', linestyle='--')
-            ax_joint.plot(self.x, self.name1_data, label=f"{self.name1} Data", c=self.c1, linestyle='-')
-            ax_joint.plot(self.x, self.name2_data, label=f"{self.name2} Data", c=self.c2, linestyle='-')
+                ax_joint.plot(self.x, self.label_data, label=f"{self.label_as} data", c='darkslategray', linestyle='--')
+            ax_joint.plot(self.x, self.name1_data, label=f"{self.name1} data", c=self.c1, linestyle='-')
+            ax_joint.plot(self.x, self.name2_data, label=f"{self.name2} data", c=self.c2, linestyle='-')
             ax_joint.yaxis.tick_right()
             # draw confidence intervals of +- 5%
-            ax_joint.fill_between(self.x, self.name1_data - 10, self.name1_data + 10, color=self.c1, alpha=0.5)
-            ax_joint.fill_between(self.x, self.name2_data - 10, self.name2_data + 10, color=self.c2, alpha=0.5)
+            if self.with_threshold:
+                ax_joint.fill_between(self.x, self.name1_data - 10, self.name1_data + 10, color=self.c1, alpha=0.5)
+                ax_joint.fill_between(self.x, self.name2_data - 10, self.name2_data + 10, color=self.c2, alpha=0.5)
             # add the confidence intervals to the legend
             # ax_joint.plot([], [], color=['lightblue', 'lightcoral'], alpha=0.5, label='Data Threshold (+-5%)')
 
@@ -162,9 +165,10 @@ class JointPlot:
             sorted_handles_labels = list(zip(handles, labels))
 
             # Take the c1 color and add 0.5 alpha to it
-            sorted_handles_labels.insert(1, (MulticolorPatch([self.c1, self.c2], 0.5), r'Data Threshold ($\pm$10%)'))
+            if self.with_threshold:
+                sorted_handles_labels.insert(1, (MulticolorPatch([self.c1, self.c2], 0.5), r'Data Threshold ($\pm$10%)'))
             # calculate accuracy of the model in terms of +- 5% threshold wrt. label data
-            if self.use_label:
+            if self.use_label and self.label_as != 'scada':
                 accuracy_name1 = np.mean((self.name1_data >= self.label_data - 10) & (self.name1_data <= self.label_data + 10)) * 100
                 accuracy_name2 = np.mean((self.name2_data >= self.label_data - 10) & (self.name2_data <= self.label_data + 10)) * 100
                 # add the accuracy to the legend
@@ -228,7 +232,7 @@ def _validate_data(file_path:str):
                 missing_keys['yolo'].append(key)
     return missing_keys
 
-def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv2', use_label=False):
+def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv2', use_label=False, label_as='scada'):
     """
     Load the data from the file path
     :param file_path: str: The file path to the data
@@ -252,7 +256,14 @@ def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv
         for key in keys:
             try:
                 if use_label:
-                    label_data = np.append(label_data, f[key]['straw_percent'][...])
+                    if label_as == 'scada':
+                        label_data = np.append(label_data, f[key]['scada']['percent'][...])
+                    elif label_as == 'straw_percent_bbox':
+                        label_data = np.append(label_data, f[key]['straw_percent_bbox']['percent'][...])
+                    elif label_as == 'straw_percent_fullness':
+                        label_data = np.append(label_data, f[key]['straw_percent_fullness']['percent'][...])
+                    else:
+                        label_data = np.append(label_data, f[key]['annotations']['fullness'][...]*100)
                 if name1 not in f[key].keys():
                     name1_data = np.append(name1_data, np.array([0.0]))
                 else:
@@ -293,14 +304,14 @@ def _smooth_data(sensor_data, model_data):
 
     return smoothed_sensor_data, smoothed_model_data, x_axis
 
-def _print_summary_statistics(name1, name2, name1_data, name2_data, label_data):
+def _print_summary_statistics(name1, name2, name1_data, name2_data, label_data, label_as='scada'):
     print(f"\nSummary Statistics:")
     print(f"  -- Data Length:        #1:  {len(name1_data)}, #2: {len(name2_data)}")
     print(f"  -- {name1} Data:    Mean:  {np.mean(name1_data):.2f}, STD: {np.std(name1_data):.2f}")
     print(f"  -- {name2} Data:    Mean:  {np.mean(name2_data):.2f}, STD: {np.std(name2_data):.2f}")
     print(f"  -- Delta:           Mean:  {np.mean(name1_data - name2_data):.2f}, STD: {np.std(name1_data - name2_data):.2f}")
 
-    if label_data is not None:
+    if label_data is not None and label_as != 'scada':
         # Print accuracies with different thresholds, for all labels, labels below 50% and labels above 50%
         percentages = [2.5, 5, 10]
         data = [name1_data, name2_data]
@@ -317,26 +328,27 @@ def _print_summary_statistics(name1, name2, name1_data, name2_data, label_data):
                 accuracy_above_50 = np.mean((data[i][mask] >= label_data[mask] - percentage) & (data[i][mask] <= label_data[mask] + percentage)) * 100
                 print(f"  -- Accuracy for labels above 50%: {accuracy_above_50:.2f}%")
 
-def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', time_step:int = 5, delta:bool = True, use_label=False):  
+def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', time_step:int = 5, delta:bool = True, use_label=False, label_as='scada', with_threshold=False):  
     # We first define the figure on which we wish to plot the data
     if delta:
         fig, axes = plt.subplots(2, 1, figsize=(15, 10))
     else:
-        fig, axes = plt.subplots(1, 1, figsize=(10, 10))
+        fig, axes = plt.subplots(1, 1, figsize=(15, 5))
 
     # We then load the data from the file path
-    label_data, name1_data, name2_data, x_axis = _retreive_data(file_path, name1=name1, name2=name2, use_label=use_label)
+    label_data, name1_data, name2_data, x_axis = _retreive_data(file_path, name1=name1, name2=name2, use_label=use_label, label_as=label_as)
     x_axis_data = x_axis * time_step
     # Plot the data on top of the figure
     if delta:
-        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=False).plot(axes[0])
+        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=use_label, label_as=label_as, with_threshold=with_threshold).plot(axes[0])
     else:
-        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=False).plot(axes)
+        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=use_label, label_as=label_as, with_threshold=with_threshold).plot(axes)
     if delta:
-        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, plot_data=False, use_label=False).plot(axes[1])
+        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, plot_data=False, use_label=use_label, label_as=label_as, with_threshold=with_threshold).plot(axes[1])
 
-    _print_summary_statistics(name1, name2, name1_data, name2_data, label_data)
-    fig.suptitle(f"Recording: {name}", y=0.92, fontsize=20)
+    _print_summary_statistics(name1, name2, name1_data, name2_data, label_data, label_as)
+    name = file_path.split("/")[-1].split(".")[0]
+    fig.suptitle(f"{name}", y=0.94, fontsize=15)
 
     # Adjust vertical spacing between subplots
     plt.subplots_adjust(hspace=0.2)  # Reduce hspace as needed
@@ -347,4 +359,5 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
 if __name__ == '__main__':
     file_path = "D:/HCAI/msc/strawml/data/predictions/recording_vertical_all_frames_processed.hdf5"
     # file_path = "D:/HCAI/msc/strawml/data/predictions/recording_vertical_all_frames_processed.hdf5"
-    main(file_path, name="sensors", name1='scada', name2='convnextv2', time_step=5, delta=False, use_label=False)
+    # file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox.hdf5"
+    main(file_path, name="sensors", name1='yolo', name2='convnextv2', time_step=5, delta=False, use_label=True, label_as='straw_percent_bbox', with_threshold=False)
