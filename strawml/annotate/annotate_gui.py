@@ -865,8 +865,9 @@ class MainApplication(ttk.Frame):
             
             
             # Create a new group for the current frame
-            frame = f'frame_{self.current_image}'
-            
+            # frame = f'frame_{self.current_image}'
+            frame = self.image_box.current_image_group
+            print(f"Saving annotations for {frame}")
             # Overwrite the frame if it already exists
             if frame in new_hf.keys():
                 del new_hf[frame]
@@ -875,8 +876,10 @@ class MainApplication(ttk.Frame):
             
             # Copy the original image and image_diff to the new HDF5 file
             old_hf.copy(old_hf[frame]['image'], group)
-            old_hf.copy(old_hf[frame]['image_diff'], group) 
-            group.attrs['video ID'] = old_hf[frame].attrs['video ID']
+            if 'image_diff' in old_hf[frame].keys():
+                old_hf.copy(old_hf[frame]['image_diff'], group)
+            if 'video ID' in old_hf[frame].attrs.keys():
+                group.attrs['video ID'] = old_hf[frame].attrs['video ID']
             
             # Create a new group for the annotations
             annotation_group = group.create_group('annotations')    
