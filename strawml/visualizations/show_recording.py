@@ -42,7 +42,7 @@ class MulticolorPatchHandler(object):
                            width / len(orig_handle.colors),
                            height, 
                            facecolor=c, 
-                           edgecolor='none', alpha=orig_handle.alphas))
+                           edgecolor='none', alpha=orig_handle.alphas[i]))
 
         patch = PatchCollection(patches,match_original=True)
 
@@ -113,19 +113,22 @@ class JointPlot:
             ax_marginal_x = fig.add_subplot(gs[0, 0:max_y-3], sharex=ax_joint) if self.marginal_x else None
             
             # Marginal y plot occupies the right side, with the same height as ax_joint
-            ax_marginal_y = fig.add_subplot(gs[1:max_x-1, max_y-2], sharey=ax_joint) if self.marginal_y else None
+            ax_marginal_y = fig.add_subplot(gs[1:max_x, max_y-2], sharey=ax_joint) if self.marginal_y else None
+
 
         if self.plot_data:
             # Main scatter plot
             if self.use_label:
-                ax_joint.plot(self.x, self.label_data, label=f"{self.label_as} data", c='darkslategray', linestyle='--')
-            ax_joint.plot(self.x, self.name1_data, label=f"{self.name1} data", c=self.c1, linestyle='-')
-            ax_joint.plot(self.x, self.name2_data, label=f"{self.name2} data", c=self.c2, linestyle='-')
+                ax_joint.plot(self.x, self.label_data, label=f"label data", c='darkslategray', linestyle='--')
+            ax_joint.plot(self.x, self.name1_data, label=f"{self.name1.upper()} data", c=self.c1, linestyle='-')
+            ax_joint.plot(self.x, self.name2_data, label=f"{self.name2.upper()} data", c=self.c2, linestyle='-')
+
             ax_joint.yaxis.tick_right()
             # draw confidence intervals of +- 5%
             if self.with_threshold:
-                ax_joint.fill_between(self.x, self.name1_data - 10, self.name1_data + 10, color=self.c1, alpha=0.5)
-                ax_joint.fill_between(self.x, self.name2_data - 10, self.name2_data + 10, color=self.c2, alpha=0.5)
+                ax_joint.fill_between(self.x, self.label_data - 10, self.label_data + 10, color="darkslategray", alpha=0.2)
+                # ax_joint.fill_between(self.x, self.name1_data - 10, self.name1_data + 10, color=self.c1, alpha=0.5)
+                # ax_joint.fill_between(self.x, self.name2_data - 10, self.name2_data + 10, color=self.c2, alpha=0.5)
             # add the confidence intervals to the legend
             # ax_joint.plot([], [], color=['lightblue', 'lightcoral'], alpha=0.5, label='Data Threshold (+-5%)')
 
@@ -139,21 +142,23 @@ class JointPlot:
             
             if self.marginal_x and ax_marginal_x:
                 ax_marginal_x.grid()
-                sns.kdeplot(self.x, ax=ax_marginal_x, color='darkslategray', fill=True, vertical=False)
+                sns.kdeplot(self.x, ax=ax_marginal_x, color='darkslategray', fill=False, vertical=False)
                 ax_marginal_x.axis('off')
 
             if self.marginal_y and ax_marginal_y:
                 ax_marginal_y.grid()
-                sns.kdeplot(self.name1_data, ax=ax_marginal_y, color=self.c1, fill=True, vertical=True)
-                sns.kdeplot(self.name2_data, ax=ax_marginal_y, color=self.c2, fill=True, vertical=True)
+                sns.kdeplot(self.name1_data, ax=ax_marginal_y, color=self.c1, fill=False, vertical=True, clip_on=False)
+                sns.kdeplot(self.name2_data, ax=ax_marginal_y, color=self.c2, fill=False, vertical=True, clip_on=False)
                 if self.use_label:
-                    sns.kdeplot(self.label_data, ax=ax_marginal_y, color="darkslategray", fill=False, vertical=True, linestyle='--', linewidth=1.5)
+                    sns.kdeplot(self.label_data, ax=ax_marginal_y, color="darkslategray", fill=False, vertical=True, linestyle='--', linewidth=1.5, clip_on=False)
+                # turn off the label data axis
                 ax_marginal_y.axis('off')
 
             ax_joint.grid()
-            ax_joint.set_xlabel("Time")
-            ax_joint.set_ylabel("Data")
-
+            ax_joint.set_xlabel("Time (s)")
+            ax_joint.set_ylabel("Straw level (%)")
+            ax_joint.set_yticks(np.arange(0, 101, 10))
+            ax_joint.set_yticklabels(np.arange(0, 101, 10))
             # Shrink current axis's height by 10% on the bottom
             box = ax_joint.get_position()
             ax_joint.set_position([box.x0, box.y0 + box.height * 0.1,
@@ -166,14 +171,17 @@ class JointPlot:
 
             # Take the c1 color and add 0.5 alpha to it
             if self.with_threshold:
-                sorted_handles_labels.insert(1, (MulticolorPatch([self.c1, self.c2], 0.5), r'Data Threshold ($\pm$10%)'))
+                sorted_handles_labels.insert(1,(MulticolorPatch(['darkslategray', 'darkslategray', 'darkslategray'], [0.2, 1, 0.2]), r'Data Threshold ($\pm$10%)'))
             # calculate accuracy of the model in terms of +- 5% threshold wrt. label data
             if self.use_label and self.label_as != 'scada':
                 accuracy_name1 = np.mean((self.name1_data >= self.label_data - 10) & (self.name1_data <= self.label_data + 10)) * 100
                 accuracy_name2 = np.mean((self.name2_data >= self.label_data - 10) & (self.name2_data <= self.label_data + 10)) * 100
+                # calculate MAE
+                mae_name1 = np.mean(np.abs(self.name1_data - self.label_data))
+                mae_name2 = np.mean(np.abs(self.name2_data - self.label_data))
                 # add the accuracy to the legend
-                sorted_handles_labels.append((MulticolorPatch([self.c1, 'darkslategray', self.c1], 1), f'Accuracy {self.name1}: {accuracy_name1:.2f}%'))
-                sorted_handles_labels.append((MulticolorPatch([self.c2, 'darkslategray', self.c2], 1), f'Accuracy {self.name2}: {accuracy_name2:.2f}%'))
+                sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c1, 'darkslategray'], [0.2, 1, 0.2]), f'{self.name1.upper()}, Accuracy: {accuracy_name1:.2f}%, MAE: {mae_name1:.2f}'))
+                sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c2, 'darkslategray'], [0.2, 1, 0.2]), f'{self.name2.upper()}, Accuracy: {accuracy_name2:.2f}%, MAE: {mae_name2:.2f}'))
 
             sorted_handles_labels = sorted(
                 sorted_handles_labels, 
@@ -333,7 +341,7 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
     if delta:
         fig, axes = plt.subplots(2, 1, figsize=(15, 10))
     else:
-        fig, axes = plt.subplots(1, 1, figsize=(15, 5))
+        fig, axes = plt.subplots(1, 1, figsize=(20, 5), sharey=True)
 
     # We then load the data from the file path
     label_data, name1_data, name2_data, x_axis = _retreive_data(file_path, name1=name1, name2=name2, use_label=use_label, label_as=label_as)
@@ -347,8 +355,15 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
         JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, plot_data=False, use_label=use_label, label_as=label_as, with_threshold=with_threshold).plot(axes[1])
 
     _print_summary_statistics(name1, name2, name1_data, name2_data, label_data, label_as)
-    name = file_path.split("/")[-1].split(".")[0]
-    fig.suptitle(f"{name}", y=0.94, fontsize=15)
+    name = file_path.split("/")[-1].split(".")[0].split("_")
+    if "rotated" in name:
+        name = "Rotated"
+    elif "vertical" in name:
+        name = "Vertical"
+    elif "combined" in name:
+        name = "Rotated_and_Vertical_Combined"
+    # replace _ with space
+    fig.suptitle(f"{name.replace('_', ' ')}", y=0.96, fontsize=25)
 
     # Adjust vertical spacing between subplots
     plt.subplots_adjust(hspace=0.2)  # Reduce hspace as needed
@@ -357,7 +372,8 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
     plt.show()
 
 if __name__ == '__main__':
-    file_path = "D:/HCAI/msc/strawml/data/predictions/recording_vertical_all_frames_processed.hdf5"
-    # file_path = "D:/HCAI/msc/strawml/data/predictions/recording_vertical_all_frames_processed.hdf5"
+    file_path = "data/predictions/recording_rotated_all_frames_processed_combined.hdf5"
+    # file_path = "data/predictions/recording_vertical_all_frames_processed_combined.hdf5"
+    # file_path = "data/predictions/recording_combined_all_frames_processed.hdf5"
     # file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox.hdf5"
-    main(file_path, name="sensors", name1='yolo', name2='convnextv2', time_step=5, delta=False, use_label=True, label_as='straw_percent_bbox', with_threshold=False)
+    main(file_path, name="sensors", name1='yolo', name2='convnextv2', time_step=5, delta=False, use_label=True, label_as='straw_percent_bbox', with_threshold=True)
