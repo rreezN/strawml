@@ -1,5 +1,5 @@
 program: strawml/cross_validate_straw_model.py
-name: convnextv2
+name: convnext
 method: bayes
 metric:
   goal: maximize
@@ -15,16 +15,14 @@ command:
 - python3
 - ${program}
 - --model 
-- convnextv2
+- convnext
 - --image_size 
 - 672 
 - 208
 - --id
 - sweep
 - --num_hidden_layers
-- 3
-- --use_sigmoid
-- --balanced_dataset
+- 0
 - --data_subsample
 - 1.0
 - --optim 
