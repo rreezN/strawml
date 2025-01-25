@@ -1,12 +1,12 @@
 #!/bin/sh
-#BSUB -J yolo-logical-sweep-run
-#BSUB -o yolo-logical-sweep-run%J.out
-#BSUB -e yolo-logical-sweep-run%J.err
+#BSUB -J yolo-serene-sweep-run
+#BSUB -o yolo-serene-sweep-run%J.out
+#BSUB -e yolo-serene-sweep-run%J.err
 #BSUB -q gpuv100
 #BSUB -gpu "num=1:mode=exclusive_process"
 #BSUB -n 4
 #BSUB -R "span[hosts=1]"
-#BSUB -R "rusage[mem=8G]"
+#BSUB -R "rusage[mem=16G]"
 #BSUB -W 24:00
 #BSUB -N 4
 # end of BSUB options
