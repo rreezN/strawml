@@ -26,6 +26,8 @@ from matplotlib.gridspec import GridSpec
 from scipy.stats import gaussian_kde
 import seaborn as sns
 from matplotlib.collections import PatchCollection
+import matplotlib.lines as mlines
+
 
 # define an object that will be used by the legend
 class MulticolorPatch(object):
@@ -50,7 +52,7 @@ class MulticolorPatchHandler(object):
         return patch
 
 class JointPlot:
-    def __init__(self, x, label_data, name1_data, name2_data, name1, name2, marginal_x=True, marginal_y=True, plot_data=True, use_label=False, label_as="scada", with_threshold=True):
+    def __init__(self, x, label_data, name1_data, name2_data, name1, name2, marginal_x=True, marginal_y=True, plot_data=True, use_label=False, label_as="scada", with_threshold=True, changed_index=None):
         """
         Initializes the JointPlot object.
         
@@ -71,6 +73,9 @@ class JointPlot:
         self.use_label = use_label
         self.label_as = label_as
         self.with_threshold=with_threshold
+        self.changed_index=changed_index
+        self.change_color = 'mediumseagreen'
+        
         if name1 == 'scada':
             self.c1 = 'goldenrod'
         elif name1 == 'yolo':
@@ -84,6 +89,8 @@ class JointPlot:
             self.c2 = 'royalblue'
         else:
             self.c2 = 'indianred'
+
+        self.c2 = 'royalblue'
 
     def plot(self, ax=None):
         """
@@ -154,6 +161,9 @@ class JointPlot:
                 # turn off the label data axis
                 ax_marginal_y.axis('off')
 
+            if self.changed_index is not None:
+                ax_joint.axvline(x=self.x[self.changed_index], color=self.change_color, linestyle='--')
+
             ax_joint.grid()
             ax_joint.set_xlabel("Time (s)")
             ax_joint.set_ylabel("Straw level (%)")
@@ -172,6 +182,7 @@ class JointPlot:
             # Take the c1 color and add 0.5 alpha to it
             if self.with_threshold:
                 sorted_handles_labels.insert(1,(MulticolorPatch(['darkslategray', 'darkslategray', 'darkslategray'], [0.2, 1, 0.2]), r'Data Threshold ($\pm$10%)'))
+
             # calculate accuracy of the model in terms of +- 5% threshold wrt. label data
             if self.use_label and self.label_as != 'scada':
                 accuracy_name1 = np.mean((self.name1_data >= self.label_data - 10) & (self.name1_data <= self.label_data + 10)) * 100
@@ -182,6 +193,14 @@ class JointPlot:
                 # add the accuracy to the legend
                 sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c1, 'darkslategray'], [0.2, 1, 0.2]), f'{self.name1.upper()}, Accuracy: {accuracy_name1:.2f}%, MAE: {mae_name1:.2f}'))
                 sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c2, 'darkslategray'], [0.2, 1, 0.2]), f'{self.name2.upper()}, Accuracy: {accuracy_name2:.2f}%, MAE: {mae_name2:.2f}'))
+
+            if self.changed_index is not None:
+
+                # Define a custom line style for the striped line
+                striped_line = mlines.Line2D([], [], color=self.change_color, linestyle='--', linewidth=2, label='Type Change')
+
+                # Append the custom line to the sorted_handles_labels
+                sorted_handles_labels.append((striped_line, 'Type Change'))
 
             sorted_handles_labels = sorted(
                 sorted_handles_labels, 
@@ -194,7 +213,7 @@ class JointPlot:
 
             # Put a legend below the current axis
             ax_joint.legend(sorted_handles, sorted_labels, handler_map={MulticolorPatch: MulticolorPatchHandler()}, loc='upper center', 
-                            bbox_to_anchor=(0.5, 1.12), fancybox=True, shadow=True, ncol=3)
+                            bbox_to_anchor=(0.5, 1.12), fancybox=True, shadow=True, ncol=4)
             
             if ax is None:
                 plt.tight_layout()
@@ -229,6 +248,7 @@ class JointPlot:
             # Put a legend below current axis
             ax_joint.legend(loc='upper center', bbox_to_anchor=(0.5, 1.12),
                     fancybox=True, shadow=True, ncol=5)
+                    
 
 def _validate_data(file_path:str):
     missing_keys = {'scada': [], 'yolo': []}
@@ -257,10 +277,13 @@ def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv
     errors = 0
     with h5py.File(file_path, 'r') as f:
         keys = list(f.keys())
+        changed_index = None 
         if "frame" == keys[0].split("_")[0]:
             keys = sorted(keys, key=lambda x: int(x.split('_')[1]))
         else:
             keys = sorted(keys, key=lambda x: float(x))
+        if 'type' in f[keys[0]].attrs.keys():
+            old_type = f[keys[0]].attrs['type']
         for key in keys:
             try:
                 if use_label:
@@ -280,6 +303,12 @@ def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv
                     name2_data = np.append(name2_data, np.array([0.0]))
                 else:
                     name2_data = np.append(name2_data, f[key][name2]['percent'][...])
+                if 'type' in f[key].attrs.keys():
+                    if f[key].attrs['type'] != old_type:
+                        print(f"Old type: {old_type}, new type: {f[key].attrs['type']}")
+                        print(f"Changed index: {key}")
+                        changed_index = keys.index(key)
+                        old_type = f[key].attrs['type']
             except Exception as e:
                 errors += 1
                 print(f"Error in loading data from key: {key}")
@@ -288,8 +317,8 @@ def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv
     x_axis = np.arange(len(name1_data))
     # We then return the data
     if use_label:
-        return label_data, name1_data, name2_data, x_axis
-    return None, name1_data, name2_data, x_axis
+        return label_data, name1_data, name2_data, x_axis, changed_index
+    return None, name1_data, name2_data, x_axis, changed_index
 def _smooth_data(sensor_data, model_data):
     """
     This function takes the data and smooths it out. It smooths by taking the average of the previous 5 data points.
@@ -344,15 +373,15 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
         fig, axes = plt.subplots(1, 1, figsize=(20, 5), sharey=True)
 
     # We then load the data from the file path
-    label_data, name1_data, name2_data, x_axis = _retreive_data(file_path, name1=name1, name2=name2, use_label=use_label, label_as=label_as)
+    label_data, name1_data, name2_data, x_axis, changed_index = _retreive_data(file_path, name1=name1, name2=name2, use_label=use_label, label_as=label_as)
     x_axis_data = x_axis * time_step
     # Plot the data on top of the figure
     if delta:
-        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=use_label, label_as=label_as, with_threshold=with_threshold).plot(axes[0])
+        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes[0])
     else:
-        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=use_label, label_as=label_as, with_threshold=with_threshold).plot(axes)
+        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes)
     if delta:
-        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, plot_data=False, use_label=use_label, label_as=label_as, with_threshold=with_threshold).plot(axes[1])
+        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, plot_data=False, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes[1])
 
     _print_summary_statistics(name1, name2, name1_data, name2_data, label_data, label_as)
     name = file_path.split("/")[-1].split(".")[0].split("_")
@@ -361,19 +390,24 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
     elif "vertical" in name:
         name = "Vertical"
     elif "combined" in name:
-        name = "Rotated_and_Vertical_Combined"
+        name = "Vertical_and_Rotated_Combined"
     # replace _ with space
-    fig.suptitle(f"{name.replace('_', ' ')}", y=0.96, fontsize=25)
-
+    try:
+        fig.suptitle(f"{name.replace('_', ' ')}", y=0.96, fontsize=25)
+    except Exception as e:
+        print(e)
     # Adjust vertical spacing between subplots
     plt.subplots_adjust(hspace=0.2)  # Reduce hspace as needed
     # plt.tight_layout(pad=1.0)  # Adjust padding as necessary
-    plt.savefig(f"reports/recording_{name.lower()}_{name1}_{name2}.pdf")
+    # plt.savefig(f"reports/recording_{name.lower()}_{name1}_{name2}.pdf")
     plt.show()
 
 if __name__ == '__main__':
-    file_path = "data/predictions/recording_rotated_all_frames_processed_combined.hdf5"
+    # file_path = "data/predictions/recording_rotated_all_frames_processed.hdf5"
+    # file_path = "data/predictions/recording_rotated_all_frames_processed_combined.hdf5"
     # file_path = "data/predictions/recording_vertical_all_frames_processed_combined.hdf5"
+
     # file_path = "data/predictions/recording_combined_all_frames_processed.hdf5"
-    # file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox.hdf5"
-    main(file_path, name="sensors", name1='yolo', name2='convnextv2', time_step=5, delta=False, use_label=True, label_as='straw_percent_bbox', with_threshold=True)
+    file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox.hdf5"
+    # file_path = 'data/noisy_datasets/noisy_scratches_lens_flare.hdf5'
+    main(file_path, name="sensors", name1='yolo_serene', name2='convnextv2', time_step=5, delta=False, use_label=True, label_as='straw_percent_bbox', with_threshold=True)
