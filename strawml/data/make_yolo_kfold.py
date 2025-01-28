@@ -1,3 +1,4 @@
+
 #%% Load libraries
 from __init__ import *
 from pathlib import Path
@@ -7,11 +8,23 @@ import pandas as pd
 from collections import Counter
 
 #%% Load data and labels
-dataset_path = Path("D:/HCAI/msc/strawml/data/processed/yolo_format_bbox_straw")  # replace with 'path/to/dataset' for your custom data
+dataset_path = Path("D:/HCAI/msc/strawml/data/processed/yolo_format_bbox_chute")  # replace with 'path/to/dataset' for your custom data
+labels = sorted(dataset_path.rglob("*.txt"))  # all data in 'labels'
+
+sorted_label_nums = sorted([int(i.__str__().split("\\")[-1].split(".")[0]) for i in labels])
+# run thorugh label_nums to check if there are missing labels
+for i in range(1, len(sorted_label_nums)):
+    if sorted_label_nums[i] - sorted_label_nums[i - 1] != 1:
+        # create empty label file for missing label
+        for i in range(sorted_label_nums[i - 1] + 1, sorted_label_nums[i]):
+            print(dataset_path / f"{i}.txt")
+            with open(dataset_path / f"{i}.txt", "w") as lf:
+                lf.write("")
+
 labels = sorted(dataset_path.rglob("*.txt"))  # all data in 'labels'
 
 #%% Load classes and create a DataFrame with label counts
-yaml_file = "D:/HCAI/msc/strawml/data/processed/0_straw_data_whole.yaml"  # your data YAML with data directories and names dictionary
+yaml_file = "D:/HCAI/msc/strawml/data/processed/0_chute_data.yaml"  # your data YAML with data directories and names dictionary
 with open(yaml_file, "r", encoding="utf8") as y:
     classes = yaml.safe_load(y)["names"]
 cls_idx = sorted(classes.keys())
@@ -104,6 +117,7 @@ for image, label in zip(images, labels):
         lbl_to_path = save_path / split / k_split / "labels"
 
         # Copy image and label files to new directory (SamefileError if file already exists)
+        # first we check if label file exists otherwise create empty txt file for the image
         shutil.copy(image, img_to_path / image.name)
         shutil.copy(label, lbl_to_path / label.name)
 
