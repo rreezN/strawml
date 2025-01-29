@@ -134,7 +134,7 @@ class AprilDetector:
         model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
         return model, image_size
 
-    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 3, num_neurons: int = 512) -> None:
+    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 0, num_neurons: int = 512) -> None:
         """Setup the regressor model."""
         if self.predictor_model != 'cnn':
             features = self.model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
@@ -282,7 +282,7 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False, smoothing:bool=True, save_as_new_hdf5: bool=True, process_like_recording:bool=True, with_annotations:bool=False, fps_test:bool=False, hdf5_model_save_name:str =["yolo"]) -> None:
+    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False, smoothing:bool=True, save_as_new_hdf5: bool=True, process_like_recording:bool=True, with_annotations:bool=False, fps_test:bool=False, hdf5_model_save_name:str | None = None) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, yolo_straw=yolo_straw, yolo_straw_model=yolo_straw_model, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         self.record = record
         self.save_as_new_hdf5 = save_as_new_hdf5
@@ -378,24 +378,34 @@ class RTSPStream(AprilDetector):
         self._setup_display()
         self._process_frames_from_videofile()
 
-    def display_frame_from_hdf5(self, path: str) -> None:
+    def display_frame_from_hdf5(self, paths: str) -> None:
         """
         Display the frames with the detected AprilTags.
         """
+        for path in paths:
+            # Start by running through the first 50 frames to get the tags
+            self._warm_up_for_apriltags(path, 0, 50)
+            # pause to allow for the apriltag detect thread to catch up
+            print("3 seconds pause to allow for apriltag detection to catch up...")
+            time.sleep(3)
+            self._setup_display()
+            self._process_frames_from_hdf5(path)
 
-        # Start by running through the first 50 frames to get the tags
+    def _warm_up_for_apriltags(self, path, idx, nr:int=50) -> np.ndarray:
+        self.helpers._reset_tags()
         with h5py.File(path, 'r') as hf:
             timestamps = list(hf.keys())
-            for timestamp in timestamps[:50]:
+
+            if "frame" == timestamps[0].split("_")[0]:
+                timestamps = sorted(timestamps, key=lambda x: int(x.split('_')[1]))
+            else:
+                timestamps = sorted(timestamps, key=lambda x: float(x))
+
+            for timestamp in timestamps[idx:idx+nr]:
                 frame = hf[timestamp]['image'][()]
                 frame = decode_binary_image(frame)
                 # change from bgr to rgb
                 self.frame = frame
-        # pause to allow for the apriltag detect thread to catch up
-        print("Waiting for AprilTag detection to catch up...")
-        time.sleep(3)
-        self._setup_display()
-        self._process_frames_from_hdf5(path)
 
     def _setup_display(self) -> None:
         """Set up display settings and initialize variables for both modes."""
@@ -437,6 +447,7 @@ class RTSPStream(AprilDetector):
 
     def _process_frames_from_hdf5(self, path: str) -> None:
         """Process frames from an HDF5 file."""
+        file_name = path.split("/")[-1].split(".")[0]
         if self.fps_test:
             # NOTE if this is true, then we only need to load the image, run inference and then continue. We do not need to save anything.
             # Then we also wish to create a dictionary that explains the different durations of loading image, processing image and then total image time
@@ -456,12 +467,22 @@ class RTSPStream(AprilDetector):
             self.last_save_timestamp = timestamps[0]
             self.save_counter = 0
             pbar = tqdm(timestamps)
-            for timestamp in pbar:
-                pbar.set_description(f"#Saved frames: {self.save_counter}")
+            for i, timestamp in enumerate(pbar):
+                if 'type' in hf[timestamp].attrs.keys():
+                    if i == 0:
+                        self.previous_frame_type = hf[timestamp].attrs['type']
+                    pbar.set_description(f"{file_name}, #Saved frames: {self.save_counter}, {self.previous_frame_type}")
+                else:
+                    pbar.set_description(f"{file_name}, #Saved frames: {self.save_counter}")
                 frame_time = time.time()
                 self.prediction_dict = {}
                 frame = hf[timestamp]['image'][()]
                 frame = decode_binary_image(frame) # process the frame
+                if 'type' in hf[timestamp].attrs.keys():
+                    if hf[timestamp].attrs['type'] != self.previous_frame_type:
+                        self._warm_up_for_apriltags(path, i, 50)
+                        self.previous_frame_type = hf[timestamp].attrs['type']
+
                 if self.fps_test:
                     self.fps_test_results["load_time"].append(time.time() - frame_time)
                     self._process_fps_test(frame, frame_time)
@@ -475,7 +496,7 @@ class RTSPStream(AprilDetector):
             # save the results to a file
             with open("fps_test_results.pkl", "wb") as f:
                 pickle.dump(self.fps_test_results, f)
-        self.close_threads()
+        # self.close_threads()
 
     def _process_fps_test(self, frame, frame_time) -> None:
         if self.yolo_straw:
@@ -548,7 +569,7 @@ class RTSPStream(AprilDetector):
                 del hf[timestamp]["straw_percent_fullness"]
             straw_level = 0
             straw_level_line = self.helpers._get_straw_to_pixel_level(straw_level)
-            
+            print(self.chute_numbers.values())
             angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
             line_start = (int(straw_level_line[0]), int(straw_level_line[1]))
             line_end = (int(straw_level_line[0])+300, int(straw_level_line[1]))
@@ -604,6 +625,7 @@ class RTSPStream(AprilDetector):
         self._display_frame(frame_drawn)
         # # Now we save the frame
         if self.recording_req:
+            self.save_counter += 1
             if self.save_as_new_hdf5:
                 self._save_frame_existing_hdf5(hf=None, timestamp=timestamp, path=path)
             else:
@@ -618,9 +640,11 @@ class RTSPStream(AprilDetector):
         # Process scada data        
         scada_level = hf[timestamp]["scada"]["percent"][()]
         line_start, line_end, sensor_scada_data, scada_pixel_values = self._retrieve_scada_data(scada_level)
-        self.recording_req =  (float(timestamp) - float(self.last_save_timestamp) >= self.record_threshold)
+        if self.smoothing:
+            self.recording_req =  (float(timestamp) - float(self.last_save_timestamp) >= self.record_threshold)
+        else:
+            self.recording_req = True
         if self.recording_req:
-            
             if scada_pixel_values[0] is not None:
                 self.prediction_dict = {}
                 self.prediction_dict["scada"] = {sensor_scada_data: [line_start, line_end]} # NOTE FILLING SCADA DATA HERE
@@ -629,10 +653,11 @@ class RTSPStream(AprilDetector):
         cv2.line(frame_drawn, line_start, line_end, self.scada_color , 2)
         cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, self.scada_color, 2, cv2.LINE_AA)
         # Get yolo results
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
         frame_drawn = self._yolo_model(frame, frame_drawn, None) # NOTE FILLING YOLO DATA HERE
 
         # Get predictor results
-        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results, OD_time = time_function(self.OD.score_frame, frame)
         # Make sure the results are not empty
         if len(results[0]) == 0:
@@ -676,6 +701,11 @@ class RTSPStream(AprilDetector):
                 group.create_dataset('image', data=img)
 
             if hdf5_model_save_name is not None:
+
+                # remove the existing entry:
+                if hdf5_model_save_name in group.keys():
+                    del group[hdf5_model_save_name]
+
                 if self.yolo_straw:
                     t = self.prediction_dict["yolo"]
                 elif self.with_predictor:
@@ -685,13 +715,8 @@ class RTSPStream(AprilDetector):
                 t2_name = 'pixel'
                 t1, t2 = list(t.keys())[0], list(t.values())[0]
 
-                # first check if group model_name already exists
-                if hdf5_model_save_name in hf[timestamp]:
-                    # remove the group
-                    del hf[timestamp][hdf5_model_save_name]
-
                 # then we create the group and add the datasets
-                pred = hf[timestamp].create_group(hdf5_model_save_name)
+                pred = group.create_group(hdf5_model_save_name)
                 pred.create_dataset(t1_name, data=t1)
                 pred.create_dataset(t2_name, data=t2)
             else:
@@ -979,12 +1004,15 @@ class RTSPStream(AprilDetector):
                 line_start, line_end = (None,None), (None,None)
 
             if self.recording_req:
+                if straw_level is None:
+                    print(f"Straw level is None: {time_stamp}")
                 self.prediction_dict["convnextv2"] = {straw_level: [line_start, line_end]}
             # Draw line and text for straw level
-            cv2.line(frame_drawn, line_start, line_end, self.predictor_color, 2)
-            cv2.putText(frame_drawn, f"{straw_level:.2f}%", (line_end[0] + 10, line_end[1]), cv2.FONT_HERSHEY_SIMPLEX, 1,  self.predictor_color, 2, cv2.LINE_AA)
-            self.information["predictor_model"]["text"] = f'(T2) Predictor Time: {inference_time:.2f} s'
-            self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
+            if straw_level is not None:
+                cv2.line(frame_drawn, line_start, line_end, self.predictor_color, 2)
+                cv2.putText(frame_drawn, f"{straw_level:.2f}%", (line_end[0] + 10, line_end[1]), cv2.FONT_HERSHEY_SIMPLEX, 1,  self.predictor_color, 2, cv2.LINE_AA)
+                self.information["predictor_model"]["text"] = f'(T2) Predictor Time: {inference_time:.2f} s'
+                self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
 
             if self.fps_test:
                 self.fps_test_results["inference_time"].append(inference_time + prep_time)
@@ -1059,15 +1087,16 @@ class RTSPStream(AprilDetector):
             Nothing is returned, only the frames are displayed with the detected AprilTags
         """
         if frame is None:
-            if video_path:
+            if video_path[0]:
                 import os
-                # make sure the video path exists
-                if not os.path.exists(video_path):
-                    print("The video path does not exist.")
-                    return
+                # make sure the video paths in video path list exists
+                for vp in video_path:
+                    if not os.path.exists(vp):
+                        print(f"The video path '{vp}' does not exist.")
+                        return
                 # Check if the file mp4 or hdf5
-                if video_path.endswith('.mp4'):
-                    self.cap = cv2.VideoCapture(video_path)
+                if video_path[0].endswith('.mp4'):
+                    self.cap = cv2.VideoCapture(video_path[0])
                     print("START: Videofile loaded")
                     if self.detect_april:
                         self.thread1 = threading.Thread(target=self.find_tags)
@@ -1078,13 +1107,15 @@ class RTSPStream(AprilDetector):
                         self.scada_thread.start()
                         self.threads.append(self.scada_thread)
                     self.display_frame_from_videofile()
-                elif video_path.endswith('.hdf5'):
+                elif video_path[0].endswith('.hdf5'):
                     print("START: hdf5 File loading...")
                     if self.detect_april:
                         self.thread1 = threading.Thread(target=self.find_tags)
                         self.thread1.start()
                         self.threads.append(self.thread1)
                     self.display_frame_from_hdf5(video_path)
+                else:
+                    raise ValueError("The file type is not supported. Please provide a .mp4 or .hdf5 file.")
                 while True:
                     if keyboard.is_pressed('q'):
                         self.close_threads()
@@ -1155,7 +1186,7 @@ def get_args() -> Namespace:
     parser.add_argument('--with_annotations', action='store_true', help='Use the annotations for predictions.')
     parser.add_argument('--fps_test', action='store_true', help='Run the FPS test.')
     parser.add_argument('--hdf5_model_save_name', type=str, default=None, help='The name of the model to save the predictions.')
-    parser.add_argument('--video_path', type=str, default=None, help='The path to the video file.')
+    parser.add_argument('-vp', '--video_path', nargs='+', default=[], help='The path to the video file(s).')
     return parser.parse_args()
     # python .\strawml\visualizations\stream.py file_predict --smoothing --save_as_new_hdf5 --process_like_recording --video_path data/predictions/recording_rotated_all_frames.hdf5
 def main(args: Namespace) -> None:
@@ -1200,8 +1231,10 @@ def main(args: Namespace) -> None:
         if args.yolo_straw and args.with_predictor:
             raise ValueError(f"Cannot run both YOLO and Predictor at the same time for mode: {args.mode}. Please choose **one**.")
     elif args.mode == 'file_predict':
-        args.yolo_straw = True
-        args.with_predictor = True
+        if args.yolo_straw == False and args.with_predictor == False:
+            raise ValueError("One of the following must be True: yolo_straw, with_predictor")
+        # args.yolo_straw = True
+        # args.with_predictor = True
         args.make_cutout = True
         args.window = True
         args.yolo_threshold = 0.2
@@ -1254,10 +1287,10 @@ def main(args: Namespace) -> None:
                yolo_threshold=args.yolo_threshold,
                detect_april=args.detect_april, 
                yolo_straw=args.yolo_straw, 
-               yolo_straw_model="models/obb_best.pt",
+               yolo_straw_model="models/obb_best_serene.pt",
                with_predictor=args.with_predictor, 
-               predictor_model='convnextv2', 
-               model_load_path='models/convnextv2_regressor/', 
+               predictor_model='convnext', 
+               model_load_path='models/convnext_regressor/', 
                regressor=args.regressor, 
                edges=args.edges, 
                heatmap=args.heatmap,

@@ -17,6 +17,7 @@ keyboard
 pupil-apriltags
 asyncua
 cloudinary
+keyboard
 
 --extra-index-url https://download.pytorch.org/whl/cu118
 torch 
