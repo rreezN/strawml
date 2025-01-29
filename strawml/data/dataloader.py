@@ -644,6 +644,13 @@ class Chute(torch.utils.data.Dataset):
                     Continuous:               {self.continuous}\n \
                     Class counts:             {self.class_counts}\n \
                         ')
+    
+    def save_distribution(self):
+        """Saves the distribution of the dataset to a file."""
+        with open('data_distribution.txt', 'w') as f:
+            f.write(f'Class distribution: {self.class_counts}')
+        
+        
 
 def plot_batch(data, labels, frame_start=0, mean=None, std=None, grey=False):
     data_num = data.shape[0]
@@ -786,21 +793,23 @@ if __name__ == '__main__':
     print("Extracting statistics for straw dataset with heatmaps and greyscale images")
     train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=False, inc_edges=False,
                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), 
-                         num_classes_straw=21, continuous=True, subsample=1.0, augment_probability=1.0, greyscale=False, balance_dataset=False)
+                         num_classes_straw=21, continuous=True, subsample=1.0, augment_probability=0.0, greyscale=False, balance_dataset=False)
+    # train_set.save_distribution()
     
-    print('Testing normalizing')
-    train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
-    for i, (data, target) in enumerate(train_loader):
-        # Print the data shape
-        print(f'Data shape: {data.shape}')
-        print(f'Target shape: {target.shape}')
+    
+    # print('Testing normalizing')
+    # train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
+    # for i, (data, target) in enumerate(train_loader):
+    #     # Print the data shape
+    #     print(f'Data shape: {data.shape}')
+    #     print(f'Target shape: {target.shape}')
         
-        # Print the mean and std of the data
-        print(f'Mean: {data.mean()}')
-        print(f'Std: {data.std()}')
-        print(f'Min: {data.min()}')
-        print(f'Max: {data.max()}')
-        plot_batch(data, target, i*8, train_set.train_mean, train_set.train_std, grey=train_set.greyscale)
+    #     # Print the mean and std of the data
+    #     print(f'Mean: {data.mean()}')
+    #     print(f'Std: {data.std()}')
+    #     print(f'Min: {data.min()}')
+    #     print(f'Max: {data.max()}')
+    #     plot_batch(data, target, i*8, train_set.train_mean, train_set.train_std, grey=train_set.greyscale)
     
     
     # for i in range(10):
@@ -810,12 +819,13 @@ if __name__ == '__main__':
     #     data, target = train_set[i]
     #     train_set.plot_data(frame_data=data, labels=target)
     
-    # mean, std = train_set.train_mean, train_set.train_std
-    # statistics = (mean, std)
-    # sensor_set = Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=False, inc_edges=True,
-    #                       random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), continuous=True, subsample=1.0,
-    #                       augment_probability=0, num_classes_straw=1, override_statistics=statistics, greyscale=True)
-    # sensor_loader = DataLoader(sensor_set, batch_size=8, shuffle=False, num_workers=0)
+    mean, std = train_set.train_mean, train_set.train_std
+    statistics = (mean, std)
+    sensor_set = Chute(data_path='data/processed/sensors_with_strawbbox.hdf5', data_type='test', inc_heatmap=False, inc_edges=False,
+                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), continuous=True, subsample=1.0,
+                          augment_probability=0, num_classes_straw=21, override_statistics=statistics, greyscale=False, balance_dataset=False, sensor=True)
+    sensor_set.save_distribution()
+    sensor_loader = DataLoader(sensor_set, batch_size=8, shuffle=False, num_workers=0)
     
     # for i, (data, target) in enumerate(sensor_loader):
     #     plot_batch(data, target, i*8, mean, std, grey=sensor_set.greyscale)
