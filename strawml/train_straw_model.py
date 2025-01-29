@@ -549,8 +549,8 @@ if __name__ == '__main__':
     
     # Is this how we want to do it?
     if args.hpc:
-        # user = 'davos'
-        user = 's194247'
+        user = 'davos'
+        # user = 's194247'
         path_to_data = f'/work3/{user}/data/'
         if not os.path.exists(path_to_data):
             raise FileNotFoundError(f'Path to data not found: {path_to_data}')

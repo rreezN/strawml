@@ -6,7 +6,7 @@
 #BSUB -gpu "num=1:mode=exclusive_process"
 #BSUB -n 4
 #BSUB -R "span[hosts=1]"
-#BSUB -R "rusage[mem=8G]"
+#BSUB -R "rusage[mem=16G]"
 #BSUB -W 24:00
 #BSUB -N 4
 # end of BSUB options
@@ -21,6 +21,6 @@ module load matplotlib/3.8.3-numpy-1.26.4-python-3.10.13
 
 # activate the virtual environment
 # NOTE: needs to have been built with the same numpy / SciPy  version as above!
-source venv/bin/activate
+source .venv/bin/activate
 
-python3 strawml/cross_validate_straw_model.py --model convnextv2 --image_size 384 384  --id v2_384 --data_subsample 1.0 --optim adam --augment_probability 0.0 --cont --use_wce --hpc --lr 0.00001 --epochs 20 --folds 4 --pretrained --data_path train.hdf5
+python3 strawml/cross_validate_straw_model.py --model convnext --balanced_dataset --image_size 672 208  --id v1_L_balanced --data_subsample 1.0 --optim adam --augment_probability 0.0 --cont --use_wce --hpc --lr 0.00001 --epochs 20 --folds 4 --pretrained --data_path train.hdf5

@@ -290,7 +290,8 @@ def image_extractor(video_folder: str,
 
 def hdf5_to_yolo(hdf5_file: str, 
                  sizes: list[float] = [0.8,0.1,0.1],
-                 annotation_types = ['bbox_chute', 'bbox_straw', 'bbox_straw', 'whole']
+                 annotation_types = ['bbox_chute', 'bbox_straw', 'bbox_straw', 'whole'],
+                 new_size: tuple[int] | None = None
 ) -> None:
     """
     Accomodates the conversion of the frames in the HDF5 file to the YOLO format. The function
@@ -412,6 +413,9 @@ def hdf5_to_yolo(hdf5_file: str,
                 # NOTE CASE 2: bbox_straw but with the whole image
                 ############################
                 elif annotation_types[-1] == 'whole':
+                    og_h, og_w = image.shape[:2]
+                    if new_size is not None:
+                        image = cv2.resize(image, new_size)
                     # Save the image to a file
                     cv2.imwrite(f'{save_path}/{key}/{frame}.jpg', image)
                     try:
@@ -424,6 +428,17 @@ def hdf5_to_yolo(hdf5_file: str,
                             pass
                         continue
                     
+                    # resize the bbox to the new size
+                    h_scale = new_size[0] / og_h
+                    w_scale = new_size[1] / og_w
+
+                    x1, y1, x2, y2, x3, y3, x4, y4 = bbox
+                    # resize the coordinates to the new image size
+                    h_scale = new_size[1] / og_h
+                    w_scale = new_size[0] / og_w
+                    x1, x2, x3, x4 = [x * w_scale for x in [x1, x2, x3, x4]]
+                    y1, y2, y3, y4 = [y * h_scale for y in [y1, y2, y3, y4]]
+                    bbox = np.array([x1, y1, x2, y2, x3, y3, x4, y4])
                     # normalize the bounding box coordinates to values between 0 and 1 
                     for j in range(len(bbox)):
                         bbox[j] /= image.shape[1] if j % 2 == 0 else image.shape[0]
@@ -438,10 +453,26 @@ def hdf5_to_yolo(hdf5_file: str,
                 ############################
                 else:
                     # Save the image to a file
+                    og_h, og_w = image.shape[:2]
+                    if new_size is not None:
+                        image = cv2.resize(image, new_size)
                     cv2.imwrite(f'{save_path}/{key}/{frame}.jpg', image)
                     for i, annotation_type in enumerate(annotation_types):
                         # Now we load the respective bounding boxes
                         bbox = hf[f"frame_{frame}"]['annotations'][annotation_type][...]
+
+                        # resize the bbox to the new size
+                        h_scale = new_size[0] / og_h
+                        w_scale = new_size[1] / og_w
+
+                        x1, y1, x2, y2, x3, y3, x4, y4 = bbox
+                        # resize the coordinates to the new image size
+                        h_scale = new_size[1] / og_h
+                        w_scale = new_size[0] / og_w
+                        x1, x2, x3, x4 = [x * w_scale for x in [x1, x2, x3, x4]]
+                        y1, y2, y3, y4 = [y * h_scale for y in [y1, y2, y3, y4]]
+                        bbox = np.array([x1, y1, x2, y2, x3, y3, x4, y4])
+
                         if len(bbox) == 0:
                             continue
                         # normalize the bounding box coordinates to values between 0 and 1 
@@ -825,7 +856,7 @@ def main(args: Namespace) -> None:
     elif args.mode == 'tree':
         print_hdf5_tree(args.hdf5_file)
     elif args.mode == 'h5_to_yolo':
-        hdf5_to_yolo(hdf5_file=args.hdf5_file, annotation_types = ['bbox_straw', 'whole'])
+        hdf5_to_yolo(hdf5_file=args.hdf5_file, annotation_types = ['bbox_chute'], new_size=(640,640))
     elif args.mode == 'place_digits':
         place_digits_on_chute_images()
     elif args.mode == 'timm':

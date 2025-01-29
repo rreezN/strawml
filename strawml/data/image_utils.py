@@ -1,8 +1,6 @@
 import cv2
 import numpy as np
 
-
-
 def rotate_point(x: float, 
                  y: float, 
                  cx: float, 
@@ -313,3 +311,82 @@ def create_random_permutations_with_repeats(data, labels, total_permutations, mi
         permutations.append((perm_data, perm_labels))
     
     return permutations
+
+
+def resize_all_images_in_dir(data_path, new_size=(640, 640)):
+    """
+    function that finds and resizes all images in a directory including subdirectories to a new size.
+    """
+
+    from pathlib import Path
+    from tqdm import tqdm
+    import os
+    # Get all image file paths
+    image_paths = list(Path(data_path).rglob("*.jpg"))
+    label_paths = list(Path(data_path).rglob("*.txt"))
+
+    og_w, og_h = 2560, 1440
+
+    def resize_bbox(label_path, og_w, og_h, new_size):
+        # we now take and resize the bounding box coordinates x1, y1, x2, y2, x3, y3, x4, y4, knowing they have been normalized with the original image size
+        with open(label_path, 'r') as f:
+            lines = f.readlines()
+        new_lines = []
+        for line in lines:
+            cls, x1, y1, x2, y2, x3, y3, x4, y4 = map(float, line.split())
+            # Unnormalize the bounding box coordinates to the original image size
+            x1, x2, x3, x4 = [x * og_w for x in [x1, x2, x3, x4]]
+            y1, y2, y3, y4 = [y * og_h for y in [y1, y2, y3, y4]]
+            # resize the coordinates to the new image size
+            h_scale = new_size[1] / og_h
+            w_scale = new_size[0] / og_w
+            x1, x2, x3, x4 = [x * w_scale for x in [x1, x2, x3, x4]]
+            y1, y2, y3, y4 = [y * h_scale for y in [y1, y2, y3, y4]]
+            # now we normalize the coordinates to the new image size
+            x1, x2, x3, x4 = [x / new_size[0] for x in [x1, x2, x3, x4]]
+            y1, y2, y3, y4 = [y / new_size[1] for y in [y1, y2, y3, y4]]
+            new_lines.append(f"{cls} {x1} {y1} {x2} {y2} {x3} {y3} {x4} {y4}\n")
+        with open(label_path, 'w') as f:
+            f.writelines(new_lines)
+
+    def resize_image(img_path, new_size):
+        img = cv2.imread(img_path)
+        # first check if the image is already the correct size
+        img = cv2.resize(img, new_size)
+        cv2.imwrite(img_path, img)
+
+    # Resize all images
+    for img_path, label_path in tqdm(zip(image_paths, label_paths)):
+        resize_image(img_path, new_size)
+        resize_bbox(label_path, og_w, og_h, new_size)
+
+def verify_resize(data_path):
+    from pathlib import Path
+    from tqdm import tqdm
+    import matplotlib.pyplot as plt
+    import random
+    # Get all image file paths
+    image_paths = list(Path(data_path).rglob("*.jpg"))
+    label_paths = list(Path(data_path).rglob("*.txt"))
+
+    for img_path, label_path in tqdm(zip(image_paths, label_paths)):
+        img = cv2.imread(str(img_path))
+        with open(label_path, 'r') as f:
+            lines = f.readlines()
+        for line in lines:
+            cls, x1, y1, x2, y2, x3, y3, x4, y4 = map(float, line.split())
+            # Unnormalize the bounding box coordinates to the image scale
+            x1, x2, x3, x4 = [x * img.shape[1] for x in [x1, x2, x3, x4]]
+            y1, y2, y3, y4 = [y * img.shape[0] for y in [y1, y2, y3, y4]]
+            x1, y1, x2, y2, x3, y3, x4, y4 = map(int, [x1, y1, x2, y2, x3, y3, x4, y4])
+            cv2.line(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.line(img, (x2, y2), (x3, y3), (0, 255, 0), 2)
+            cv2.line(img, (x3, y3), (x4, y4), (0, 255, 0), 2)
+            cv2.line(img, (x4, y4), (x1, y1), (0, 255, 0), 2)
+        plt.imshow(img)
+        plt.show()
+
+if __name__ == '__main__':
+    data_path = 'D:/HCAI/msc/strawml/data/processed/yolo_format_bbox_chute/train'
+    # resize_all_images_in_dir(data_path, new_size=(640, 640))
+    verify_resize(data_path)
