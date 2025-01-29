@@ -18,7 +18,7 @@ if __name__ == '__main__':
             data="data/processed/0_straw_data_whole.yaml",
             imgsz=640,
             epochs=300,
-            batch=32,
+            batch=8,
             lr0=0.0028194990107912573,
             optimizer="AdamW",
             device="cuda",

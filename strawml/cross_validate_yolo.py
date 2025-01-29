@@ -7,6 +7,7 @@ import random
 from ultralytics import YOLO
 import pickle
 from pathlib import Path
+from argparse import ArgumentParser, Namespace
 
 os.environ['WANDB_TIMEOUT'] = '60'
 
@@ -51,19 +52,21 @@ def train(sweep_data, dataset_yaml):
         config=config,
         reinit=True
     )
-    model.train(data=dataset_yaml, imgsz=config["imgsz"], epochs=5, batch=config["batch_size"], lr0=config["lr"], optimizer=config["optimizer"])
+    model.train(data=dataset_yaml, imgsz=config["imgsz"], epochs=30, batch=config["batch_size"], lr0=config["lr"], optimizer=config["optimizer"])
     run.finish()
     return model.metrics
 
 
-def main(data_path, n_folds):
+def main(data_path, n_folds, id):
     """
     Main function for running the sweep and performing k-fold cross-validation.
     """
     num_folds = min(n_folds, 5)
 
     # Initialize wandb sweep
-    sweep_id = "meliora/straw_project/872t9e6k"
+    # sweep_id = "meliora/straw_project/872t9e6k"
+    # sweep_id = f"meliora/straw_project/4ccyh2d4"
+    sweep_id = f"meliora/straw_project/{id}"
 
     # Define the agent function
     def agent_function():
@@ -94,18 +97,26 @@ def main(data_path, n_folds):
                 ds_yamls[num],
             )
 
-        # Save the metrics for this sweep run
-        with open(f"metrics_{sweep_run.id}.pkl", "wb") as f:
-            pickle.dump(metrics, f)
+        # # Save the metrics for this sweep run
+        # with open(f"metrics_{sweep_run.id}.pkl", "wb") as f:
+        #     pickle.dump(metrics, f)
         sweep_run.finish()
 
     # Launch the sweep agent
     wandb.agent(sweep_id, function=agent_function)
 
+def get_args() -> Namespace:
+    # Create the parser
+    parser = ArgumentParser()
+    # Add arguments to the parser
+    parser.add_argument('--path', type=str, default="/work3/s194247/yolo_format_bbox_straw_whole_5fold")
+    parser.add_argument('--n_folds', type=int, default=5)
+    parser.add_argument('--id', type=str, default="4ccyh2d4")
+
+    return parser.parse_args()
+
 
 if __name__ == "__main__":
-    data_path = Path(
-        "D:/HCAI/msc/strawml/data/processed/yolo_format_bbox_straw"
-    )
-    n_folds = 2
-    main(data_path, n_folds=n_folds)
+    args = get_args()
+    data_path = Path(args.path)
+    main(data_path = data_path, n_folds=args.n_folds, id=args.id)
