@@ -134,7 +134,7 @@ class AprilDetector:
         model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
         return model, image_size
 
-    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 3, num_neurons: int = 512) -> None:
+    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 0, num_neurons: int = 512) -> None:
         """Setup the regressor model."""
         if self.predictor_model != 'cnn':
             features = self.model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
@@ -1289,8 +1289,8 @@ def main(args: Namespace) -> None:
                yolo_straw=args.yolo_straw, 
                yolo_straw_model="models/obb_best_serene.pt",
                with_predictor=args.with_predictor, 
-               predictor_model='convnextv2', 
-               model_load_path='models/convnextv2_regressor/', 
+               predictor_model='convnext', 
+               model_load_path='models/convnext_regressor/', 
                regressor=args.regressor, 
                edges=args.edges, 
                heatmap=args.heatmap,
