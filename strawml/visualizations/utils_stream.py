@@ -14,6 +14,12 @@ import time
 from strawml.data.image_utils import SpecialRotate, rotate_point
 import h5py
 
+class TagInstance:
+    def __init__(self, tag_id, center):
+        self.tag_id = tag_id
+        self.center = center
+        self.type = 'inferred'
+
 class AprilDetectorHelpers:
     def __init__(self, april_detector_instance):
         self.ADI = april_detector_instance  # Store the main class instance (AprilDetectorInstances - ADI)
@@ -87,7 +93,7 @@ class AprilDetectorHelpers:
         """Classify detected tags into number tags and chute tags."""
         number_tags = []
         chute_tags = []
-        for tag in tags.values():
+        for _, tag in tags.items():
             if tag.tag_id in self.ADI.wanted_tags.values():
                 if tag.tag_id in range(11):  # IDs 0-10 are number tags
                     number_tags.append(tag)
@@ -98,11 +104,17 @@ class AprilDetectorHelpers:
     def _draw_tags(self, frame: np.ndarray, number_tags: list, chute_tags: list):
         """Draws number and chute tags on the frame."""
         for tag in number_tags + chute_tags:
-            corners = self._order_corners(tag.corners, tag.center)
-            color = (0, 255, 255) if tag in number_tags else (255, 0, 0)
-            cv2.polylines(frame, [corners.astype(np.int32)], True, color, 4, cv2.LINE_AA)
-            cv2.putText(frame, str(tag.tag_id), tuple(corners[0].astype(int)), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+            # check if .type is callable for the tag
+            if hasattr(tag, 'type'):
+                # since inferred tags don't have corners but only a center, we simply plot a fat a circle around the center
+                cv2.circle(frame, tuple(map(int, tag.center)), 10, (35, 165, 218), -1)
+                cv2.putText(frame, str(tag.tag_id), tuple(map(int, tag.center)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+            else:
+                corners = self._order_corners(tag.corners, tag.center)
+                color = (0, 255, 255) if tag in number_tags else (255, 0, 0)
+                cv2.polylines(frame, [corners.astype(np.int32)], True, color, 4, cv2.LINE_AA)
+                cv2.putText(frame, str(tag.tag_id), tuple(corners[0].astype(int)), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
         return frame
     
     def _get_tag_angle(self, chute_tags: list) -> float:
@@ -122,7 +134,7 @@ class AprilDetectorHelpers:
         perp_slope = -1 / (slope + 1e-6) # Avoid division by zero
         return np.arctan(perp_slope)
 
-    def _draw_level_lines(self, frame: np.ndarray, number_tags: list, chute_tags: list, straw_level: float):
+    def _draw_level_lines(self, frame: np.ndarray, number_tags: list, chute_tags: list):
         """Draws lines between number tags and chute tags indicating straw levels."""
         chute_right = [chute for chute in chute_tags if chute.tag_id not in [11, 12, 13, 14, 19, 20, 21, 22]]
         chute_left = [chute for chute in chute_tags if chute.tag_id in [11, 12, 13, 14, 19, 20, 21, 22]]
@@ -131,7 +143,7 @@ class AprilDetectorHelpers:
         tag_angle = self._get_tag_angle(chute_left) 
 
         for tag in number_tags:
-            level_center = self._get_right_side_center(tag)
+            level_center = tag.center #self._get_right_side_center(tag)
             closest_right_chute = self._find_closest_chute(level_center, chute_right)
             closest_left_chute = self._find_closest_chute(level_center, chute_left)
 
@@ -157,19 +169,17 @@ class AprilDetectorHelpers:
                 closest_tag = chute.center
         return closest_tag
 
-    def _get_right_side_center(self, tag: Any) -> Tuple[int, int]:
-        """Get the center of the right side of the tag."""
-        corners = self._order_corners(tag.corners, tag.center)
-        top_right = corners[1]
-        bottom_right = corners[2]
-        return (top_right + bottom_right) / 2
+    # def _get_right_side_center(self, tag: Any) -> Tuple[int, int]:
+    #     """Get the center of the right side of the tag."""
+    #     corners = self._order_corners(tag.corners, tag.center)
+    #     top_right = corners[1]
+    #     bottom_right = corners[2]
+    #     return (top_right + bottom_right) / 2
     
-    def _handle_cutouts(self, frame_drawn:  np.ndarray, frame: np.ndarray, chute_tags: list, use_cutout: bool):
+    def _handle_cutouts(self, frame_drawn:  np.ndarray, frame: np.ndarray, use_cutout: bool):
         """Handles creation of a cutout based on chute tags."""
-        tag_graph = TagGraphWithPositionsCV(self.ADI.tag_connections, chute_tags, self)
-        tag_graph.account_for_missing_tags()
-        overlay_frame = tag_graph.draw_overlay(frame_drawn)
-        cutout = tag_graph.crop_to_size(frame)
+        overlay_frame = self.ADI.tag_graph.draw_overlay(frame_drawn)
+        cutout = self.ADI.tag_graph.crop_to_size(frame)
         return (overlay_frame, cutout) if use_cutout else (overlay_frame, None)
 
     def _crop_to_bbox(self, frame, results):
@@ -269,7 +279,7 @@ class AprilDetectorHelpers:
         temp = copy.deepcopy(self.ADI.chute_numbers)
         sorted_chute_numbers = {k: v for k, v in sorted(temp.items(), key=lambda item: item[0])}
         prev_tag_id = None
-
+        
         # we run through the sorted chute numbers and check if there are any missing tags. All mising tags with a tag id between the two tags can be inferred.
         for tag_id, center in sorted_chute_numbers.items():
             if prev_tag_id is None:
@@ -279,8 +289,11 @@ class AprilDetectorHelpers:
                 print(f"Missing tag between {prev_tag_id} and {tag_id} ---- {tag_id - 1}")
                 # Infer the position of the missing tag by taking the mean of the two neighboring tags
                 inferred_position = (np.array(sorted_chute_numbers[prev_tag_id]) + np.array(center)) / 2
+                inferred_position = tuple(map(int, inferred_position))
                 self.ADI.lock.acquire()
                 self.ADI.chute_numbers[tag_id-1] = inferred_position
+                self.ADI.tags[tag_id-1] = TagInstance(tag_id-1, inferred_position)
+                self.ADI.inferred_tags.add(tag_id-1)
                 self.ADI.lock.release()
             prev_tag_id = tag_id
         
@@ -365,18 +378,20 @@ class AprilDetectorHelpers:
             return
         accumulated_error = 0
 
-        for t in self.ADI.tag_ids:
+        for t in list(self.ADI.tags.keys()):
             matching_tags = np.where(tag_ids == t)[0]
             if matching_tags.size == 0:
                 continue
 
             detected_tag = tags[matching_tags[0]]
             prev_tag = self.ADI.tags[t]
+            # now if prev_tag is a tuple continue, but if it is an object the ncall .center 
+            if isinstance(prev_tag, tuple):
+                prev_tag = {"center": prev_tag}
             accumulated_error += np.linalg.norm(np.array(detected_tag.center) - np.array(prev_tag.center))
         
         # First we make sure that the tags are not empty
-        # if len(self.ADI.tag_ids) != 0:
-        if accumulated_error / (len(self.ADI.tag_ids) + 1e-6) > 10: # Threshold for accumulated error is 10 pixels
+        if accumulated_error / (len(self.ADI.tags) + 1e-6) > 10: # Threshold for accumulated error is 10 pixels
             self._reset_tags()
 
     def _reset_tags(self) -> None:
@@ -384,7 +399,7 @@ class AprilDetectorHelpers:
         Resets the tag-related attributes to their initial states.
         """
         self.ADI.tags = {}
-        self.ADI.tag_ids = []
+        self.ADI.inferred_tags = set()
         self.ADI.chute_numbers = {}
 
     def _process_tags(self, tags: list, detected_tags: list, unique_tag_ids: set, offsets: Tuple[int, int] = (0, 0)) -> Tuple[list, set]:
@@ -411,11 +426,19 @@ class AprilDetectorHelpers:
             tag.corners[:, 0] += x_offset
             tag.corners[:, 1] += y_offset
 
-            if tag.tag_id not in self.ADI.tag_ids:
+
+            if tag.tag_id in self.ADI.inferred_tags:
+                self.ADI.inferred_tags.remove(tag.tag_id)
+                # remove it frame self.ADI.tags
+                if tag.tag_id in self.ADI.tags:
+                    del self.ADI.tags[tag.tag_id]
+                if tag.tag_id in self.ADI.chute_numbers:
+                    del self.ADI.chute_numbers[tag.tag_id]
+
+            if tag.tag_id not in self.ADI.tags:
                 if tag.tag_id in range(11):  # Chute numbers assumed to be tag IDs [0-10]
                     self.ADI.chute_numbers[tag.tag_id] = tag.center
                 self.ADI.tags[tag.tag_id] = tag
-                self.ADI.tag_ids = np.append(self.ADI.tag_ids, int(tag.tag_id))
 
             if tag.tag_id not in unique_tag_ids:
                 unique_tag_ids.add(tag.tag_id)
@@ -728,7 +751,7 @@ class TagGraphWithPositionsCV:
     applications without modification as it has hard-coded tag ids and corner tags.
     """
 
-    def __init__(self, connections, detected_tags, helpers):
+    def __init__(self, connections, helpers):
         """
         Class to represent a graph of connected tags with inferred positions for missing tags.
 
@@ -745,12 +768,28 @@ class TagGraphWithPositionsCV:
         """
         self.helpers = helpers
         self.connections = connections
-        self.detected_tags = {tag.tag_id: tuple(map(int, tag.center)) for tag in detected_tags}  # Detected tag positions
-        self.inferred_tags = {}  # Store inferred tag positions
+        self.detected_tags = {}  # Detected tag positions
+        self.inferred_tags = set()  # Store inferred tag positions
         self.corner_tags = set([11, 15, 26, 22])  # Store corner tags
         self.left_tags = set([12, 13, 14, 19, 20, 21])  # Store left tags
         self.right_tags = set([16, 17, 18, 23, 24, 25])  # Store right tags
-        
+        self.number_tags = set(list(range(11))) # Store number tags
+    
+    def update_init(self, detected_tags, inferred_tags):
+        # update detected tags and account for some might be objects and other tuples
+        self.detected_tags = detected_tags
+        self.inferred_tags = inferred_tags | self.inferred_tags
+        # for k,v in detected_tags.items():
+        #     if isinstance(v, tuple):
+        #         self.detected_tags[k] = v
+        #     elif isinstance(v, np.ndarray):
+        #         self.detected_tags[k] = tuple(map(int, v))
+        #     else:
+        #         self.detected_tags[k] = tuple(map(int, v.center))
+
+    def get_tags(self):
+        return self.detected_tags, self.inferred_tags
+
     def intersection_point(self, x1, y1, x2, y2, x3, y3):
         """
         Finds the intersection between a line created by two points (x1, y1) and (x2, y2) and a 
@@ -821,13 +860,22 @@ class TagGraphWithPositionsCV:
         Tuple
             The interpolated position (x, y)
         """
-        neighbor_positions = [self.detected_tags.get(n) for n in neighbor_ids if n in self.detected_tags]
+        def _helper_interpolate(p1, p2, p3):
+            c1 = self.detected_tags[p1].center
+            c2 = self.detected_tags[p2].center
+            cx = self.detected_tags[p3].center
+
+            x_value, y_value = self.intersection_point(c1[0], c1[1],
+                                                       c2[0], c2[1],
+                                                       cx[0], cx[1])
+            return x_value, y_value
+        neighbor_positions = [tuple(map(int, self.detected_tags[n].center)) for n in neighbor_ids if n in self.detected_tags]
         
         if not neighbor_positions:
             return None
         
         detected_tag_ids = set(list(self.detected_tags.keys()))
-
+        
         if is_corner:
             if tag_id == 11:
                 try:
@@ -836,12 +884,7 @@ class TagGraphWithPositionsCV:
                         return None
                     p1 = intersection[0]
                     p2 = intersection[1]
-                    x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
-                                                               self.detected_tags[p1][1], 
-                                                               self.detected_tags[p2][0], 
-                                                               self.detected_tags[p2][1], 
-                                                               self.detected_tags[15][0], 
-                                                               self.detected_tags[15][1])
+                    x_value, y_value = _helper_interpolate(p1, p2, 15)
                 except KeyError:
                     return None
             if tag_id == 15:
@@ -851,12 +894,7 @@ class TagGraphWithPositionsCV:
                         return None
                     p1 = intersection[0]
                     p2 = intersection[1]
-                    x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
-                                                               self.detected_tags[p1][1], 
-                                                               self.detected_tags[p2][0], 
-                                                               self.detected_tags[p2][1], 
-                                                               self.detected_tags[11][0], 
-                                                               self.detected_tags[11][1])
+                    x_value, y_value = _helper_interpolate(p1, p2, 11)
                 except KeyError:
                     return None
             if tag_id == 22:
@@ -866,12 +904,7 @@ class TagGraphWithPositionsCV:
                         return None
                     p1 = intersection[0]
                     p2 = intersection[1]
-                    x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
-                                                               self.detected_tags[p1][1], 
-                                                               self.detected_tags[p2][0], 
-                                                               self.detected_tags[p2][1], 
-                                                               self.detected_tags[26][0], 
-                                                               self.detected_tags[26][1])
+                    x_value, y_value = _helper_interpolate(p1, p2, 26)
                 except KeyError:
                     return None
             if tag_id == 26:
@@ -881,13 +914,7 @@ class TagGraphWithPositionsCV:
                         return None
                     p1 = intersection[0]
                     p2 = intersection[1]
-
-                    x_value, y_value = self.intersection_point(self.detected_tags[p1][0], 
-                                                               self.detected_tags[p1][1], 
-                                                               self.detected_tags[p2][0], 
-                                                               self.detected_tags[p2][1], 
-                                                               self.detected_tags[22][0], 
-                                                               self.detected_tags[22][1])
+                    x_value, y_value = _helper_interpolate(p1, p2, 22)
                 except KeyError:
                     return None
             return (int(x_value), int(y_value))
@@ -913,16 +940,16 @@ class TagGraphWithPositionsCV:
                 is_corner = tag1 in self.corner_tags
                 inferred_position = self.interpolate_position(tag1, neighbors, is_corner)
                 if inferred_position:
-                    self.detected_tags[tag1] = inferred_position
-                    self.inferred_tags[tag1] = inferred_position
+                    self.detected_tags[tag1] = TagInstance(tag1, inferred_position)
+                    self.inferred_tags.add(tag1)
 
             if tag2 not in self.detected_tags:
                 neighbors = [n2 if n1 == tag2 else n1 for n1, n2 in self.connections if tag2 in (n1, n2)]
                 is_corner = tag2 in self.corner_tags
                 inferred_position = self.interpolate_position(tag2, neighbors, is_corner)
                 if inferred_position:
-                    self.detected_tags[tag2] = inferred_position
-                    self.inferred_tags[tag2] = inferred_position
+                    self.detected_tags[tag2] = TagInstance(tag2, inferred_position)
+                    self.inferred_tags.add(tag2)
 
     def crop_to_size(self, image):
         """
@@ -941,37 +968,33 @@ class TagGraphWithPositionsCV:
         np.ndarray
             The cropped image
         """
-        # see if tag 11, 15, 22, 26 are detected
-        if 11 not in self.detected_tags or 15 not in self.detected_tags or 22 not in self.detected_tags or 26 not in self.detected_tags:
+        # Check if all required tags are detected
+        tag_ids = [11, 15, 22, 26]
+        if not all(tag in self.detected_tags for tag in tag_ids):
             return None
-        
-        # now we use the coordinates of the detected tags to crop the image
-        x1, y1 = self.detected_tags[11][0], self.detected_tags[11][1]
-        x2, y2 = self.detected_tags[15][0], self.detected_tags[15][1]
-        x3, y3 = self.detected_tags[22][0], self.detected_tags[22][1]
-        x4, y4 = self.detected_tags[26][0], self.detected_tags[26][1]
 
-        pts_src = np.array([[x1, y1], [x2, y2], [x3, y3], [x4, y4]], dtype='float32')
+        # Extract and process tag coordinates
+        pts_src = np.array([
+            tuple(map(int, self.detected_tags[tag].center)) for tag in tag_ids
+        ], dtype='float32')
 
-        # Ensure the output is a rectangular
-        width = max(abs(x2 - x1), abs(x4 - x3))  # Largest horizontal difference
-        height = max(abs(y3 - y1), abs(y4 - y2)) # Largest vertical difference
+        # Ensure output is a rectangle
+        x_vals, y_vals = pts_src[:, 0], pts_src[:, 1]
+        width = int(max(abs(x_vals[1] - x_vals[0]), abs(x_vals[3] - x_vals[2])))
+        height = int(max(abs(y_vals[2] - y_vals[0]), abs(y_vals[3] - y_vals[1])))
 
-        # Define the destination points for the square output
+        # Define destination points for transformation
         pts_dst = np.array([[0, 0], 
                             [width - 1, 0], 
                             [0, height - 1], 
-                            [width - 1, height - 1]]
-                            , dtype='float32')
-        # Compute the perspective transformation matrix
+                            [width - 1, height - 1]], dtype='float32')
+
+        # Compute and apply perspective transformation
         if self._is_valid_quadrilateral(pts_src) and self._is_valid_quadrilateral(pts_dst):
-            # Compute the perspective transformation matrix
             M = cv2.getPerspectiveTransform(pts_src, pts_dst)
-            # Apply the perspective warp to create a square cutout
-            cutout = cv2.warpPerspective(image, M, (width, height))
-            return np.array(cutout)
-        else:
-            return None
+            return np.array(cv2.warpPerspective(image, M, (width, height)))
+
+        return None
     
     def draw_overlay(self, image):
         """
@@ -982,6 +1005,13 @@ class TagGraphWithPositionsCV:
             # Get the positions of the two tags
             pos1 = self.detected_tags.get(tag1)
             pos2 = self.detected_tags.get(tag2)
+            if pos1 is None or pos2 is None:
+                continue
+            # if they are not tuples then they are objects
+            if type(pos1) != tuple:
+                pos1 = tuple(map(int, pos1.center))
+            if type(pos2) != tuple:
+                pos2 = tuple(map(int, pos2.center))
 
             if pos1 and pos2:
                 # Draw circles at the tag positions

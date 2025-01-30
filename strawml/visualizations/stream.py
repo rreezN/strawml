@@ -26,7 +26,7 @@ from strawml.models.chute_finder.yolo import ObjectDetect
 from strawml.data.make_dataset import decode_binary_image
 import strawml.models.straw_classifier.cnn_classifier as cnn
 import strawml.models.straw_classifier.feature_model as feature_model
-from strawml.visualizations.utils_stream import AprilDetectorHelpers, AsyncStreamThread, time_function
+from strawml.visualizations.utils_stream import AprilDetectorHelpers, AsyncStreamThread, time_function, TagGraphWithPositionsCV
 
 class AprilDetector:
     """
@@ -39,7 +39,6 @@ class AprilDetector:
     """
     def __init__(self, detector: pupil_apriltags.bindings.Detector, ids: dict, window: bool=False, od_model_name=None, object_detect=True, yolo_threshold=0.5, device="cuda", frame_shape: tuple = (1440, 2560), yolo_straw=False, yolo_straw_model="models/yolov11-straw-detect-obb.pt", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False) -> None:
         self.helpers = AprilDetectorHelpers(self)  # Instantiate the helper class
-
         self.lock = threading.Lock()
         self.detector = detector
         self.ids = ids
@@ -61,12 +60,13 @@ class AprilDetector:
         self.fx, self.fy, self.cx, self.cy = None, None, None, None
         self.camera_params = self.helpers._load_camera_params()
         self.tags = {}
-        self.tag_ids = np.array([])
         self.chute_numbers = {}
         self.tag_connections = self.helpers._get_tag_connections()
         self.processed_tags = set()  # Track tags that have already been re-centered
+        self.inferred_tags = set()
         self.detected_tags = []
         self.object_detect = object_detect
+        self.tag_graph = TagGraphWithPositionsCV(self.tag_connections, self.helpers)
 
         # Setup object detection if enabled
         if self.object_detect:
@@ -205,6 +205,7 @@ class AprilDetector:
         """
         Detects AprilTags in a frame, performs refined detection for precision, and handles deduplication.
         """
+
         detected_tags = []  # This will hold tags with original coordinates
         unique_tag_ids = set()  # Set to track unique tags in detected_tags
         tags = self.detector.detect(frame)
@@ -221,16 +222,22 @@ class AprilDetector:
             refined_tags, x_start, y_start = self.helpers._refine_detection(frame, tag, margin=150)
             # Process the refined tags and update state
             detected_tags, unique_tag_ids = self.helpers._process_tags(refined_tags, detected_tags, unique_tag_ids, offsets=(x_start, y_start))
-        
         # Infer missing tags and update state
         self.helpers._account_for_missing_tags_in_chute_numbers()
         # Look for changes in the chute numbers and reset if necessary
         self.helpers._check_for_changes(detected_tags)
         # Clear the processed tags set for the next frame
         self.processed_tags.clear()
+        # update the tag graph
+        self.tag_graph.update_init(self.tags, self.inferred_tags)
+        # account for missing numbers in the tag graph
+        self.tag_graph.account_for_missing_tags()
+        # extract the tags from the tag graph
+        self.tags, self.inferred_tags = self.tag_graph.get_tags()
+        if testing:
+            return detected_tags, self.tags, self.inferred_tags
 
-
-    def draw(self, frame: np.ndarray, tags: list, make_cutout: bool = False, straw_level: float = 25, use_cutout=False) -> np.ndarray:
+    def draw(self, frame: np.ndarray, tags: list, make_cutout: bool = False, use_cutout=False) -> np.ndarray:
         """
         Draws detected AprilTags on the frame with visual enhancements like lines indicating straw levels.
         Optionally creates a cutout of the processed frame.
@@ -259,15 +266,16 @@ class AprilDetector:
             if len(number_tags) == 0 or len(chute_tags) == 0:
                 return frame, None
             frame_ = frame.copy()
+            
             # Step 2: Draw detected tags on the frame
             frame_drawn = self.helpers._draw_tags(frame, number_tags, chute_tags)
-            
+
             # Step 3: Draw straw level lines between number tags and chute tags
-            frame_drawn = self.helpers._draw_level_lines(frame_drawn, number_tags, chute_tags, straw_level)
-            
+            frame_drawn = self.helpers._draw_level_lines(frame_drawn, number_tags, chute_tags)
+
             # Step 4: Optionally create and return the cutout
             if make_cutout:
-                return self.helpers._handle_cutouts(frame_drawn, frame_, chute_tags, use_cutout)
+                return self.helpers._handle_cutouts(frame_drawn, frame_, use_cutout)
             return frame_drawn, None        
         except Exception as e:
             print(f"ERROR in draw: {e}")
@@ -366,23 +374,40 @@ class RTSPStream(AprilDetector):
             self.information["april"]["text"] = f'(T3) AprilTag Time: {end - start:.2f} s' 
 
     def test_april_detector(self, video_path: list[str]) -> None:
-        
-        
         for path in video_path:
-            with h5py.File(path, 'r') as hf:
-                timestamps = list(hf.keys())
+            self._setup_display()
+            if path.endswith(".mp4"):
+                ...
+            elif path.endswith(".hdf5"):
+                with h5py.File(path, 'r') as hf:
+                    timestamps = list(hf.keys())
 
-                if "frame" == timestamps[0].split("_")[0]:
-                    timestamps = sorted(timestamps, key=lambda x: int(x.split('_')[1]))
-                else:
-                    timestamps = sorted(timestamps, key=lambda x: float(x))
+                    if "frame" == timestamps[0].split("_")[0]:
+                        timestamps = sorted(timestamps, key=lambda x: int(x.split('_')[1]))
+                    else:
+                        timestamps = sorted(timestamps, key=lambda x: float(x))
 
-                for timestamp in timestamps:
-                    frame = hf[timestamp]['image'][()]
-                    frame = decode_binary_image(frame)
-                    # change from bgr to rgb
-                    _, duration = time_function(self.detect, frame, True)
-                    self.information["april"]["text"] = f'(T3) AprilTag Time: {duration:.2f} s' 
+                    for timestamp in timestamps:
+                        frame = hf[timestamp]['image'][()]
+                        frame = decode_binary_image(frame)
+                        # change from bgr to rgb
+                        frame_ = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                        results, duration = time_function(self.detect, frame_, True)
+                        found_tags, existing_tags, inferred_tags = results
+                        self.information["april"]["text"] = f'(T3) AprilTag Time: {duration:.2f} s' 
+                        frame_drawn, _ = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
+                        self._display_frame(frame_drawn)
+
+                        print("ehhhhh: ", sorted(list(self.chute_numbers.keys())))
+                        print("Found tags: ", sorted([tag.tag_id for tag in found_tags]))
+                        print("Existing tags: ", sorted(list(existing_tags.keys())))
+                        print("Inferred tags: ", sorted(list(self.inferred_tags)))
+                        remain_set = set(sorted([tag.tag_id for tag in found_tags] + list(self.inferred_tags))) - set(range(27))
+                        if len(remain_set) > 0:
+                            print("Not found tags: ", list(remain_set))
+                        print("----------------------------------------------------")
+
+                        # self.helpers._reset_tags()
         
         
     def display_frame(self) -> None:
@@ -635,7 +660,7 @@ class RTSPStream(AprilDetector):
                 return
         
         # If not tags have been found we go to the next frame
-        if len(self.tag_ids) == 0:
+        if len(self.tags) == 0:
             self._display_frame(frame_drawn)
             return
         
@@ -654,7 +679,7 @@ class RTSPStream(AprilDetector):
 
     def _process_hdf5_frame_with_yolo_and_predictor(self, frame, frame_drawn, cutout, hf, path, timestamp, frame_time) -> None:
         # If not tags have been found we go to the next frame
-        if len(self.tag_ids) == 0:
+        if len(self.tags) == 0:
             self._display_frame(frame_drawn)
             return
 
@@ -788,7 +813,7 @@ class RTSPStream(AprilDetector):
             frame_drawn, cutout = frame, None
         
         # If not tags have been found we go to the next frame
-        if len(self.tag_ids) == 0:
+        if len(self.tags) == 0:
             self._display_frame(frame_drawn)
             return
         
@@ -798,7 +823,6 @@ class RTSPStream(AprilDetector):
             try:
                 sensor_scada_data = self.scada_thread.get_recent_value()
                 line_start, line_end, sensor_scada_data, scada_pixel_values = self._retrieve_scada_data(sensor_scada_data)
-                
                 self.recording_req =  (frame_time - self.since_last_save >= self.record_threshold)
                 if self.recording_req and scada_pixel_values[0] is not None:
                     self.prediction_dict = {}
@@ -926,7 +950,10 @@ class RTSPStream(AprilDetector):
             else:
                 straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level(frame_drawn, output)
 
-            self.information["yolo_level"]["text"] = f'(T2) YOLO Level: {straw_level:.2f} %'
+            if straw_level is None:
+                self.information["yolo_level"]["text"] = f'(T2) YOLO Level: NA'
+            else:
+                self.information["yolo_level"]["text"] = f'(T2) YOLO Level: {straw_level:.2f} %'
             # Smooth the data
             if self.smoothing:
                 straw_level = self.helpers._smooth_level(straw_level, 'yolo', time_stamp = time_stamp)
@@ -1108,15 +1135,18 @@ class RTSPStream(AprilDetector):
             Nothing is returned, only the frames are displayed with the detected AprilTags
         """
         if frame is None:
-            if video_path[0]:
+            if video_path is not None:
                 import os
                 # make sure the video paths in video path list exists
                 for vp in video_path:
                     if not os.path.exists(vp):
                         print(f"The video path '{vp}' does not exist.")
                         return
+                        
+                if self.mode == 'april_testing':
+                    self.test_april_detector(video_path)
                 # Check if the file mp4 or hdf5
-                if video_path[0].endswith('.mp4'):
+                elif video_path[0].endswith('.mp4'):
                     self.cap = cv2.VideoCapture(video_path[0])
                     print("START: Videofile loaded")
                     if self.detect_april:
@@ -1127,17 +1157,15 @@ class RTSPStream(AprilDetector):
                         self.scada_thread = AsyncStreamThread(server_keys='data/opcua_server.txt')
                         self.scada_thread.start()
                         self.threads.append(self.scada_thread)
-                    self.display_frame_from_videofile()
+                    threading.Thread(target=self.display_frame_from_videofile).start()
+                    # self.display_frame_from_videofile()
                 elif video_path[0].endswith('.hdf5'):
-                    print("START: hdf5 File loading...")
-                    if self.mode == 'april_testing':
-                        self.test_april_detector(video_path)
-                    else:
-                        if self.detect_april:
-                            self.thread1 = threading.Thread(target=self.find_tags)
-                            self.thread1.start()
-                            self.threads.append(self.thread1)
-                        self.display_frame_from_hdf5(video_path)
+                    if self.detect_april:
+                        self.thread1 = threading.Thread(target=self.find_tags)
+                        self.thread1.start()
+                        self.threads.append(self.thread1)
+                    threading.Thread(target=self.display_frame_from_hdf5, args=(video_path,)).start()
+                    # self.display_frame_from_hdf5(video_path)
                 else:
                     raise ValueError("The file type is not supported. Please provide a .mp4 or .hdf5 file.")
                 while True:
@@ -1266,7 +1294,7 @@ def main(args: Namespace) -> None:
         args.regressor = True
         args.object_detect = True
         if args.video_path is None:
-            raise ValueError("The video_path must be provided for the FPS test.")
+            raise ValueError("The video_path must be provided for the file predict.")
         print(f"NOTE. **hdf5_model_save_name** is only used when the video_path leads to an hdf5 file.")
     elif args.mode == 'record':
         if args.yolo_straw == False and args.with_predictor == False:
@@ -1288,7 +1316,9 @@ def main(args: Namespace) -> None:
         args.make_cutout = True
         if args.video_path is None:
             raise ValueError("The video_path must be provided for the AprilTag Detector test.")
-        
+    
+    if len(args.video_path) == 0:
+        args.video_path = None
         
     with open("fiducial_marker/april_config.json", "r") as file:
         config = json.load(file)
