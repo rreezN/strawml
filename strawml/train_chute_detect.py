@@ -6,7 +6,6 @@ from wandb.integration.ultralytics import add_wandb_callback
 
 # Load a pre-trained YOLOv10s model
 model = YOLO("models/yolo11s-obb.pt")
-model.amp = False
 model.to("cuda")
 wandb.init(project="yolov-final-runs", entity='meliora')
 add_wandb_callback(model)
@@ -16,10 +15,10 @@ if __name__ == '__main__':
     # train the model on our own dataset
     model.train(
             data="data/processed/0_straw_data_whole.yaml",
-            imgsz=640,
+            imgsz=608,
             epochs=300,
-            batch=8,
-            lr0=0.0028194990107912573,
+            batch=14,
+            lr0=0.0051874277583658784,
             optimizer="AdamW",
             device="cuda",
             hsv_h=0.015,
