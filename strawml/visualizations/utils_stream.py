@@ -880,7 +880,7 @@ class TagGraphWithPositionsCV:
             if tag_id == 11:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.left_tags))
-                    if len(intersection) == 0:
+                    if len(intersection) != 2:
                         return None
                     p1 = intersection[0]
                     p2 = intersection[1]
@@ -890,7 +890,7 @@ class TagGraphWithPositionsCV:
             if tag_id == 15:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.right_tags))
-                    if len(intersection) == 0:
+                    if len(intersection) != 2:
                         return None
                     p1 = intersection[0]
                     p2 = intersection[1]
@@ -900,7 +900,7 @@ class TagGraphWithPositionsCV:
             if tag_id == 22:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.left_tags))[::-1]
-                    if len(intersection) == 0:
+                    if len(intersection) != 2:
                         return None
                     p1 = intersection[0]
                     p2 = intersection[1]
@@ -910,7 +910,7 @@ class TagGraphWithPositionsCV:
             if tag_id == 26:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.right_tags))[::-1]
-                    if len(intersection) == 0:
+                    if len(intersection) != 2:
                         return None
                     p1 = intersection[0]
                     p2 = intersection[1]

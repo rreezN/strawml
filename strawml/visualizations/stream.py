@@ -290,7 +290,7 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False, smoothing:bool=True, save_as_new_hdf5: bool=True, process_like_recording:bool=True, with_annotations:bool=False, fps_test:bool=False, hdf5_model_save_name:str | None = None, mode: str | None = None) -> None:
+    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False, smoothing:bool=True, save_as_new_hdf5: bool=True, process_like_recording:bool=True, with_annotations:bool=False, fps_test:bool=False, hdf5_model_save_name:str | None = None, mode: str | None = None, carry_over: bool = True) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, yolo_straw=yolo_straw, yolo_straw_model=yolo_straw_model, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         self.record = record
         self.save_as_new_hdf5 = save_as_new_hdf5
@@ -324,6 +324,7 @@ class RTSPStream(AprilDetector):
         self.information = self.helpers._initialize_information_dict()
         self.last_save_timestamp = 0
         self.mode = mode
+        self.carry_over = carry_over
         
     def create_capture(self, credentials_path: str) -> cv2.VideoCapture:
         """
@@ -387,7 +388,7 @@ class RTSPStream(AprilDetector):
                     else:
                         timestamps = sorted(timestamps, key=lambda x: float(x))
 
-                    for timestamp in timestamps:
+                    for timestamp in tqdm(timestamps):
                         frame = hf[timestamp]['image'][()]
                         frame = decode_binary_image(frame)
                         # change from bgr to rgb
@@ -398,17 +399,22 @@ class RTSPStream(AprilDetector):
                         frame_drawn, _ = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
                         self._display_frame(frame_drawn)
 
-                        print("ehhhhh: ", sorted(list(self.chute_numbers.keys())))
-                        print("Found tags: ", sorted([tag.tag_id for tag in found_tags]))
-                        print("Existing tags: ", sorted(list(existing_tags.keys())))
-                        print("Inferred tags: ", sorted(list(self.inferred_tags)))
+                        # print("Found tags: ", sorted([tag.tag_id for tag in found_tags]))
+                        # print("Existing tags: ", sorted(list(existing_tags.keys())))
+                        # print("Inferred tags: ", sorted(list(self.inferred_tags)))
+                        # if len(remain_set) > 0:
+                        #     print("Not found tags: ", list(remain_set))
+                        # print("----------------------------------------------------")
                         remain_set = set(sorted([tag.tag_id for tag in found_tags] + list(self.inferred_tags))) - set(range(27))
-                        if len(remain_set) > 0:
-                            print("Not found tags: ", list(remain_set))
-                        print("----------------------------------------------------")
+                        save_dict = {timestamp : {"carry_over": self.carry_over,"found_tags": sorted([tag.tag_id for tag in found_tags]), "existing_tags": sorted(list(existing_tags.keys())), "inferred_tags": sorted(list(self.inferred_tags)), "not_found_tags": list(remain_set)}}
+                        # write save_dict to a new line in a file
 
-                        # self.helpers._reset_tags()
-        
+                        file_name = f"data/{'carry_over' if self.carry_over else 'no_carry_over'}_april_tag_testing.json"
+                        with open(file_name, "a") as file:
+                            file.write(json.dumps(save_dict) + "\n")
+    
+                        if not self.carry_over:
+                            self.helpers._reset_tags()
         
     def display_frame(self) -> None:
         """
@@ -961,20 +967,21 @@ class RTSPStream(AprilDetector):
                     self.information["yolo_smooth"]["text"] = f'(T2) Smoothed Straw Level: NA'
                 else:
                     self.information["yolo_smooth"]["text"] = f'(T2) Smoothed Straw Level: {straw_level:.2f} %'
-            
-            # Since the new straw level might be a smoothed value, we need to update the pixel values of the straw level. We do this everytime to ensure that the overlay is based on the same pixel values all the time. Otherwise the overlay would shift from being based on the bbox pixel values vs. based on the tags.
-            x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
-            if x_pixel is None:
-                return frame_drawn
-            
-            # Define the overlay lines and orientation
-            line_start = (int(x_pixel), int(y_pixel))
-            line_end = (int(x_pixel) + 300, int(y_pixel))
-            angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
-            line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-            
-            # Plot the line on the frame
-            frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level, self.yolo_color)
+
+            if straw_level is not None:
+                # Since the new straw level might be a smoothed value, we need to update the pixel values of the straw level. We do this everytime to ensure that the overlay is based on the same pixel values all the time. Otherwise the overlay would shift from being based on the bbox pixel values vs. based on the tags.
+                x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
+                if x_pixel is None:
+                    return frame_drawn
+                
+                # Define the overlay lines and orientation
+                line_start = (int(x_pixel), int(y_pixel))
+                line_end = (int(x_pixel) + 300, int(y_pixel))
+                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+                
+                # Plot the line on the frame
+                frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level, self.yolo_color)
 
             if self.recording_req:
                 # Get coordiantes for the original data
@@ -1144,7 +1151,7 @@ class RTSPStream(AprilDetector):
                         return
                         
                 if self.mode == 'april_testing':
-                    self.test_april_detector(video_path)
+                    threading.Thread(target=self.test_april_detector, args=(video_path,)).start()
                 # Check if the file mp4 or hdf5
                 elif video_path[0].endswith('.mp4'):
                     self.cap = cv2.VideoCapture(video_path[0])
@@ -1239,6 +1246,7 @@ def get_args() -> Namespace:
     parser.add_argument('--fps_test', action='store_true', help='Run the FPS test.')
     parser.add_argument('--hdf5_model_save_name', type=str, default=None, help='The name of the model to save the predictions.')
     parser.add_argument('-vp', '--video_path', nargs='+', default=[], help='The path to the video file(s).')
+    parser.add_argument('--carry_over', action='store_true', help='Carry over AprilTag Detection to the next frame')
     return parser.parse_args()
     # python .\strawml\visualizations\stream.py file_predict --smoothing --save_as_new_hdf5 --process_like_recording --video_path data/predictions/recording_rotated_all_frames.hdf5
 def main(args: Namespace) -> None:
@@ -1362,7 +1370,8 @@ def main(args: Namespace) -> None:
                with_annotations=args.with_annotations, 
                fps_test=args.fps_test, 
                hdf5_model_save_name = args.hdf5_model_save_name,
-               mode=args.mode# Only used when a single model is used for predictions
+               mode=args.mode, # Only used when a single model is used for predictions
+               carry_over=args.carry_over, # Only used when the carry over during april testing i needed
             )(video_path=args.video_path)
 
     # # ### YOLO PREDICTOR STREAM
