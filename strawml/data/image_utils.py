@@ -360,7 +360,7 @@ def resize_all_images_in_dir(data_path, new_size=(640, 640)):
         resize_image(img_path, new_size)
         resize_bbox(label_path, og_w, og_h, new_size)
 
-def verify_resize(data_path):
+def verify_resize(data_path, stats=False, plot=False):
     from pathlib import Path
     from tqdm import tqdm
     import matplotlib.pyplot as plt
@@ -368,25 +368,63 @@ def verify_resize(data_path):
     # Get all image file paths
     image_paths = list(Path(data_path).rglob("*.jpg"))
     label_paths = list(Path(data_path).rglob("*.txt"))
-
-    for img_path, label_path in tqdm(zip(image_paths, label_paths)):
+    n = len(image_paths)
+    if stats:
+        x1s, x2s, x3s, x4s = [], [], [], []
+        y1s, y2s, y3s, y4s = [], [], [], []
+    for img_path, label_path in tqdm(zip(image_paths, label_paths), total=n):
+        
         img = cv2.imread(str(img_path))
         with open(label_path, 'r') as f:
             lines = f.readlines()
-        for line in lines:
-            cls, x1, y1, x2, y2, x3, y3, x4, y4 = map(float, line.split())
-            # Unnormalize the bounding box coordinates to the image scale
-            x1, x2, x3, x4 = [x * img.shape[1] for x in [x1, x2, x3, x4]]
-            y1, y2, y3, y4 = [y * img.shape[0] for y in [y1, y2, y3, y4]]
-            x1, y1, x2, y2, x3, y3, x4, y4 = map(int, [x1, y1, x2, y2, x3, y3, x4, y4])
-            cv2.line(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.line(img, (x2, y2), (x3, y3), (0, 255, 0), 2)
-            cv2.line(img, (x3, y3), (x4, y4), (0, 255, 0), 2)
-            cv2.line(img, (x4, y4), (x1, y1), (0, 255, 0), 2)
-        plt.imshow(img)
+        if plot:
+            for line in lines:
+                cls, x1, y1, x2, y2, x3, y3, x4, y4 = map(float, line.split())
+                # Unnormalize the bounding box coordinates to the image scale
+                x1, x2, x3, x4 = [x * img.shape[1] for x in [x1, x2, x3, x4]]
+                y1, y2, y3, y4 = [y * img.shape[0] for y in [y1, y2, y3, y4]]
+                x1, y1, x2, y2, x3, y3, x4, y4 = map(int, [x1, y1, x2, y2, x3, y3, x4, y4])
+                cv2.line(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.line(img, (x2, y2), (x3, y3), (0, 255, 0), 2)
+                cv2.line(img, (x3, y3), (x4, y4), (0, 255, 0), 2)
+                cv2.line(img, (x4, y4), (x1, y1), (0, 255, 0), 2)
+            plt.imshow(img)
+            plt.show()
+        elif stats:
+            for line in lines:
+                cls, x1, y1, x2, y2, x3, y3, x4, y4 = map(float, line.split())
+                # add the coordinates to the lists
+                x1s.append(x1)
+                x2s.append(x2)
+                x3s.append(x3)
+                x4s.append(x4)
+                y1s.append(y1)
+                y2s.append(y2)
+                y3s.append(y3)
+                y4s.append(y4)
+    if stats:
+        # plot the histograms of the coordinates
+        fig, axs = plt.subplots(2, 4, figsize=(20, 10))
+        axs[0, 0].hist(x1s, bins=50)
+        axs[0, 0].set_title('x1')
+        axs[0, 1].hist(x2s, bins=50)
+        axs[0, 1].set_title('x2')
+        axs[0, 2].hist(x3s, bins=50)
+        axs[0, 2].set_title('x3')
+        axs[0, 3].hist(x4s, bins=50)
+        axs[0, 3].set_title('x4')
+        axs[1, 0].hist(y1s, bins=50)
+        axs[1, 0].set_title('y1')
+        axs[1, 1].hist(y2s, bins=50)
+        axs[1, 1].set_title('y2')
+        axs[1, 2].hist(y3s, bins=50)
+        axs[1, 2].set_title('y3')
+        axs[1, 3].hist(y4s, bins=50)
+        axs[1, 3].set_title('y4')
         plt.show()
 
+
 if __name__ == '__main__':
-    data_path = 'D:/HCAI/msc/strawml/data/processed/yolo_format_bbox_chute/train'
+    data_path = 'D:/HCAI/msc/strawml/data/processed/yolo_format_bbox_straw_5fold/split_2'
     # resize_all_images_in_dir(data_path, new_size=(640, 640))
-    verify_resize(data_path)
+    verify_resize(data_path, stats=False, plot=True)
