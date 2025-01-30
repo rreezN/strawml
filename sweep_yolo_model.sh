@@ -2,7 +2,7 @@
 #BSUB -J yolo_sweeper_chute
 #BSUB -o yolo_sweeper_chute%J.out
 #BSUB -e yolo_sweeper_chute%J.err
-#BSUB -q gpua40
+#BSUB -q gpuv100
 #BSUB -gpu "num=1:mode=exclusive_process"
 #BSUB -n 4
 #BSUB -R "span[hosts=1]"
