@@ -134,7 +134,7 @@ class AprilDetector:
         model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
         return model, image_size
 
-    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 3, num_neurons: int = 512) -> None:
+    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 0, num_neurons: int = 512) -> None:
         """Setup the regressor model."""
         if self.predictor_model != 'cnn':
             features = self.model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
@@ -201,7 +201,7 @@ class AprilDetector:
         """
         return self.OD.classes[int(x)]
 
-    def detect(self, frame: np.ndarray) -> list:
+    def detect(self, frame: np.ndarray, testing: bool = False) -> list:
         """
         Detects AprilTags in a frame, performs refined detection for precision, and handles deduplication.
         """
@@ -282,7 +282,7 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False, smoothing:bool=True, save_as_new_hdf5: bool=True, process_like_recording:bool=True, with_annotations:bool=False, fps_test:bool=False, hdf5_model_save_name:str | None = None) -> None:
+    def __init__(self, record, record_threshold, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, rtsp=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, heatmap=False, smoothing:bool=True, save_as_new_hdf5: bool=True, process_like_recording:bool=True, with_annotations:bool=False, fps_test:bool=False, hdf5_model_save_name:str | None = None, mode: str | None = None) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, yolo_straw=yolo_straw, yolo_straw_model=yolo_straw_model, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges, heatmap=heatmap)
         self.record = record
         self.save_as_new_hdf5 = save_as_new_hdf5
@@ -315,6 +315,7 @@ class RTSPStream(AprilDetector):
         self.threads = []
         self.information = self.helpers._initialize_information_dict()
         self.last_save_timestamp = 0
+        self.mode = mode
         
     def create_capture(self, credentials_path: str) -> cv2.VideoCapture:
         """
@@ -364,6 +365,26 @@ class RTSPStream(AprilDetector):
             end = time.time()
             self.information["april"]["text"] = f'(T3) AprilTag Time: {end - start:.2f} s' 
 
+    def test_april_detector(self, video_path: list[str]) -> None:
+        
+        
+        for path in video_path:
+            with h5py.File(path, 'r') as hf:
+                timestamps = list(hf.keys())
+
+                if "frame" == timestamps[0].split("_")[0]:
+                    timestamps = sorted(timestamps, key=lambda x: int(x.split('_')[1]))
+                else:
+                    timestamps = sorted(timestamps, key=lambda x: float(x))
+
+                for timestamp in timestamps:
+                    frame = hf[timestamp]['image'][()]
+                    frame = decode_binary_image(frame)
+                    # change from bgr to rgb
+                    _, duration = time_function(self.detect, frame, True)
+                    self.information["april"]["text"] = f'(T3) AprilTag Time: {duration:.2f} s' 
+        
+        
     def display_frame(self) -> None:
         """
         Display the frames with the detected AprilTags.
@@ -1109,11 +1130,14 @@ class RTSPStream(AprilDetector):
                     self.display_frame_from_videofile()
                 elif video_path[0].endswith('.hdf5'):
                     print("START: hdf5 File loading...")
-                    if self.detect_april:
-                        self.thread1 = threading.Thread(target=self.find_tags)
-                        self.thread1.start()
-                        self.threads.append(self.thread1)
-                    self.display_frame_from_hdf5(video_path)
+                    if self.mode == 'april_testing':
+                        self.test_april_detector(video_path)
+                    else:
+                        if self.detect_april:
+                            self.thread1 = threading.Thread(target=self.find_tags)
+                            self.thread1.start()
+                            self.threads.append(self.thread1)
+                        self.display_frame_from_hdf5(video_path)
                 else:
                     raise ValueError("The file type is not supported. Please provide a .mp4 or .hdf5 file.")
                 while True:
@@ -1164,7 +1188,7 @@ def get_args() -> Namespace:
     # Create the parser
     parser = ArgumentParser()
     # Add arguments to the parser
-    parser.add_argument('mode', type=str, choices=['manual', 'stream', 'fps_test', 'file_predict', 'record'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
+    parser.add_argument('mode', type=str, choices=['manual', 'stream', 'fps_test', 'file_predict', 'record', 'april_testing'], help='Mode to run the script in (extracts images from videos and saves them to an hdf5 file, validate shows the difference between the original and extracted images, and tree prints the tree structure of the hdf5 file).')
     parser.add_argument('--record', action='store_true', help='Record the stream to an hdf5 file.')
     parser.add_argument('--record_threshold', type=int, default=5, help='The time in seconds to record the stream.')
     parser.add_argument('--window', action='store_true', help='Display the frames in a window.')
@@ -1258,6 +1282,13 @@ def main(args: Namespace) -> None:
         if args.with_predictor:
             args.object_detect = True
             args.regressor = True
+    elif args.mode == 'april_testing':
+        args.detect_april = True
+        args.window = True
+        args.make_cutout = True
+        if args.video_path is None:
+            raise ValueError("The video_path must be provided for the AprilTag Detector test.")
+        
         
     with open("fiducial_marker/april_config.json", "r") as file:
         config = json.load(file)
@@ -1289,8 +1320,8 @@ def main(args: Namespace) -> None:
                yolo_straw=args.yolo_straw, 
                yolo_straw_model="models/obb_best_serene.pt",
                with_predictor=args.with_predictor, 
-               predictor_model='convnextv2', 
-               model_load_path='models/convnextv2_regressor/', 
+               predictor_model='convnext', 
+               model_load_path='models/convnext_regressor/', 
                regressor=args.regressor, 
                edges=args.edges, 
                heatmap=args.heatmap,
@@ -1300,7 +1331,8 @@ def main(args: Namespace) -> None:
                process_like_recording=args.process_like_recording, 
                with_annotations=args.with_annotations, 
                fps_test=args.fps_test, 
-               hdf5_model_save_name = args.hdf5_model_save_name # Only used when a single model is used for predictions
+               hdf5_model_save_name = args.hdf5_model_save_name,
+               mode=args.mode# Only used when a single model is used for predictions
             )(video_path=args.video_path)
 
     # # ### YOLO PREDICTOR STREAM

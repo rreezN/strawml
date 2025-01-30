@@ -1,7 +1,7 @@
 #!/bin/sh
-#BSUB -J yolo-serene-sweep-run
-#BSUB -o yolo-serene-sweep-run%J.out
-#BSUB -e yolo-serene-sweep-run%J.err
+#BSUB -J yolo-whole-final-run_faithful
+#BSUB -o yolo-whole-final-run_faithful%J.out
+#BSUB -e yolo-whole-final-run_faithful%J.err
 #BSUB -q gpuv100
 #BSUB -gpu "num=1:mode=exclusive_process"
 #BSUB -n 4
