@@ -871,7 +871,7 @@ class TagGraphWithPositionsCV:
             return x_value, y_value
         neighbor_positions = [tuple(map(int, self.detected_tags[n].center)) for n in neighbor_ids if n in self.detected_tags]
         
-        if not neighbor_positions:
+        if not neighbor_positions or len(neighbor_positions) < 2:
             return None
         
         detected_tag_ids = set(list(self.detected_tags.keys()))
