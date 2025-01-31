@@ -387,34 +387,35 @@ class RTSPStream(AprilDetector):
                         timestamps = sorted(timestamps, key=lambda x: int(x.split('_')[1]))
                     else:
                         timestamps = sorted(timestamps, key=lambda x: float(x))
-
+                    i = 0
                     for timestamp in tqdm(timestamps):
                         frame = hf[timestamp]['image'][()]
+                        bbox_label = hf[timestamp]['annotations']['bbox_chute'][...]
                         frame = decode_binary_image(frame)
                         # change from bgr to rgb
                         frame_ = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                         results, duration = time_function(self.detect, frame_, True)
                         found_tags, existing_tags, inferred_tags = results
                         self.information["april"]["text"] = f'(T3) AprilTag Time: {duration:.2f} s' 
-                        frame_drawn, _ = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
+                        frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
                         self._display_frame(frame_drawn)
-
-                        # print("Found tags: ", sorted([tag.tag_id for tag in found_tags]))
-                        # print("Existing tags: ", sorted(list(existing_tags.keys())))
-                        # print("Inferred tags: ", sorted(list(self.inferred_tags)))
-                        # if len(remain_set) > 0:
-                        #     print("Not found tags: ", list(remain_set))
+                        remain_set = set(range(27)) - set(sorted([tag.tag_id for tag in found_tags] + list(inferred_tags) + list(existing_tags.keys())))
+                        # save the cutout as a png to show as an example
+                        if self.make_cutout and self.use_cutout:
+                            cv2.imwrite(f"data/cutouts/{'carry_over' if self.carry_over else 'no_carry_over'}/{timestamp}_full.png", frame_drawn)
+                            cv2.imwrite(f"data/cutouts/{'carry_over' if self.carry_over else 'no_carry_over'}/{timestamp}_cutout.png", cutout)
                         # print("----------------------------------------------------")
-                        remain_set = set(sorted([tag.tag_id for tag in found_tags] + list(self.inferred_tags))) - set(range(27))
-                        save_dict = {timestamp : {"carry_over": self.carry_over,"found_tags": sorted([tag.tag_id for tag in found_tags]), "existing_tags": sorted(list(existing_tags.keys())), "inferred_tags": sorted(list(self.inferred_tags)), "not_found_tags": list(remain_set)}}
+                        save_dict = {timestamp : {"carry_over": self.carry_over,"found_tags": sorted([tag.tag_id for tag in found_tags]), "existing_tags": sorted(list(existing_tags.keys())), "inferred_tags": sorted(list(inferred_tags)), "not_found_tags": list(remain_set)}}
                         # write save_dict to a new line in a file
-
+                        # print(list(remain_set))
                         file_name = f"data/{'carry_over' if self.carry_over else 'no_carry_over'}_april_tag_testing.json"
                         with open(file_name, "a") as file:
                             file.write(json.dumps(save_dict) + "\n")
     
                         if not self.carry_over:
                             self.helpers._reset_tags()
+                            self.tag_graph.update_init(self.tags, self.inferred_tags)
+
         
     def display_frame(self) -> None:
         """
