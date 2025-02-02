@@ -735,100 +735,155 @@ def plot_multiple_images(dataloader: Chute, num_images: int = 10, mode: str = 'r
     plt.show()
     
 
+def visualize_transformations():
+    hf = h5py.File('data/processed/train.hdf5', 'r')
+    frame = hf['frame_0']
+    image = decode_binary_image(frame['image'][...])
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+    bbox = frame['annotations']['bbox_chute'][...]
+    
+    # Rotate and crop the image to the bounding box
+    image, bbox = cc.rotate_and_crop_to_bbox(image, bbox)
+    
+    image = cv2.resize(image, (208, 672))
+    
+    # Define the transformation to apply to the data
+    transform = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]) 
+    
+    # Transformations
+    color_jitter = transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.5, hue=0.05)
+    jpeg = transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.JPEG(quality=(1, 100)), transforms.ToDtype(torch.float32, scale=True)])
+    gaussian_blur = transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 5.0))
+    gaussian_noise = transforms.GaussianNoise(mean=0.0, sigma=0.1)
+    equalize = transforms.RandomEqualize(p=1.0)
+    posterize = transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.RandomPosterize(bits=np.random.randint(3, 5), p=1.0), transforms.ToDtype(torch.float32, scale=True)])
+    sharpness = transforms.RandomAdjustSharpness(p=1.0, sharpness_factor=np.random.uniform(1.0, 2.0))
+    
+    
+    # Get the images after augmentation
+    image = transform(image)
+    image_color_jitter = color_jitter(image)
+    image_jpeg = jpeg(image)
+    image_gaussian_blur = gaussian_blur(image)
+    image_gaussian_noise = gaussian_noise(image)
+    image_equalize = equalize(image)
+    image_posterize = posterize(image)
+    image_sharpness = sharpness(image)
+    
+    images = [image, image_color_jitter, image_jpeg, image_gaussian_blur, image_gaussian_noise, image_equalize, image_posterize, image_sharpness]
+    titles = ['Original', 'Color Jitter', 'JPEG', 'Gaussian Blur', 'Gaussian Noise', 'Equalize', 'Posterize', 'Sharpness']
+    images = [img.permute(1, 2, 0).detach().numpy() for img in images]
+    images = [np.clip(img, 0, 1) for img in images]
+    
+    fig, ax = plt.subplots(2, 4, figsize=(8, 5))
+    ax = ax.flatten()
+    for i in range(len(images)):
+        ax[i].imshow(images[i])
+        ax[i].set_title(titles[i], fontsize=20)
+        ax[i].axis('off')
+    
+    plt.tight_layout()    
+    plt.savefig('reports/figures/straw_model_augmentations.pdf', dpi=300, bbox_inches='tight')
+
 if __name__ == '__main__':
-    import time
-    from torch.utils.data import DataLoader
-    np.random.seed(42)
+    visualize_transformations()
 
-    # print("---- CHUTE DETECTION DATASET ----")
-    # # train_set = Chute(data_type='train', inc_heatmap=False, inc_edges=True, force_update_statistics=False, data_path = 'data/interim/chute_detection.hdf5', image_size=(384, 384))
-    # train_set = Chute(data_path = 'data/processed/augmented/chute_detection.hdf5', data_type='train', inc_heatmap=False, inc_edges=False,
-    #                      random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
-    #                      num_classes_straw=11, continuous=False)
-    # print("Measuring time taken to load a batch")
-    # train_loader = DataLoader(train_set, batch_size=1, shuffle=True, num_workers=0)
 
-    # start = time.time()
-    # i = 0
-    # durations = []
-    # pbar = tqdm(train_loader, unit="batch", position=0, leave=False)
-    # for data, target in train_loader:
-    #     end = time.time()
-    #     # asses the shape of the data and target
-    #     duration = end-start
-    #     durations += [duration]
-    #     pbar.set_description(f'Batch {i+1}/{len(train_loader)} Avg. duration: {np.mean(durations):.2f}s')
-    #     pbar.update(1)
-    #     i+= 1
-    #     start = time.time()
-        
-        
-    #     # # Display last image, bboxes and labels
-    #     # images = data
-        
-    #     # frame = images[:,0,:, :]
-    #     # heatmap = images[:, 1, :, :]
-    #     # bbox_chute = target[0]
-    #     # # bbox_straw = target[1]
-    #     # obstructed = target[1]
-    #     # fullness = target[2]
-        
-    #     # Skip timing dataloader
-    #     # if i > 0:
-    #     #     break
-    
-    # print(f'\nTotal time taken: {np.sum(durations):.2f}')
-    # print(f'Max duration: {np.max(durations):.2f} at index {np.argmax(durations)}')
-    # print(f'Min duration: {np.min(durations):.2f} at index {np.argmin(durations)}')
-    # print(f'Mean duration: {np.mean(durations):.2f}')
-    # # Print example statistics of the last batch
-    # print(f'Last data shape: {data[0].shape}')
-    
-    # train_set.plot_data(frame_idx=9)
-    
-    print("---- STRAW DETECTION DATASET ----")
-    data_path = 'data/processed/train.hdf5'
-    # data_path = f'/work3/davos/data/train.hdf5'
+# if __name__ == '__main__':
+#     import time
+#     from torch.utils.data import DataLoader
+#     np.random.seed(42)
 
-    print("Extracting statistics for straw dataset with heatmaps and greyscale images")
-    train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=False, inc_edges=False,
-                         random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), 
-                         num_classes_straw=21, continuous=True, subsample=1.0, augment_probability=0.0, greyscale=False, balance_dataset=False)
-    # train_set.save_distribution()
-    
-    
-    # print('Testing normalizing')
-    # train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
-    # for i, (data, target) in enumerate(train_loader):
-    #     # Print the data shape
-    #     print(f'Data shape: {data.shape}')
-    #     print(f'Target shape: {target.shape}')
+#     # print("---- CHUTE DETECTION DATASET ----")
+#     # # train_set = Chute(data_type='train', inc_heatmap=False, inc_edges=True, force_update_statistics=False, data_path = 'data/interim/chute_detection.hdf5', image_size=(384, 384))
+#     # train_set = Chute(data_path = 'data/processed/augmented/chute_detection.hdf5', data_type='train', inc_heatmap=False, inc_edges=False,
+#     #                      random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), 
+#     #                      num_classes_straw=11, continuous=False)
+#     # print("Measuring time taken to load a batch")
+#     # train_loader = DataLoader(train_set, batch_size=1, shuffle=True, num_workers=0)
+
+#     # start = time.time()
+#     # i = 0
+#     # durations = []
+#     # pbar = tqdm(train_loader, unit="batch", position=0, leave=False)
+#     # for data, target in train_loader:
+#     #     end = time.time()
+#     #     # asses the shape of the data and target
+#     #     duration = end-start
+#     #     durations += [duration]
+#     #     pbar.set_description(f'Batch {i+1}/{len(train_loader)} Avg. duration: {np.mean(durations):.2f}s')
+#     #     pbar.update(1)
+#     #     i+= 1
+#     #     start = time.time()
         
-    #     # Print the mean and std of the data
-    #     print(f'Mean: {data.mean()}')
-    #     print(f'Std: {data.std()}')
-    #     print(f'Min: {data.min()}')
-    #     print(f'Max: {data.max()}')
-    #     plot_batch(data, target, i*8, train_set.train_mean, train_set.train_std, grey=train_set.greyscale)
+        
+#     #     # # Display last image, bboxes and labels
+#     #     # images = data
+        
+#     #     # frame = images[:,0,:, :]
+#     #     # heatmap = images[:, 1, :, :]
+#     #     # bbox_chute = target[0]
+#     #     # # bbox_straw = target[1]
+#     #     # obstructed = target[1]
+#     #     # fullness = target[2]
+        
+#     #     # Skip timing dataloader
+#     #     # if i > 0:
+#     #     #     break
+    
+#     # print(f'\nTotal time taken: {np.sum(durations):.2f}')
+#     # print(f'Max duration: {np.max(durations):.2f} at index {np.argmax(durations)}')
+#     # print(f'Min duration: {np.min(durations):.2f} at index {np.argmin(durations)}')
+#     # print(f'Mean duration: {np.mean(durations):.2f}')
+#     # # Print example statistics of the last batch
+#     # print(f'Last data shape: {data[0].shape}')
+    
+#     # train_set.plot_data(frame_idx=9)
+    
+#     print("---- STRAW DETECTION DATASET ----")
+#     data_path = 'data/processed/train.hdf5'
+#     # data_path = f'/work3/davos/data/train.hdf5'
+
+#     print("Extracting statistics for straw dataset with heatmaps and greyscale images")
+#     train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=False, inc_edges=False,
+#                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), 
+#                          num_classes_straw=21, continuous=True, subsample=1.0, augment_probability=0.0, greyscale=False, balance_dataset=False)
+#     # train_set.save_distribution()
     
     
-    # for i in range(10):
-    #     plot_multiple_images(train_set, num_images=10, mode='rgb')
+#     # print('Testing normalizing')
+#     # train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
+#     # for i, (data, target) in enumerate(train_loader):
+#     #     # Print the data shape
+#     #     print(f'Data shape: {data.shape}')
+#     #     print(f'Target shape: {target.shape}')
+        
+#     #     # Print the mean and std of the data
+#     #     print(f'Mean: {data.mean()}')
+#     #     print(f'Std: {data.std()}')
+#     #     print(f'Min: {data.min()}')
+#     #     print(f'Max: {data.max()}')
+#     #     plot_batch(data, target, i*8, train_set.train_mean, train_set.train_std, grey=train_set.greyscale)
     
-    # for i in range(len(train_set)):
-    #     data, target = train_set[i]
-    #     train_set.plot_data(frame_data=data, labels=target)
     
-    mean, std = train_set.train_mean, train_set.train_std
-    statistics = (mean, std)
-    sensor_set = Chute(data_path='data/processed/sensors_with_strawbbox.hdf5', data_type='test', inc_heatmap=False, inc_edges=False,
-                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), continuous=True, subsample=1.0,
-                          augment_probability=0, num_classes_straw=21, override_statistics=statistics, greyscale=False, balance_dataset=False, sensor=True)
-    sensor_set.save_distribution()
-    sensor_loader = DataLoader(sensor_set, batch_size=8, shuffle=False, num_workers=0)
+#     # for i in range(10):
+#     #     plot_multiple_images(train_set, num_images=10, mode='rgb')
     
-    # for i, (data, target) in enumerate(sensor_loader):
-    #     plot_batch(data, target, i*8, mean, std, grey=sensor_set.greyscale)
+#     # for i in range(len(train_set)):
+#     #     data, target = train_set[i]
+#     #     train_set.plot_data(frame_data=data, labels=target)
+    
+#     mean, std = train_set.train_mean, train_set.train_std
+#     statistics = (mean, std)
+#     sensor_set = Chute(data_path='data/processed/sensors_with_strawbbox.hdf5', data_type='test', inc_heatmap=False, inc_edges=False,
+#                           random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), continuous=True, subsample=1.0,
+#                           augment_probability=0, num_classes_straw=21, override_statistics=statistics, greyscale=False, balance_dataset=False, sensor=True)
+#     sensor_set.save_distribution()
+#     sensor_loader = DataLoader(sensor_set, batch_size=8, shuffle=False, num_workers=0)
+    
+#     # for i, (data, target) in enumerate(sensor_loader):
+#     #     plot_batch(data, target, i*8, mean, std, grey=sensor_set.greyscale)
     
     
     
