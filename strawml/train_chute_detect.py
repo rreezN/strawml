@@ -6,21 +6,20 @@ from wandb.integration.ultralytics import add_wandb_callback
 
 # Load a pre-trained YOLOv10s model
 model = YOLO("models/yolo11s-obb.pt")
-model.amp = False
 model.to("cuda")
-wandb.init(project="yolov-final-runs", entity='meliora')
-add_wandb_callback(model)
+# wandb.init(project="yolov-final-runs", entity='meliora')
+# add_wandb_callback(model)
 # Load a pre-trained YOLOv10n model
 # model.to("cuda")
 if __name__ == '__main__':
     # train the model on our own dataset
-    model.train(
-            data="data/processed/0_straw_data_whole.yaml",
-            imgsz=640,
+    results = model.train(
+            data="data/processed/0_chute_data.yaml",
+            imgsz=579,
             epochs=300,
             batch=32,
-            lr0=0.0028194990107912573,
-            optimizer="AdamW",
+            lr0=0.0021696499235375,
+            optimizer="Adam",
             device="cuda",
             hsv_h=0.015,
             hsv_s=0.7,
@@ -37,8 +36,8 @@ if __name__ == '__main__':
             mixup=0.0,
             copy_paste=0.0,
             erasing=0.4,
-            crop_fraction=1
-        )
+            crop_fraction=1,
+            project="yolov-final-runs")
     # results = model.val()  # evaluate model performance on the validation set
     # results = model("data/chute_digit.jpg")  # predict on an image
     # results = model("data/processed/yolo_format/train/frame_0.jpg")  # predict on a video
