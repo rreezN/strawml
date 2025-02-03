@@ -22,8 +22,11 @@ def predict_model(args, model: torch.nn.Module, dataloader: DataLoader, feature_
     if torch.cuda.is_available():
         print("Using GPU")
         model = model.cuda()
-        if feature_regressor is not None:
+
+    if feature_regressor is not None:
+        if torch.cuda.is_available():
             feature_regressor = feature_regressor.cuda()
+        feature_regressor.eval()
     
     if args.cont:
         loss_fn = torch.nn.functional.mse_loss
@@ -244,19 +247,20 @@ def get_args() -> argparse.Namespace:
     """Get the arguments for the training script.
     """
     parser = argparse.ArgumentParser(description='Train the CNN classifier model.')
-    parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
+    parser.add_argument('--batch_size', type=int, default=4, help='Batch size for training')
     parser.add_argument('--model_path', type=str, default='models/', help='Path to load the model from')
-    parser.add_argument('--data_path', type=str, default='data/processed/sensors.hdf5', help='Path to the training data')
+    parser.add_argument('--data_path', type=str, default='data/processed/sensors_with_strawbbox.hdf5', help='Path to the training data')
     parser.add_argument('--inc_heatmap', type=bool, default=False, help='Include heatmaps in the training data')
     parser.add_argument('--inc_edges', type=bool, default=False, help='Include edges in the training data')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
-    parser.add_argument('--model', type=str, default='convnextv2', help='Model to use for predicting', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
+    parser.add_argument('--model', type=str, default='convnext', help='Model to use for predicting', choices=['cnn', 'convnextv2', 'vit', 'eva02', 'caformer'])
     parser.add_argument('--image_size', type=tuple, default=(672, 208), help='Image size for the model (only for CNN)')
     parser.add_argument('--num_classes_straw', type=int, default=21, help='Number of classes for the straw classifier (11 = 10%, 21 = 5%)')
     parser.add_argument('--cont', action='store_true', help='Set model to predict a continuous value instead of a class (only for CNN model currently)')
     parser.add_argument('--use_sigmoid', action='store_true', help='Use sigmoid activation for the output layer')
     parser.add_argument('--num_hidden_layers', type=int, default=0, help='Number of hidden layers for the CNN model')
     parser.add_argument('--num_neurons', type=int, default=512, help='Number of neurons for the hidden layers')
+    parser.add_argument('--use_yolo', action='store_true', help='Use yolo to make the cutouts')
     return parser.parse_args()
 
 
@@ -285,7 +289,7 @@ if __name__ == '__main__':
     
     test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges, image_size=image_size,
                         random_state=args.seed, force_update_statistics=False, data_purpose='straw',
-                        num_classes_straw=args.num_classes_straw, continuous=args.cont, override_statistics=statistics, sensor=True, augment_probability=0.0)
+                        num_classes_straw=args.num_classes_straw, continuous=args.cont, override_statistics=statistics, sensor=True, augment_probability=0.0, use_yolo_to_cutout=args.use_yolo)
     
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
     
@@ -320,8 +324,8 @@ if __name__ == '__main__':
         feature_size = torch.flatten(features, 1).shape[1]
         feature_regressor = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, num_hidden_layers=args.num_hidden_layers, num_neurons=args.num_neurons, use_sigmoid=args.use_sigmoid)
         
-        model.load_state_dict(torch.load(f'{model_path}/{args.model}_feature_extractor_best.pth', weights_only=True))
-        feature_regressor.load_state_dict(torch.load(f'{model_path}/{args.model}_regressor_best.pth', weights_only=True))
+        model.load_state_dict(torch.load(f'{model_path}/{args.model}_feature_extractor.pth', weights_only=True))
+        feature_regressor.load_state_dict(torch.load(f'{model_path}/{args.model}_regressor.pth', weights_only=True))
         
     else:
         feature_regressor = None

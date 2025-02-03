@@ -113,7 +113,7 @@ class AprilDetector:
             self.model.load_state_dict(torch.load(self.model_load_path, weights_only=True))
             self.model.to(self.device)
 
-    def load_predictor_model(self, input_channels: int, num_classes: int, use_sigmoid: bool = True, image_size: tuple = (672, 208)) -> torch.nn.Module:
+    def load_predictor_model(self, input_channels: int, num_classes: int, use_sigmoid: bool = False, image_size: tuple = (672, 208)) -> torch.nn.Module:
         """Load the appropriate model based on the predictor_model string."""
         model = None
         match self.predictor_model:
@@ -134,7 +134,7 @@ class AprilDetector:
         model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
         return model, image_size
 
-    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 0, num_neurons: int = 512) -> None:
+    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = False, num_hidden_layers: int = 0, num_neurons: int = 512) -> None:
         """Setup the regressor model."""
         if self.predictor_model != 'cnn':
             features = self.model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
@@ -1357,7 +1357,7 @@ def main(args: Namespace) -> None:
                yolo_threshold=args.yolo_threshold,
                detect_april=args.detect_april, 
                yolo_straw=args.yolo_straw, 
-               yolo_straw_model="models/obb_best_serene.pt",
+               yolo_straw_model="models/obb_best.pt",
                with_predictor=args.with_predictor, 
                predictor_model='convnext', 
                model_load_path='models/convnext_regressor/', 
