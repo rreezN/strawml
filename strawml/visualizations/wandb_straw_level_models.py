@@ -145,51 +145,111 @@ def plot_training_curves():
     plt.savefig("reports/training curves/straw_model_training_curves.pdf", dpi=300, bbox_inches='tight')
 
 def plot_hyper_parameters_vs_accuracy():
-    df = pd.DataFrame(columns=['model', 'sweep', 'accuracy', 'learning_rate', 'batch_size'])
-    df['model'] = ['ConvNeXtV1'] * 5 + ['ConvNeXtV2'] * 5
-    df['sweep'] = ['sweep-1', 'sweep-15', 'sweep-26', 'sweep-27', 'sweep-28', 'sweep-9', 'sweep-10', 'sweep-21', 'sweep-30', 'sweep-31']
-    df['accuracy'] = [93.37, 92.53, 92.83, 93.33, 93.20, 94.43, 94.98, 94.30, 94.34, 94.84]
-    df['learning_rate'] = [0.00001120659857537586,
-                           0.00006481605040715890,
-                           0.00001655146758340562,
-                           0.00008164009822514294,
-                           0.00001953371338081623,
-                           0.00004468313613877140,
-                           0.00003012743634235883,
-                           0.00004732196011865191,
-                           0.00001167650323466638,
-                           0.00001835140223882227]
-    df['batch_size'] = [4, 8, 4, 4, 4, 12, 12, 8, 4, 4]
+    # df = pd.DataFrame(columns=['model', 'sweep', 'accuracy', 'learning_rate', 'batch_size'])
+    # df['model'] = ['ConvNeXtV1'] * 5 + ['ConvNeXtV2'] * 5
+    # df['sweep'] = ['sweep-1', 'sweep-15', 'sweep-26', 'sweep-27', 'sweep-28', 'sweep-9', 'sweep-10', 'sweep-21', 'sweep-30', 'sweep-31']
+    # df['accuracy'] = [93.37, 92.53, 92.83, 93.33, 93.20, 94.43, 94.98, 94.30, 94.34, 94.84]
+    # df['learning_rate'] = [0.00001120659857537586,
+    #                        0.00006481605040715890,
+    #                        0.00001655146758340562,
+    #                        0.00008164009822514294,
+    #                        0.00001953371338081623,
+    #                        0.00004468313613877140,
+    #                        0.00003012743634235883,
+    #                        0.00004732196011865191,
+    #                        0.00001167650323466638,
+    #                        0.00001835140223882227]
+    # df['batch_size'] = [4, 8, 4, 4, 4, 12, 12, 8, 4, 4]
     
-    # Plot the learning rate vs accuracy
-    plt.figure(figsize=(10, 5))
+    # # Plot the learning rate vs accuracy
+    # plt.figure(figsize=(10, 5))
     
-    v1_col = 'indianred'
-    v2_col = 'royalblue'
+    # v1_col = 'indianred'
+    # v2_col = 'royalblue'
     
-    fontsize = 20
-    for i in range(len(df)):
-        match df['batch_size'].iloc[i]:
-            case 4:
-                marker = 'x'
-                markersize = 200
-            case 8:
-                marker = 'o'
-                markersize = 400
-            case 12:
-                marker = 's'
-                markersize = 600
+    # fontsize = 20
+    # for i in range(len(df)):
+    #     match df['batch_size'].iloc[i]:
+    #         case 4:
+    #             marker = 'x'
+    #             markersize = 200
+    #         case 8:
+    #             marker = 'o'
+    #             markersize = 400
+    #         case 12:
+    #             marker = 's'
+    #             markersize = 600
             
-        if df['model'].iloc[i] == 'ConvNeXtV1':
-            plt.scatter(df['learning_rate'].iloc[i], df['accuracy'].iloc[i], color=v1_col, label='ConvNeXtV1' if i == 0 else None, s=markersize, alpha=0.5)
-        else:
-            plt.scatter(df['learning_rate'].iloc[i], df['accuracy'].iloc[i], color=v2_col, label='ConvNeXtV2' if i == 5 else None, s=markersize, alpha=0.5)
+    #     if df['model'].iloc[i] == 'ConvNeXtV1':
+    #         plt.scatter(df['learning_rate'].iloc[i], df['accuracy'].iloc[i], color=v1_col, label='ConvNeXtV1' if i == 0 else None, s=markersize, alpha=0.5)
+    #     else:
+    #         plt.scatter(df['learning_rate'].iloc[i], df['accuracy'].iloc[i], color=v2_col, label='ConvNeXtV2' if i == 5 else None, s=markersize, alpha=0.5)
 
-        # plot batch size as text
-        plt.text(df['learning_rate'].iloc[i], df['accuracy'].iloc[i], f'{df["batch_size"].iloc[i]}', fontsize=fontsize-4, ha='center', va='center', color='black')
+    #     # plot batch size as text
+    #     plt.text(df['learning_rate'].iloc[i], df['accuracy'].iloc[i], f'{df["batch_size"].iloc[i]}', fontsize=fontsize-4, ha='center', va='center', color='black')
         
     
+    # plt.xlabel('Learning Rate', fontsize=fontsize)
+    # plt.ylabel('Accuracy (%)', fontsize=fontsize)
+    # plt.title('Learning Rate vs Accuracy', fontsize=fontsize)
+    # plt.grid()
+    # plt.legend(ncol=2, fontsize=fontsize-2)
+    # plt.tick_params(axis='both', labelsize=fontsize-4)
+    # plt.tight_layout()
+    # plt.savefig('reports/figures/learning_rate_vs_accuracy.pdf', dpi=300, bbox_inches='tight')
+    
+    list_of_csvs = os.listdir("reports/straw sweep all")
+    list_of_csvs = [x for x in list_of_csvs if x.endswith(".csv")]
+    
+    plt.figure(figsize=(10, 5))
+    fontsize = 20
+    for j, csv in enumerate(list_of_csvs):
+        df = pd.read_csv("reports/straw sweep all/" + csv, sep=',')
+        
+        accuracies = []
+        for sweep in df['Name']:
+            accuracies = np.zeros((4, len(df)))
+            for i in range(1, 5):
+                accuracies[i-1] = np.array(df[f'f{i} mean sensor prediction accuracies'].tolist())
+            mean_accuracies = np.mean(accuracies, axis=0)
+        
+        df['accuracy'] = mean_accuracies*100
+       
+        # Plot the learning rate vs accuracy
+        col = 'indianred' if j == 0 else 'royalblue'
+        for i in range(len(df)):
+            match df['batch_size'].iloc[i]:
+                case 4:
+                    marker = 'x'
+                    markersize = 200
+                case 8:
+                    marker = 'o'
+                    markersize = 400
+                case 12:
+                    marker = 's'
+                    markersize = 600
+            
+            if 'toasty-sweep-10' in df['Name'].iloc[i] or 'summer-sweep-1' in df['Name'].iloc[i]:
+                edgecolor = 'black'
+                linewidth = 2
+                alpha = 1.0
+                zorder = 10
+            else:
+                edgecolor = None
+                linewidth = 1
+                alpha = 0.5
+                zorder = 1
+            
+            if i == 0:
+                plt.scatter(df['learning_rate'].iloc[i], df['accuracy'].iloc[i], color=col, label='ConvNeXtV1' if j == 0 else 'ConvNeXtV2', s=200, alpha=alpha, linewidth=linewidth, edgecolor=edgecolor, zorder=zorder)
+            else:
+                plt.scatter(df['learning_rate'].iloc[i], df['accuracy'].iloc[i], color=col, s=markersize, alpha=alpha, linewidth=linewidth, edgecolor=edgecolor, zorder=zorder)
+            
+            # plot batch size as text
+            # plt.text(df['learning_rate'].iloc[i], df['accuracy'].iloc[i], f'{df["batch_size"].iloc[i]}', fontsize=fontsize-4, ha='center', va='center', color='black')
+            
     plt.xlabel('Learning Rate', fontsize=fontsize)
+    plt.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
     plt.ylabel('Accuracy (%)', fontsize=fontsize)
     plt.title('Learning Rate vs Accuracy', fontsize=fontsize)
     plt.grid()
@@ -197,6 +257,11 @@ def plot_hyper_parameters_vs_accuracy():
     plt.tick_params(axis='both', labelsize=fontsize-4)
     plt.tight_layout()
     plt.savefig('reports/figures/learning_rate_vs_accuracy.pdf', dpi=300, bbox_inches='tight')
+            
+        
+        
+    
+    
 
 
 def plot_final_run_curves():
@@ -279,5 +344,5 @@ def plot_final_run_curves():
 if __name__ == '__main__':
     # analyse_model_selection()
     # plot_training_curves()
-    # plot_hyper_parameters_vs_accuracy()
-    plot_final_run_curves()
+    plot_hyper_parameters_vs_accuracy()
+    # plot_final_run_curves()
