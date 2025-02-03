@@ -241,9 +241,10 @@ class AprilDetectorHelpers:
             The edge-detected version of the frame.
         """
         # Convert frame for visualization
-        vis_frame = cv2.cvtColor(frame_data.permute(1, 2, 0).numpy(), cv2.COLOR_BGR2RGB)
+        vis_frame = frame_data
+        vis_frame = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
         vis_frame = cv2.resize(vis_frame, (0, 0), fx=0.6, fy=0.6)
-        cv2.imshow("Frame", np.clip(vis_frame, 0, 1))
+        cv2.imshow("Frame", vis_frame)
 
         # If edges are provided, visualize them as well
         if edges is not None:
@@ -489,21 +490,25 @@ class AprilDetectorHelpers:
         # Detect edges if required
         edges = self._detect_edges(frame_data) if self.ADI.edges else None
 
-        # Normalize the frame
-        frame_data = self.ADI.transform(torch.from_numpy(frame_data).permute(2, 0, 1).float())
-
         # Visualize intermediate results if requested
         if visualize:
             self._visualize_frame(frame_data, edges)
 
+        # Normalize the frame
+        frame_data = self.ADI.transform(frame_data)
+        frame_data *= 255
+        frame_data = self.ADI.normalise(frame_data)
+
+        # # Visualize intermediate results if requested
+        # if visualize:
+        #     self._visualize_frame(frame_data, edges)
+
         # Stack edges with the frame if required
-        cutout_image = self._combine_with_edges(frame_data, edges)
+        # cutout_image = self._combine_with_edges(frame_data, edges)
 
         # Resize and add batch dimension
-        cutout_image = self.ADI.resize(cutout_image).unsqueeze(0)
+        cutout_image = self.ADI.resize(frame_data).unsqueeze(0)
         
-        # cutout_image *= 255
-
         return cutout_image
     
     def _save_tag_0(self, angle):

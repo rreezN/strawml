@@ -28,6 +28,8 @@ import strawml.models.straw_classifier.cnn_classifier as cnn
 import strawml.models.straw_classifier.feature_model as feature_model
 from strawml.visualizations.utils_stream import AprilDetectorHelpers, AsyncStreamThread, time_function, TagGraphWithPositionsCV
 
+torch.use_deterministic_algorithms(True)
+
 class AprilDetector:
     """
     NOTE This class is highly customized to detect AprilTags in the chute system af meliora bio. 
@@ -95,9 +97,10 @@ class AprilDetector:
         )
         self.transform = transforms.Compose([
             transforms.ToImage(),
-            transforms.ToDtype(torch.float32, scale=False),
-            transforms.Normalize(mean=self.mean, std=self.std)
+            transforms.ToDtype(torch.float32, scale=True),
         ])
+
+        self.normalise = transforms.Normalize(mean=self.mean, std=self.std)
         
         num_classes = 1 if self.regressor else 11
         input_channels = 3 + int(self.edges) + int(self.heatmap) * 3
@@ -112,8 +115,9 @@ class AprilDetector:
             self.regressor_model = None
             self.model.load_state_dict(torch.load(self.model_load_path, weights_only=True))
             self.model.to(self.device)
+            self.model.eval()
 
-    def load_predictor_model(self, input_channels: int, num_classes: int, use_sigmoid: bool = True, image_size: tuple = (672, 208)) -> torch.nn.Module:
+    def load_predictor_model(self, input_channels: int, num_classes: int, use_sigmoid: bool = False, image_size: tuple = (672, 208)) -> torch.nn.Module:
         """Load the appropriate model based on the predictor_model string."""
         model = None
         match self.predictor_model:
@@ -134,7 +138,7 @@ class AprilDetector:
         model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
         return model, image_size
 
-    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = True, num_hidden_layers: int = 0, num_neurons: int = 512) -> None:
+    def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = False, num_hidden_layers: int = 0, num_neurons: int = 512) -> None:
         """Setup the regressor model."""
         if self.predictor_model != 'cnn':
             features = self.model.forward_features(torch.randn(1, input_channels, image_size[0], image_size[1]))
@@ -144,9 +148,11 @@ class AprilDetector:
             self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
             self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor.pth', weights_only=True))
             self.regressor_model.to(self.device)
+            self.regressor_model.eval()
         else:
             self.model.load_state_dict(torch.load(self.model_load_path, weights_only=True))
         self.model.to(self.device)
+        self.model.eval()
 
     def plot_straw_level(self, frame_drawn, line_start, line_end, straw_level, color=(225, 105, 65)) -> np.ndarray:
         cv2.line(frame_drawn, line_start, line_end, color, 2)
@@ -505,8 +511,10 @@ class RTSPStream(AprilDetector):
             # NOTE if this is true, then we only need to load the image, run inference and then continue. We do not need to save anything.
             # Then we also wish to create a dictionary that explains the different durations of loading image, processing image and then total image time
             # we must ensure that only one model is running at a time otherwise the results will be skewed and not accurate
-            self.fps_test_results = {"fps": [], "load_time": [], "inference_time": [], "postprocess_time": [], "total_time": []}
-
+            if self.yolo_straw:
+                self.fps_test_results = {"fps": [], "load_time": [], "inference_time": [], "postprocess_time": [], "total_time": []}
+            else:
+                self.fps_test_results = {"fps": [], "load_time": [], "cutout_time": [], "inference_time": [], "postprocess_time": [], "total_time": []}
         with h5py.File(path, 'r+') as hf:
             timestamps = list(hf.keys())
             # sort timestamps
@@ -531,6 +539,7 @@ class RTSPStream(AprilDetector):
                 self.prediction_dict = {}
                 frame = hf[timestamp]['image'][()]
                 frame = decode_binary_image(frame) # process the frame
+                # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 if 'type' in hf[timestamp].attrs.keys():
                     if hf[timestamp].attrs['type'] != self.previous_frame_type:
                         self._warm_up_for_apriltags(path, i, 50)
@@ -565,7 +574,7 @@ class RTSPStream(AprilDetector):
 
     def _process_fps_test_predictor(self, frame, frame_time) -> None:
         # Get predictor results
-        results, OD_time = time_function(self.OD.score_frame, frame)
+        results, OD_time = time_function(self.OD.score_frame, frame.copy())
         # Make sure the results are not empty
         if len(results[0]) == 0:
             results = "NA"
@@ -671,6 +680,7 @@ class RTSPStream(AprilDetector):
             self._display_frame(frame_drawn)
             return
         
+        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         frame_drawn = self._process_frame_content(frame, frame_drawn, cutout, results, time_stamp=timestamp)
 
         # Display frame and overlay text
@@ -706,12 +716,12 @@ class RTSPStream(AprilDetector):
         cv2.line(frame_drawn, line_start, line_end, self.scada_color , 2)
         cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, self.scada_color, 2, cv2.LINE_AA)
         # Get yolo results
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         frame_drawn = self._yolo_model(frame, frame_drawn, None) # NOTE FILLING YOLO DATA HERE
 
         # Get predictor results
-        results, OD_time = time_function(self.OD.score_frame, frame)
+        results, OD_time = time_function(self.OD.score_frame, frame.copy())
         # Make sure the results are not empty
         if len(results[0]) == 0:
             results = "NA"
@@ -754,24 +764,38 @@ class RTSPStream(AprilDetector):
                 group.create_dataset('image', data=img)
 
             if hdf5_model_save_name is not None:
+                try:
+                    # remove the existing entry:
+                    if hdf5_model_save_name in group.keys():
+                        del group[hdf5_model_save_name]
 
-                # remove the existing entry:
-                if hdf5_model_save_name in group.keys():
-                    del group[hdf5_model_save_name]
+                    if self.yolo_straw:
+                        t = self.prediction_dict["yolo"]
+                    elif self.with_predictor:
+                        t = self.prediction_dict["convnextv2"]
+                        t_ = self.prediction_dict["yolo_cutout"]
+                        if 'yolo_cutout' in group.keys():
+                            del group['yolo_cutout']
+                        group.create_dataset('yolo_cutout', data=t_)
+                    
+                    t1_name = 'percent'
+                    t2_name = 'pixel'
+                    t1, t2 = list(t.keys())[0], list(t.values())[0]
+                    # then we create the group and add the datasets
+                    pred = group.create_group(hdf5_model_save_name)
+                    pred.create_dataset(t1_name, data=t1)
+                    pred.create_dataset(t2_name, data=t2)
 
-                if self.yolo_straw:
-                    t = self.prediction_dict["yolo"]
-                elif self.with_predictor:
-                    t = self.prediction_dict["convnextv2"]
 
-                t1_name = 'percent'
-                t2_name = 'pixel'
-                t1, t2 = list(t.keys())[0], list(t.values())[0]
+                except Exception as e:
+                    if hdf5_model_save_name in group.keys():
+                        del group[hdf5_model_save_name]
+                    if 'yolo_cutout' in group.keys():
+                        del group['yolo_cutout']
+                    print("###################")
+                    print(f"!ERROR! {timestamp}: {hdf5_model_save_name},\n{t1_name}: {t1},\n{t2_name}: {t2}\n--- {e}")
+                    print("###################")
 
-                # then we create the group and add the datasets
-                pred = group.create_group(hdf5_model_save_name)
-                pred.create_dataset(t1_name, data=t1)
-                pred.create_dataset(t2_name, data=t2)
             else:
                 try:
                     for key, value in self.prediction_dict.items():
@@ -916,24 +940,26 @@ class RTSPStream(AprilDetector):
 
     def _process_frame_content(self, frame: np.ndarray, frame_drawn: np.ndarray, cutout, results=None, time_stamp = None) -> np.ndarray:
         """Handle specific processing like AprilTags, Object Detection, etc."""
-        # Object Detection
-        if cutout is not None:
-            frame = cutout
-            results = results 
-        elif self.object_detect:
-            results, OD_time = time_function(self.OD.score_frame, frame) 
-            # Make sure the results are not empty
-            if len(results[0]) == 0:
-                results = "NA"
-            self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
-        else:
-            results = results
-
-        # Predictor of the straw level
-        if self.with_predictor:
-            return self._predictor_model(frame, frame_drawn, results, time_stamp)
-        elif self.yolo_straw:
-            return self._yolo_model(frame, frame_drawn, cutout, time_stamp)
+        with torch.no_grad():
+            # Object Detection
+            if cutout is not None:
+                frame = cutout
+                results = results 
+            elif self.object_detect:
+                results, OD_time = time_function(self.OD.score_frame, frame.copy())
+                self.prediction_dict["yolo_cutout"] = results[1][0].flatten().cpu().detach().numpy()
+                # Make sure the results are not empty
+                if len(results[0]) == 0:
+                    results = "NA"
+                self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
+            else:
+                results = results
+            # frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            # Predictor of the straw level
+            if self.with_predictor:
+                return self._predictor_model(frame, frame_drawn, results, time_stamp)
+            elif self.yolo_straw:
+                return self._yolo_model(frame, frame_drawn, cutout, time_stamp)
                 
     def _predictor_model(self, frame: np.ndarray, frame_drawn: np.ndarray, results: list, time_stamp=None) -> None:
         if results != "NA":
@@ -945,7 +971,8 @@ class RTSPStream(AprilDetector):
             return frame_drawn
 
     def _yolo_model(self, frame: np.ndarray, frame_drawn: np.ndarray, cutout, time_stamp=None) -> None:
-        output, inference_time = time_function(self.yolo_model.score_frame, frame)
+        # bgr to rgb
+        output, inference_time = time_function(self.yolo_model.score_frame, frame.copy())
         # If the output is not empty, we can plot the boxes and get the straw level
         if self.fps_test:
             start = time.time()
@@ -1024,8 +1051,9 @@ class RTSPStream(AprilDetector):
         
     def _process_predictions(self, frame, results, frame_drawn, time_stamp=None) -> np.ndarray:
         """Run model predictions and update overlay."""
+        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         cutout_image, prep_time = time_function(self.helpers._prepare_for_inference, frame, results)
-
+    
         if cutout_image is not None:
             if self.regressor:
                 if self.predictor_model != 'cnn':
@@ -1065,15 +1093,23 @@ class RTSPStream(AprilDetector):
                 self.prediction_dict["convnextv2"] = {straw_level: [line_start, line_end]}
             # Draw line and text for straw level
             if straw_level is not None:
-                cv2.line(frame_drawn, line_start, line_end, self.predictor_color, 2)
-                cv2.putText(frame_drawn, f"{straw_level:.2f}%", (line_end[0] + 10, line_end[1]), cv2.FONT_HERSHEY_SIMPLEX, 1,  self.predictor_color, 2, cv2.LINE_AA)
+                if line_start[0] is not None:
+                    cv2.line(frame_drawn, line_start, line_end, self.predictor_color, 2)
+                    cv2.putText(frame_drawn, f"{straw_level:.2f}%", (line_end[0] + 10, line_end[1]), cv2.FONT_HERSHEY_SIMPLEX, 1,  self.predictor_color, 2, cv2.LINE_AA)
                 self.information["predictor_model"]["text"] = f'(T2) Predictor Time: {inference_time:.2f} s'
                 self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
 
             if self.fps_test:
+                self.fps_test_results["cutout_time"].append(prep_time)
                 self.fps_test_results["inference_time"].append(inference_time + prep_time)
                 self.fps_test_results["postprocess_time"].append(time.time() - start)
-
+        else:
+            self.information["predictor_level"]["text"] = f'(T2) Predictor Level: NA'
+            self.information["predictor_smooth"]["text"] = f'(T2) Smoothed Straw Level: NA'
+            self.information["predictor_model"]["text"] = f'(T2) Predictor Time: NA'
+            self.information["prep"]["text"] = f'(T2) Image Prep. Time: NA'
+            self.prediction_dict["convnextv2"] = {0: [None, None]}
+            print("YOLO: No cutout image found.")
         return frame_drawn
 
     def _update_information(self, frame_time):
@@ -1353,11 +1389,11 @@ def main(args: Namespace) -> None:
                make_cutout=args.make_cutout, 
                use_cutout=args.use_cutout, 
                object_detect=args.object_detect, 
-               od_model_name="models/obb_chute_best.pt", 
+               od_model_name="models/obb_cutout_best.pt", 
                yolo_threshold=args.yolo_threshold,
                detect_april=args.detect_april, 
                yolo_straw=args.yolo_straw, 
-               yolo_straw_model="models/obb_best_serene.pt",
+               yolo_straw_model="models/obb_best_swift.pt",
                with_predictor=args.with_predictor, 
                predictor_model='convnext', 
                model_load_path='models/convnext_regressor/', 

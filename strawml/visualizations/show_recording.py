@@ -260,6 +260,25 @@ def _validate_data(file_path:str):
                 missing_keys['yolo'].append(key)
     return missing_keys
 
+def _retrieve_iou_data(file_path: str):
+
+    # Initialize the dataframes
+    label_bbox = np.array([]).reshape(0,8)
+    yolo_bbox = np.array([]).reshape(0,8)
+    # We then load the data from the file path
+    with h5py.File(file_path, 'r') as f:
+        keys = list(f.keys())
+        if "frame" == keys[0].split("_")[0]:
+            keys = sorted(keys, key=lambda x: int(x.split('_')[1]))
+        else:
+            keys = sorted(keys, key=lambda x: float(x))
+        for key in keys:
+
+            yolo_bbox = np.vstack([yolo_bbox, f[key]['yolo_cutout'][...]])
+            label_bbox = np.vstack([label_bbox, f[key]['annotations']['bbox_chute'][...]])
+
+    return yolo_bbox, label_bbox
+
 def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv2', use_label=False, label_as='scada'):
     """
     Load the data from the file path
@@ -319,6 +338,7 @@ def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv
     if use_label:
         return label_data, name1_data, name2_data, x_axis, changed_index
     return None, name1_data, name2_data, x_axis, changed_index
+
 def _smooth_data(sensor_data, model_data):
     """
     This function takes the data and smooths it out. It smooths by taking the average of the previous 5 data points.
@@ -365,42 +385,77 @@ def _print_summary_statistics(name1, name2, name1_data, name2_data, label_data, 
                 accuracy_above_50 = np.mean((data[i][mask] >= label_data[mask] - percentage) & (data[i][mask] <= label_data[mask] + percentage)) * 100
                 print(f"  -- Accuracy for labels above 50%: {accuracy_above_50:.2f}%")
 
-def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', time_step:int = 5, delta:bool = True, use_label=False, label_as='scada', with_threshold=False):  
+def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', time_step:int = 5, delta:bool = True, use_label=False, label_as='scada', with_threshold=False, iou=False):  
     # We first define the figure on which we wish to plot the data
     if delta:
         fig, axes = plt.subplots(2, 1, figsize=(15, 10))
     else:
         fig, axes = plt.subplots(1, 1, figsize=(20, 5), sharey=True)
 
-    # We then load the data from the file path
-    label_data, name1_data, name2_data, x_axis, changed_index = _retreive_data(file_path, name1=name1, name2=name2, use_label=use_label, label_as=label_as)
-    x_axis_data = x_axis * time_step
-    # Plot the data on top of the figure
-    if delta:
-        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes[0])
-    else:
-        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes)
-    if delta:
-        JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, plot_data=False, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes[1])
+    if iou:
+        import cv2
+        from shapely.geometry import Polygon
+        def calculate_iou_rotated(box1, box2):
+            # Define polygons for each box from the corner coordinates
+            poly1 = Polygon([(box1[0], box1[1]), (box1[2], box1[3]), 
+                            (box1[4], box1[5]), (box1[6], box1[7])])
+            poly2 = Polygon([(box2[0], box2[1]), (box2[2], box2[3]), 
+                            (box2[4], box2[5]), (box2[6], box2[7])])
 
-    _print_summary_statistics(name1, name2, name1_data, name2_data, label_data, label_as)
-    name = file_path.split("/")[-1].split(".")[0].split("_")
-    if "rotated" in name:
-        name = "Rotated"
-    elif "vertical" in name:
-        name = "Vertical"
-    elif "combined" in name:
-        name = "Vertical_and_Rotated_Combined"
-    # replace _ with space
-    try:
-        fig.suptitle(f"{name.replace('_', ' ')}", y=0.96, fontsize=25)
-    except Exception as e:
-        print(e)
-    # Adjust vertical spacing between subplots
-    plt.subplots_adjust(hspace=0.2)  # Reduce hspace as needed
-    # plt.tight_layout(pad=1.0)  # Adjust padding as necessary
-    # plt.savefig(f"reports/recording_{name.lower()}_{name1}_{name2}.pdf")
-    plt.show()
+            # Calculate the intersection area
+            intersection = poly1.intersection(poly2)
+            intersection_area = intersection.area
+
+            # Calculate the union area
+            union_area = poly1.area + poly2.area - intersection_area
+
+            # Calculate the IoU
+            iou = intersection_area / union_area if union_area > 0 else 0
+
+            return iou
+        yolo_bbox, label_bbox = _retrieve_iou_data(file_path)
+        # calculate the intersection over union between the two bounding boxes for each frame,
+        # knowing that the bounding boxes are in the format [x1, y1, x2, y2, x3, y3, x4, y4]
+        iou = []
+        for i in range(len(yolo_bbox)):
+            # get the coordinates of the bounding boxes
+            yolo_coords = yolo_bbox[i].reshape(4, 2)
+            label_coords = label_bbox[i].reshape(4, 2)
+            iou.append(calculate_iou_rotated(yolo_coords.flatten(), label_coords.flatten()))
+        print(f"Mean IOU: {np.mean(iou):.2f}")
+        print(f"Std IOU: {np.std(iou):.2f}")
+        print(f"Max IOU: {np.max(iou):.2f}")
+        print(f"Min IOU: {np.min(iou):.2f}")
+    else:
+        # We then load the data from the file path
+        label_data, name1_data, name2_data, x_axis, changed_index = _retreive_data(file_path, name1=name1, name2=name2, use_label=use_label, label_as=label_as)
+        x_axis_data = x_axis * time_step
+        # Plot the data on top of the figure
+        if delta:
+            JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes[0])
+        else:
+            JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes)
+        if delta:
+            JointPlot(x_axis_data, label_data, name1_data, name2_data, name1=name1, name2=name2, marginal_x=False, marginal_y=True, plot_data=False, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes[1])
+
+        _print_summary_statistics(name1, name2, name1_data, name2_data, label_data, label_as)
+        name = file_path.split("/")[-1].split(".")[0].split("_")
+        if "rotated" in name:
+            name = "Rotated"
+        elif "vertical" in name:
+            name = "Vertical"
+        elif "combined" in name:
+            name = "Vertical_and_Rotated_Combined"
+        # replace _ with space
+        try:
+            fig.suptitle(f"{name.replace('_', ' ')}", y=0.96, fontsize=25)
+        except Exception as e:
+            print(e)
+        # Adjust vertical spacing between subplots
+        plt.subplots_adjust(hspace=0.2)  # Reduce hspace as needed
+        # plt.tight_layout(pad=1.0)  # Adjust padding as necessary
+        # plt.savefig(f"reports/recording_{name.lower()}_{name1}_{name2}.pdf")
+        plt.show()
 
 if __name__ == '__main__':
     # file_path = "data/predictions/recording_rotated_all_frames_processed.hdf5"
@@ -410,4 +465,4 @@ if __name__ == '__main__':
     # file_path = "data/predictions/recording_combined_all_frames_processed.hdf5"
     file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox.hdf5"
     # file_path = 'data/noisy_datasets/noisy_scratches_lens_flare.hdf5'
-    main(file_path, name="sensors", name1='yolo_serene', name2='convnextv2', time_step=5, delta=False, use_label=True, label_as='straw_percent_bbox', with_threshold=True)
+    main(file_path, name="sensors", name1='yolo_swift', name2='yolo_faithful', time_step=5, delta=False, use_label=True, label_as='straw_percent_bbox', with_threshold=True, iou=False)

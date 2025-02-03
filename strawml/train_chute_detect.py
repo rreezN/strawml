@@ -15,11 +15,11 @@ if __name__ == '__main__':
     # train the model on our own dataset
     model.train(
             data="data/processed/0_straw_data_whole.yaml",
-            imgsz=608,
-            epochs=100,
-            batch=14,
-            lr0=0.0021874277583658784,
-            optimizer="AdamW",
+            imgsz=579,
+            epochs=300,
+            batch=20,
+            lr0=0.0021696499235375,
+            optimizer="Adam",
             device="cuda",
             hsv_h=0.015,
             hsv_s=0.7,
@@ -37,9 +37,9 @@ if __name__ == '__main__':
             copy_paste=0.0,
             erasing=0.4,
             crop_fraction=1,
-            patience=10,
+            patience=50,
             project="yolov-final-runs",
-            name='faithful full image')
+            name='swift full image')
     # results = model.val()  # evaluate model performance on the validation set
     # results = model("data/chute_digit.jpg")  # predict on an image
     # results = model("data/processed/yolo_format/train/frame_0.jpg")  # predict on a video
