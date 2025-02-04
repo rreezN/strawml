@@ -25,7 +25,7 @@ class ObjectDetect:
             
         model.to(self.device)
 
-        return model.eval()
+        return model
 
     def order_corners(self, points):
         """
