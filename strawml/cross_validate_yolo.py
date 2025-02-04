@@ -39,25 +39,60 @@ def reset_wandb_env():
         if key.startswith("WANDB_") and key not in exclude:
             del os.environ[key]
 
+def test(model, test_dataset_yaml, sweep_data):
+    """
+    Test the trained model on a different dataset.
+    """
+    run_name = "{}-{}-test".format(sweep_data.sweep_run_name, sweep_data.num)
+    
+    # Start a new wandb run for testing
+    run = wandb.init(
+        group=sweep_data.sweep_id,
+        job_type="test",
+        name=run_name,
+        config=sweep_data.config,
+        reinit=True
+    )
+
+    # Run the test
+    metrics = model.val(data=test_dataset_yaml)
+
+    # Log test metrics
+    for key, value in metrics.items():
+        wandb.log({f"test/{key}": value})
+
+    run.finish()
+    return metrics
+
 
 def train(sweep_data, dataset_yaml):
     model = YOLO("models/yolo11s-obb.pt")
 
     run_name = "{}-{}".format(sweep_data.sweep_run_name, sweep_data.num)
     config = sweep_data.config
+
     run = wandb.init(
         group=sweep_data.sweep_id,
-        job_type=sweep_data.sweep_run_name,
+        job_type="train",
         name=run_name,
         config=config,
         reinit=True
     )
-    model.train(data=dataset_yaml, imgsz=config["imgsz"], epochs=30, batch=config["batch_size"], lr0=config["lr"], optimizer=config["optimizer"])
+
+    model.train(
+        data=dataset_yaml,
+        imgsz=config["imgsz"],
+        epochs=30,
+        batch=config["batch_size"],
+        lr0=config["lr"],
+        optimizer=config["optimizer"]
+    )
+
     run.finish()
-    return model.metrics
+    return model  # Return trained model
 
 
-def main(data_path, n_folds, id):
+def main(data_path, test_data_yaml, n_folds, id):
     """
     Main function for running the sweep and performing k-fold cross-validation.
     """
@@ -83,25 +118,22 @@ def main(data_path, n_folds, id):
         sweep_run_id = sweep_run.id
         sweep_run.finish()
         wandb.sdk.wandb_setup._setup(_reset=True)
-        metrics = {}
-
+        
+        trained_models = []
         for num in range(num_folds):
             reset_wandb_env()
-            metrics[num] = train(
-                SweepData(
-                    sweep_id=sweep_id,
-                    num=num,
-                    sweep_run_name=sweep_run_name,
-                    config=dict(sweep_run.config),
-                ),
-                ds_yamls[num],
+            sweep_data = SweepData(
+                sweep_id=sweep_id,
+                num=num,
+                sweep_run_name=sweep_run_name,
+                config=dict(sweep_run.config),
             )
-
-        # # Save the metrics for this sweep run
-        # with open(f"metrics_{sweep_run.id}.pkl", "wb") as f:
-        #     pickle.dump(metrics, f)
+            trained_model = train(sweep_data, ds_yamls[num])
+            trained_models.append((sweep_data, trained_model))
+        # Testing Loop (After Training)
+        for sweep_data, model in trained_models:
+            test(model, test_data_yaml, sweep_data)
         sweep_run.finish()
-
     # Launch the sweep agent
     wandb.agent(sweep_id, function=agent_function)
 
@@ -110,9 +142,9 @@ def get_args() -> Namespace:
     parser = ArgumentParser()
     # Add arguments to the parser
     parser.add_argument('--path', type=str, default="/work3/s194247/yolo_format_bbox_straw_whole_5fold")
+    parser.add_argument('--test_data_yaml', type=str, default="/work3/s194247/test_data_set.yaml")
     parser.add_argument('--n_folds', type=int, default=5)
     parser.add_argument('--id', type=str, default="4ccyh2d4")
-
     return parser.parse_args()
 
 
