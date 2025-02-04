@@ -258,12 +258,6 @@ def plot_hyper_parameters_vs_accuracy():
     plt.tight_layout()
     plt.savefig('reports/figures/learning_rate_vs_accuracy.pdf', dpi=300, bbox_inches='tight')
             
-        
-        
-    
-    
-
-
 def plot_final_run_curves():
     list_of_csvs = os.listdir("reports/training curves/final run")
     list_of_csvs = [x for x in list_of_csvs if x.endswith(".csv")]
@@ -341,8 +335,98 @@ def plot_final_run_curves():
     plt.tight_layout()
     plt.savefig("reports/training curves/final run/straw_model_final_run.pdf", dpi=300, bbox_inches='tight')
 
+def create_table_of_model():
+    df = pd.read_csv('reports/straw model selection all/straw_level_models_model_selection_all_data.csv', sep=',', index_col='Name')
+    
+    # df = df[df['State'] == 'finished']
+    df = df[df['data_subsample'] == 1.0]
+    # df = df.drop(columns=['State', 'User', 'Created'])
+    df = df.drop_duplicates()
+    
+    df['augment_probability'] = df['augment_probability'].fillna(0.0)
+    df['balanced_dataset'] = df['balanced_dataset'].fillna(False)
+    df['inc_heatmap'] = df['inc_heatmap'].fillna(False)
+    df['inc_edges'] = df['inc_edges'].fillna(False)
+    df['only_head'] = df['only_head'].fillna(False)
+    df['use_sigmoid'] = df['use_sigmoid'].fillna(False)
+    df['continuous'] = df['continuous'].fillna(False)
+    df['num_hidden_layers'] = df['num_hidden_layers'].fillna(0)
+    df['num_neurons'] = df['num_neurons'].fillna(512)
+    
+    df['augment_probability'] = df['augment_probability'] * 100
+    
+    for model in df.index:
+        mean_accuracy = 0
+        divisor = 0
+        for i in range(4):
+            mean_accuracy += df[f'f{i+1} mean sensor prediction accuracies'].loc[model] if not np.isnan(df[f'f{i+1} mean sensor prediction accuracies'].loc[model]) else 0
+            divisor += 1 if not np.isnan(df[f'f{i+1} mean sensor prediction accuracies'].loc[model]) else 0
+        mean_accuracy /= divisor
+        if mean_accuracy <= 1.0:
+            mean_accuracy *= 100
+        print(f'{model}: {mean_accuracy:.2f}%')
+        df.loc[model, 'mean_accuracy'] = mean_accuracy
+    
+            
+    df = df.sort_values(by='mean_accuracy', ascending=False)    
+
+    # Print markdown table of the models
+    print('----- ViT Model Selection -----')
+    vit_df = df[df['model'] == 'vit']
+    vit_df = vit_df.sort_values(by='mean_accuracy', ascending=False)
+    vit_df['continuous'] = vit_df['continuous'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['balanced_dataset'] = vit_df['balanced_dataset'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['inc_heatmap'] = vit_df['inc_heatmap'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['inc_edges'] = vit_df['inc_edges'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['only_head'] = vit_df['only_head'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['use_sigmoid'] = vit_df['use_sigmoid'].map({True: '$\checkmark$', False: '$\\times$'})
+    print(f'| Model | Accuracy | Image Size | Regression | Heatmap | Sigmoid | Head Hidden Layers |')
+    print(f'| --- | --- | --- | --- | --- | --- | --- |')
+    print(f'|  | Optimiser | Augment Probability | Balanced Dataset | Edges | Only Head | Head Layer Size |')
+    for model in vit_df.index:
+        print(f'| {model} | {vit_df["mean_accuracy"].loc[model]:.2f}\% | {vit_df["image_size"].loc[model]} | {vit_df["continuous"].loc[model]} | {vit_df["inc_heatmap"].loc[model]} | {vit_df["use_sigmoid"].loc[model]} | {vit_df["num_hidden_layers"].loc[model]:.0f} |')
+        print(f'| | {vit_df["optim"].loc[model]} | {vit_df["augment_probability"].loc[model]:.0f}\% | {vit_df["balanced_dataset"].loc[model]} | {vit_df["inc_edges"].loc[model]} | {vit_df["only_head"].loc[model]} | {vit_df["num_neurons"].loc[model]:.0f} |')
+
+    print()
+    print('----- ConvNeXtV1 Model Selection -----')
+    vit_df = df[df['model'].isin(['convnext', 'convnextv2'])]
+    vit_df = vit_df[vit_df['Tags'] == 'v1']
+    vit_df = vit_df.sort_values(by='mean_accuracy', ascending=False)
+    vit_df['continuous'] = vit_df['continuous'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['balanced_dataset'] = vit_df['balanced_dataset'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['inc_heatmap'] = vit_df['inc_heatmap'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['inc_edges'] = vit_df['inc_edges'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['only_head'] = vit_df['only_head'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['use_sigmoid'] = vit_df['use_sigmoid'].map({True: '$\checkmark$', False: '$\\times$'})
+    print(f'| Model | Accuracy | Image Size | Regression | Heatmap | Sigmoid | Head Hidden Layers |')
+    print(f'| --- | --- | --- | --- | --- | --- | --- |')
+    print(f'|  | Optimiser | Augment Probability | Balanced Dataset | Edges | Only Head | Head Layer Size |')
+    for model in vit_df.index:
+        print(f'| {model} | {vit_df["mean_accuracy"].loc[model]:.2f}\% | {vit_df["image_size"].loc[model]} | {vit_df["continuous"].loc[model]} | {vit_df["inc_heatmap"].loc[model]} | {vit_df["use_sigmoid"].loc[model]} | {vit_df["num_hidden_layers"].loc[model]:.0f} |')
+        print(f'| | {vit_df["optim"].loc[model]} | {vit_df["augment_probability"].loc[model]:.0f}\% | {vit_df["balanced_dataset"].loc[model]} | {vit_df["inc_edges"].loc[model]} | {vit_df["only_head"].loc[model]} | {vit_df["num_neurons"].loc[model]:.0f} |')
+    
+    print()
+    print('----- ConvNeXtV2 Model Selection -----')
+    vit_df = df[df['model'].isin(['convnextv2'])]
+    vit_df = vit_df[vit_df['Tags'] != 'v1']
+    vit_df = vit_df.sort_values(by='mean_accuracy', ascending=False)
+    vit_df['continuous'] = vit_df['continuous'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['balanced_dataset'] = vit_df['balanced_dataset'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['inc_heatmap'] = vit_df['inc_heatmap'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['inc_edges'] = vit_df['inc_edges'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['only_head'] = vit_df['only_head'].map({True: '$\checkmark$', False: '$\\times$'})
+    vit_df['use_sigmoid'] = vit_df['use_sigmoid'].map({True: '$\checkmark$', False: '$\\times$'})
+    print(f'| Model | Accuracy | Image Size | Regression | Heatmap | Sigmoid | Head Hidden Layers |')
+    print(f'| --- | --- | --- | --- | --- | --- | --- |')
+    print(f'|  | Optimiser | Augment Probability | Balanced Dataset | Edges | Only Head | Head Layer Size |')
+    for model in vit_df.index:
+        print(f'| {model} | {vit_df["mean_accuracy"].loc[model]:.2f}\% | {vit_df["image_size"].loc[model]} | {vit_df["continuous"].loc[model]} | {vit_df["inc_heatmap"].loc[model]} | {vit_df["use_sigmoid"].loc[model]} | {vit_df["num_hidden_layers"].loc[model]:.0f} |')
+        print(f'| | {vit_df["optim"].loc[model]} | {vit_df["augment_probability"].loc[model]:.0f}\% | {vit_df["balanced_dataset"].loc[model]} | {vit_df["inc_edges"].loc[model]} | {vit_df["only_head"].loc[model]} | {vit_df["num_neurons"].loc[model]:.0f} |')
+    
+    
 if __name__ == '__main__':
     # analyse_model_selection()
     # plot_training_curves()
-    plot_hyper_parameters_vs_accuracy()
+    # plot_hyper_parameters_vs_accuracy()
     # plot_final_run_curves()
+    create_table_of_model()
