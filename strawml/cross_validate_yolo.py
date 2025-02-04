@@ -137,7 +137,7 @@ def get_args() -> Namespace:
     # Add arguments to the parser
     parser.add_argument('--path', type=str, default="/work3/s194247/yolo_format_bbox_straw_whole_4fold")
     parser.add_argument('--test_data_yaml', type=str, default="/work3/s194247/test_data_set.yaml")
-    parser.add_argument('--n_folds', type=int, default=2)
+    parser.add_argument('--n_folds', type=int, default=4)
     parser.add_argument('--id', type=str, default="6eg448ia")
     return parser.parse_args()
 
