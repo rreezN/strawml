@@ -73,7 +73,7 @@ def train(sweep_data, dataset_yaml):
     model.train(
         data=dataset_yaml,
         imgsz=config["imgsz"],
-        epochs=1,
+        epochs=30,
         batch=config["batch_size"],
         lr0=config["lr"],
         optimizer=config["optimizer"], 
@@ -97,7 +97,6 @@ def main(data_path, test_data_yaml, n_folds, id):
     # Define the agent function
     def agent_function():
         ds_yamls = sorted(data_path.rglob("*.yaml"))[:num_folds]
-        print(ds_yamls)
         sweep_run = wandb.init()
         sweep_id = sweep_run.sweep_id or "unknown"
         sweep_url = sweep_run.get_sweep_url()
