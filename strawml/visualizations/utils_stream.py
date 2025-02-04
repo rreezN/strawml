@@ -317,10 +317,12 @@ class AprilDetectorHelpers:
     
     def _load_normalisation_constants(self):
         # Loads the normalisation constants from data/processed/statistics.yaml
-        with h5py.File("data/processed/train.hdf5", "r") as file:
-            # data = yaml.safe_load(file)
-            mean = file.attrs['mean']
-            std = file.attrs['std']
+        # with h5py.File("data/processed/train.hdf5", "r") as file:
+        #     # data = yaml.safe_load(file)
+        #     mean = file.attrs['mean']
+        #     std = file.attrs['std']
+        mean = [116.17, 119.36, 100.02]
+        std = [33.586, 31.703, 55.446]
         return mean, std
         
     def _load_camera_params(self):
