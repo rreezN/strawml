@@ -1,6 +1,8 @@
 # venv
 strawenv/
 
+
+straw_project/
 Fisheye_ChArUco_Calibration/
 
 yolov8n.pt
