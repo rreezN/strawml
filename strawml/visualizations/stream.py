@@ -662,10 +662,13 @@ class RTSPStream(AprilDetector):
         if self.only_apriltag_cutout:
             frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=True, use_cutout=True)
             # save it in the hf file, but first delete existing cutout if it exists
-            if "april_cutout_image" in hf[timestamp].keys():
-                del hf[timestamp]["aprilapril_cutout_image_cutout_bbox"]
-            cutout_group = hf[timestamp].create_group('april_cutout_image')
-            cutout_group.create_dataset('image', data=cv2.imencode('.jpg', cutout)[1])
+            if cutout is not None:
+                if "april_cutout_image" in hf[timestamp].keys():
+                    del hf[timestamp]["aprilapril_cutout_image_cutout_bbox"]
+                cutout_group = hf[timestamp].create_group('april_cutout_image')
+                cutout_group.create_dataset('image', data=cv2.imencode('.jpg', cutout)[1])
+            else:
+                print(f"\nCutout is None for {timestamp}...")
         else:
             # Find Apriltags
             if self.detect_april and self.tags is not None:
