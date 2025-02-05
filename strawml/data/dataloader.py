@@ -180,7 +180,7 @@ class Chute(torch.utils.data.Dataset):
         # Define variable to contain the current segment data
         frame = self.frames[self.indices[idx]]
         if self.use_april_tag_image:
-            frame_data = decode_binary_image(frame['april_tag_image'][...])
+            frame_data = decode_binary_image(frame['april_cutout_image']['image'][...])
         else:
             frame_data = decode_binary_image(frame['image'][...])
         frame_data = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
@@ -875,7 +875,7 @@ if __name__ == '__main__':
     train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=False, inc_edges=False,
                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), 
                          num_classes_straw=21, continuous=True, subsample=1.0, augment_probability=0.0, greyscale=False, balance_dataset=False,
-                         use_yolo_to_cutout=False)
+                         use_yolo_to_cutout=False, use_april_tag_image=False, sensor=False)
     # train_set.save_distribution()
     
     
@@ -906,12 +906,13 @@ if __name__ == '__main__':
     sensor_set = Chute(data_path='data/processed/sensors_with_strawbbox.hdf5', data_type='test', inc_heatmap=False, inc_edges=False,
                           random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), continuous=True, subsample=1.0,
                           augment_probability=0, num_classes_straw=21, override_statistics=statistics, greyscale=False, balance_dataset=False, sensor=True,
-                          use_yolo_to_cutout=False)
-    sensor_set.save_distribution()
+                          use_yolo_to_cutout=False, use_april_tag_image=True)
+    # sensor_set.save_distribution()
     sensor_loader = DataLoader(sensor_set, batch_size=8, shuffle=False, num_workers=0)
     
-    # for i, (data, target) in enumerate(sensor_loader):
-    #     plot_batch(data, target, i*8, mean, std, grey=sensor_set.greyscale)
+    for i, (data, target, sensor_fullness) in enumerate(sensor_loader):
+        print(f'Batch {i+1}/{len(sensor_loader)}')
+        plot_batch(data, target, i*8, mean, std, grey=sensor_set.greyscale)
     
     
     
