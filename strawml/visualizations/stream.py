@@ -443,6 +443,7 @@ class RTSPStream(AprilDetector):
         """
         for path in paths:
             # Start by running through the first 50 frames to get the tags
+            self.helpers._reset_tags()
             self._warm_up_for_apriltags(path, 0, 50)
             # pause to allow for the apriltag detect thread to catch up
             print("3 seconds pause to allow for apriltag detection to catch up...")
@@ -716,7 +717,7 @@ class RTSPStream(AprilDetector):
         cv2.line(frame_drawn, line_start, line_end, self.scada_color , 2)
         cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, self.scada_color, 2, cv2.LINE_AA)
         # Get yolo results
-        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         frame_drawn = self._yolo_model(frame, frame_drawn, None) # NOTE FILLING YOLO DATA HERE
 
@@ -726,6 +727,7 @@ class RTSPStream(AprilDetector):
         if len(results[0]) == 0:
             results = "NA"
         self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
+        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         frame_drawn = self._predictor_model(frame, frame_drawn, results) # NOTE FILLING CONVNEXTV2 DATA HERE
 
         # Display frame and overlay text
@@ -1101,7 +1103,7 @@ class RTSPStream(AprilDetector):
 
             if self.fps_test:
                 self.fps_test_results["cutout_time"].append(prep_time)
-                self.fps_test_results["inference_time"].append(inference_time + prep_time)
+                self.fps_test_results["inference_time"].append(inference_time)
                 self.fps_test_results["postprocess_time"].append(time.time() - start)
         else:
             self.information["predictor_level"]["text"] = f'(T2) Predictor Level: NA'
