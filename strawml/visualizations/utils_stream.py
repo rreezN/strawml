@@ -539,7 +539,7 @@ class AprilDetectorHelpers:
 
         chute_numbers_ = self.ADI.chute_numbers.copy()
         if not len(chute_numbers_) >= 2:
-            return None, False, sorted(chute_numbers.keys())
+            return None, False, sorted(chute_numbers_.keys())
         angle = self._get_tag_angle(list(chute_numbers_.values()))
         # from radians to degrees
         angle = np.degrees(angle)
@@ -643,7 +643,8 @@ class AprilDetectorHelpers:
         tag_diff = tag_over_closest - tag_under_closest
         # get the pixel value of the straw level
         excess = straw_level - tag_under_closest
-
+        if excess > 1:
+            return None, None
         # get the distance between the two closest tags
         x_under, y_under = chute_numbers[tag_under_closest]
         x_over, y_over = chute_numbers[tag_over_closest]
@@ -885,7 +886,7 @@ class TagGraphWithPositionsCV:
             if tag_id == 11:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.left_tags))
-                    if len(intersection) == 0:
+                    if len(intersection) < 2:
                         return None
                     p1 = intersection[0]
                     p2 = intersection[1]
@@ -895,7 +896,7 @@ class TagGraphWithPositionsCV:
             if tag_id == 15:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.right_tags))
-                    if len(intersection) == 0:
+                    if len(intersection) < 2:
                         return None
                     p1 = intersection[0]
                     p2 = intersection[1]
@@ -905,7 +906,7 @@ class TagGraphWithPositionsCV:
             if tag_id == 22:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.left_tags))[::-1]
-                    if len(intersection) == 0:
+                    if len(intersection) < 2:
                         return None
                     p1 = intersection[0]
                     p2 = intersection[1]
@@ -915,7 +916,7 @@ class TagGraphWithPositionsCV:
             if tag_id == 26:
                 try:
                     intersection = list(detected_tag_ids - (detected_tag_ids - self.right_tags))[::-1]
-                    if len(intersection) == 0:
+                    if len(intersection) < 2:
                         return None
                     p1 = intersection[0]
                     p2 = intersection[1]
