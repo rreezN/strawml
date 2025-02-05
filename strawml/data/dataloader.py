@@ -18,7 +18,7 @@ class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True, inc_edges: bool = False,
                  random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21,
                  continuous: bool = False, subsample: float = 1.0, augment_probability: float = 0.5, override_statistics: tuple = (), greyscale: bool = False, sensor: bool = False,
-                 balance_dataset: bool = False, use_yolo_to_cutout: bool = False) -> torch.utils.data.Dataset:
+                 balance_dataset: bool = False, use_yolo_to_cutout: bool = False, use_april_tag_image: bool = False) -> torch.utils.data.Dataset:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
@@ -33,10 +33,16 @@ class Chute(torch.utils.data.Dataset):
         self.augment_probability = augment_probability
         self.greyscale = greyscale
         self.sensor = sensor
+        self.use_yolo_to_cutout = use_yolo_to_cutout
+        self.use_april_tag_image = use_april_tag_image
         
         if self.use_yolo_to_cutout:
-            print('Dataloader: Using yolo to make cutouts')
-            self.OD = ObjectDetect('models/obb_chute_best.pt', yolo_threshold=0.5, device='cuda', verbose=False)
+            if self.use_april_tag_image:
+                print('Dataloader: Both yolo and april tag image enabled. Using april tag image to make cutouts')
+            else:
+                print('Dataloader: Using yolo to make cutouts')
+                device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                self.OD = ObjectDetect('models/obb_chute_best.pt', yolo_threshold=0.5, device=device, verbose=False)
         
         if len(override_statistics) > 0:
             self.train_mean, self.train_std = override_statistics[:2]
@@ -173,7 +179,10 @@ class Chute(torch.utils.data.Dataset):
             
         # Define variable to contain the current segment data
         frame = self.frames[self.indices[idx]]
-        frame_data = decode_binary_image(frame['image'][...])
+        if self.use_april_tag_image:
+            frame_data = decode_binary_image(frame['april_tag_image'][...])
+        else:
+            frame_data = decode_binary_image(frame['image'][...])
         frame_data = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
         
         if self.inc_heatmap:
@@ -202,7 +211,7 @@ class Chute(torch.utils.data.Dataset):
             print(frame['annotations'].keys(), "\n")
         
        # Rotate and crop the image to the bounding box if we are training on the straw dataset
-        if self.data_purpose == "straw":
+        if self.data_purpose == "straw" and not self.use_april_tag_image:
             if self.use_yolo_to_cutout:
                 frame_data_bgr = cv2.cvtColor(frame_data.copy(), cv2.COLOR_RGB2BGR)
                 results = self.OD.score_frame(frame_data_bgr)

@@ -743,12 +743,17 @@ def plot_fullness_distribution(plot_type='hist'):
     rotated = h5py.File('data/processed/recording_rotated_all_frames_processed_combined.hdf5', 'r')
     
     train_fullness = [frame['annotations']['fullness'][...].item() for frame in train.values()]
+    train_bbox_fullness = [frame['straw_percent_bbox']['percent'][...].item() for frame in train.values()]
     sensor_fullness = [frame['annotations']['fullness'][...].item() for frame in sensor.values()]
+    sensor_bbox_fullness = [frame['straw_percent_bbox']['percent'][...].item() for frame in sensor.values()]
     sensor_scada = [frame['annotations']['sensor_fullness'][...].item() for frame in sensor.values()]
     vertical_fullness = [frame['annotations']['fullness'][...].item() for frame in vertical.values()]
+    vertical_bbox_fullness = [frame['straw_percent_bbox']['percent'][...].item() for frame in vertical.values()]
     vertical_scada = [frame['scada']['percent'][...].item() for frame in vertical.values()]
     rotated_fullness = [frame['annotations']['fullness'][...].item() for frame in rotated.values()]
+    rotated_bbox_fullness = [frame['straw_percent_bbox']['percent'][...].item() for frame in rotated.values()]
     rotated_scada = [frame['scada']['percent'][...].item() for frame in rotated.values()]
+    
     
     # Round scada to nearest 0.05
     if plot_type == 'hist':
@@ -759,10 +764,14 @@ def plot_fullness_distribution(plot_type='hist'):
     
     # Change fullness to [0:100]
     train_fullness = [int(x*100) for x in train_fullness]
+    # train_bbox_fullness = [int(x*100) for x in train_bbox_fullness]
     sensor_fullness = [int(x*100) for x in sensor_fullness]
+    # sensor_bbox_fullness = [int(x*100) for x in sensor_bbox_fullness]
     sensor_scada = [int(x*100) for x in sensor_scada]
     vertical_fullness = [int(x*100) for x in vertical_fullness]
+    # vertical_bbox_fullness = [int(x*100) for x in vertical_bbox_fullness]
     rotated_fullness = [int(x*100) for x in rotated_fullness]
+    # rotated_bbox_fullness = [int(x*100) for x in rotated_bbox_fullness]
     
     train_class_counts = collections.Counter(train_fullness)
     if plot_type == 'hist':
@@ -788,6 +797,8 @@ def plot_fullness_distribution(plot_type='hist'):
     # Define plot colors and other variables
     annotation_color = 'darkslategray'
     sensor_color = 'goldenrod'
+    all_data_ls = ':'
+    bbox_fullness_ls = '--'
     
     # y_axis_max = max(train_class_counts.values()) + 10
     # y_axis = np.arange(0, y_axis_max, 100)
@@ -798,8 +809,9 @@ def plot_fullness_distribution(plot_type='hist'):
     # Train dataset
     if plot_type == 'kde':
         # Plot kde of train_fullness
-        sns.kdeplot(train_fullness, color=annotation_color, ax=ax[0], label='All annotations', fill=False, ls='--')
-        sns.kdeplot(train_balanced_fullness, color=annotation_color, ax=ax[0], label='Balanced annotations', fill=True)
+        sns.kdeplot(train_fullness, color=annotation_color, ax=ax[0], label='All annotations', fill=False, ls=all_data_ls)
+        sns.kdeplot(train_bbox_fullness, color=annotation_color, ax=ax[0], label='Bbox annotations', fill=False, ls=bbox_fullness_ls)
+        sns.kdeplot(train_balanced_fullness, color=annotation_color, ax=ax[0], label='Balanced annotations', fill=False)
     elif plot_type == 'hist':
         width = 4
         # Create vertically stacked bar plot of train_class_counts_balanced and train_class_counts_remainder
@@ -810,8 +822,9 @@ def plot_fullness_distribution(plot_type='hist'):
     
     # Sensor dataset (test)
     if plot_type == 'kde':
-        sns.kdeplot(sensor_fullness, color=annotation_color, ax=ax[1], label='Annotations', fill=True)
-        sns.kdeplot(sensor_scada, color=sensor_color, ax=ax[1], label='Sensor (SCADA)', fill=True)
+        sns.kdeplot(sensor_fullness, color=annotation_color, ax=ax[1], label='Annotations', fill=False)
+        sns.kdeplot(sensor_bbox_fullness, color=annotation_color, ax=ax[1], label='Bbox annotations', fill=False, ls=bbox_fullness_ls)
+        sns.kdeplot(sensor_scada, color=sensor_color, ax=ax[1], label='Sensor (SCADA)', fill=False)
     elif plot_type == 'hist':
         width = 1
         sensor_x_values = np.array([key for key in sensor_class_counts.keys()])
@@ -823,8 +836,9 @@ def plot_fullness_distribution(plot_type='hist'):
     
     # Vertical dataset
     if plot_type == 'kde':
-        sns.kdeplot(vertical_fullness, color=annotation_color, ax=ax[2], label='Annotations', fill=True)
-        sns.kdeplot(vertical_scada, color=sensor_color, ax=ax[2], label='Sensor (SCADA)', fill=True)
+        sns.kdeplot(vertical_fullness, color=annotation_color, ax=ax[2], label='Annotations', fill=False)
+        sns.kdeplot(vertical_bbox_fullness, color=annotation_color, ax=ax[2], label='Bbox annotations', fill=False, ls=bbox_fullness_ls)
+        sns.kdeplot(vertical_scada, color=sensor_color, ax=ax[2], label='Sensor (SCADA)', fill=False)
     elif plot_type == 'hist':
         width = 1
         vertical_x_values = np.array([key for key in vertical_class_counts.keys()])
@@ -836,8 +850,9 @@ def plot_fullness_distribution(plot_type='hist'):
     
     # Rotated dataset
     if plot_type == 'kde':
-        sns.kdeplot(rotated_fullness, color=annotation_color, ax=ax[3], label='Annotations', fill=True)
-        sns.kdeplot(rotated_scada, color=sensor_color, ax=ax[3], label='Sensor (SCADA)', fill=True)
+        sns.kdeplot(rotated_fullness, color=annotation_color, ax=ax[3], label='Annotations', fill=False)
+        sns.kdeplot(rotated_bbox_fullness, color=annotation_color, ax=ax[3], label='Bbox annotations', fill=False, ls=bbox_fullness_ls)
+        sns.kdeplot(rotated_scada, color=sensor_color, ax=ax[3], label='Sensor (SCADA)', fill=False)
     elif plot_type == 'hist':
         width = 1
         rotated_x_values = np.array([key for key in rotated_class_counts.keys()])
@@ -853,12 +868,13 @@ def plot_fullness_distribution(plot_type='hist'):
     for axis in ax:
         if plot_type == 'hist':
             axis.grid(axis='y', linestyle='--', alpha=0.5)
-        axis.legend(fontsize=font_size-4)
+        axis.legend(fontsize=font_size-4, loc='upper left')
         axis.set_xlabel('Fullness', fontsize=font_size)
         if plot_type == 'hist':
             axis.set_ylabel('Count', fontsize=font_size)
         elif plot_type == 'kde':
             axis.set_ylabel('KDE', fontsize=font_size)
+            axis.set_ylim(0, 0.0275)
         # x = np.arange(0, 101, 10)
         axis.set_xticks(np.arange(0, 101, 10))
         # axis.set_xticklabels(x, fontsize=font_size-4)
@@ -882,8 +898,8 @@ def plot_fullness_distribution(plot_type='hist'):
 if __name__ == '__main__':
     frames = h5py.File('data/processed/train.hdf5', 'r')
     # class_dictionary = get_frames_by_class(frames)
-    # plot_fullness_distribution(plot_type='hist')
-    save_frame_as_png(frames)
+    plot_fullness_distribution(plot_type='kde')
+    # save_frame_as_png(frames)
     
     ## These functions create plots of the dataset for the straw level monitoring model ##
     # plot_class_distribution(class_dictionary, frames, direction='horizontal') # horizontal or vertical
