@@ -43,6 +43,8 @@ class Chute(torch.utils.data.Dataset):
                 print('Dataloader: Using yolo to make cutouts')
                 device = 'cuda' if torch.cuda.is_available() else 'cpu'
                 self.OD = ObjectDetect('models/obb_chute_best.pt', yolo_threshold=0.5, device=device, verbose=False)
+        if self.use_april_tag_image:
+            print('Dataloader: Using april tag image cutouts')
         
         if len(override_statistics) > 0:
             self.train_mean, self.train_std = override_statistics[:2]

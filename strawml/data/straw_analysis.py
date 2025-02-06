@@ -16,6 +16,7 @@ import seaborn as sns
 
 from strawml.data.make_dataset import decode_binary_image
 from strawml.models.straw_classifier.chute_cropper import rotate_and_crop_to_bbox
+import strawml.models.straw_classifier.chute_cropper as cc
 
 
 # TODO: Big list in chatgpt: https://chatgpt.com/share/66f6ca92-e2fc-8003-a85f-cb4b4c023eeb
@@ -721,19 +722,35 @@ def save_frame_as_png(frames: h5py.File):
     frame_name = list(frames.keys())[0]
     image = decode_binary_image(frames[frame_name]['image'][...])
     edges = cv2.Canny(image, 100, 200)
-    heatmap = decode_binary_image(frames[frame_name]['image_diff'][...])
-    heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2GRAY)
+    # heatmap = decode_binary_image(frames[frame_name]['image_diff'][...])
+    # heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2GRAY)
     # heatmap = np.clip(heatmap * 1, 0, 255)
     # Rescale heatmap to be in range [0, 255]
-    heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap)) * 255
-    heatmap = heatmap.astype(np.uint8)
-    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_MAGMA)
-    # image, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
-    # image = cv2.resize(image, (204, 1370))
+    # heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap)) * 255
+    # heatmap = heatmap.astype(np.uint8)
+    # heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_MAGMA)
+    
+    bbox = frames[frame_name]['annotations']['bbox_chute'][...]
+    bbox_int = np.int32(bbox)
+    bbox_int = bbox_int.reshape((-1, 1, 2))
+    image = cv2.polylines(image, [bbox_int], True, (0, 255, 0), 10)
+    image_cutout, bbox = cc.rotate_to_bbox(image, bbox)
+    cv2.imwrite('reports/figures/frame_rotated_to_bbox.png', image_cutout)
+    
+    image_cutout, bbox = cc.crop_to_bbox(image_cutout, bbox)
+    image_cutout = cv2.resize(image_cutout, (208, 672))
+    cv2.imwrite('reports/figures/frame_cropped_to_bbox.png', image_cutout)
+    
+    april_tag_cutout = decode_binary_image(frames[frame_name]['april_cutout_image']['image'][...])
+    april_tag_cutout = cv2.resize(april_tag_cutout, (208, 672))
+    cv2.imwrite('reports/figures/frame_april_tag_cutout.png', april_tag_cutout)
+    # image_cutout, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
+    # image_cutout = cv2.resize(image_cutout, (672, 208))
     # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     cv2.imwrite('reports/figures/frame_rotated.png', image)
     cv2.imwrite('reports/figures/frame_edges.png', edges)
-    cv2.imwrite('reports/figures/frame_heatmap.png', heatmap)
+    # cv2.imwrite('reports/figures/frame_heatmap.png', heatmap)
+    # cv2.imwrite('reports/figures/frame_rotated_cutout.png', image_cutout)
     
 
 def plot_fullness_distribution(plot_type='hist'):
@@ -896,10 +913,10 @@ def plot_fullness_distribution(plot_type='hist'):
 
 
 if __name__ == '__main__':
-    frames = h5py.File('data/processed/train.hdf5', 'r')
+    frames = h5py.File('data/processed/recording_rotated_all_frames_processed_combined.hdf5', 'r')
     # class_dictionary = get_frames_by_class(frames)
-    plot_fullness_distribution(plot_type='kde')
-    # save_frame_as_png(frames)
+    # plot_fullness_distribution(plot_type='kde')
+    save_frame_as_png(frames)
     
     ## These functions create plots of the dataset for the straw level monitoring model ##
     # plot_class_distribution(class_dictionary, frames, direction='horizontal') # horizontal or vertical
