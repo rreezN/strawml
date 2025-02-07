@@ -488,7 +488,11 @@ class AprilDetectorHelpers:
             # Crop the frame based on results, if provided
             frame_data = self._crop_to_bbox(frame, results)
         else:
-            frame_data = cutout        
+            frame_data = cutout
+
+        if torch.from_numpy(frame_data).numel() == 0:
+            return None
+        
         # Detect edges if required
         edges = self._detect_edges(frame_data) if self.ADI.edges else None
 
