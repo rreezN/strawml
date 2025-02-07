@@ -466,7 +466,7 @@ class AprilDetectorHelpers:
 
         return self.ADI.detector.detect(cropped_frame), x_start, y_start
     
-    def _prepare_for_inference(self, frame, results=None, visualize=False):
+    def _prepare_for_inference(self, frame, results=None, cutout=None, visualize=False):
         """
         Prepare a frame for inference by cropping, normalizing, and optionally detecting edges.
 
@@ -484,9 +484,11 @@ class AprilDetectorHelpers:
         torch.Tensor
             The preprocessed frame ready for inference.
         """
-        # Crop the frame based on results, if provided
-        frame_data = self._crop_to_bbox(frame, results)
-        
+        if cutout is None:
+            # Crop the frame based on results, if provided
+            frame_data = self._crop_to_bbox(frame, results)
+        else:
+            frame_data = cutout        
         # Detect edges if required
         edges = self._detect_edges(frame_data) if self.ADI.edges else None
 
@@ -602,7 +604,11 @@ class AprilDetectorHelpers:
         
         # given the two y-values, take the y-value for straw_top and calculate the percentage of the straw level
         straw_level = (tag_diff * (y_under-straw_top) / (y_under-y_over) + tag_under)*10
-        
+        if straw_level > 100:
+            straw_level = 100
+        if straw_level < 0:
+            straw_level = 0
+            
         return straw_level, interpolated, sorted(chute_numbers.keys())
     
     def _get_straw_to_pixel_level(self, straw_level):
@@ -617,6 +623,12 @@ class AprilDetectorHelpers:
 
         # First we divide the straw level by 10 to get it on the same scale as the tag ids
         straw_level = straw_level / 10
+
+        # no we account for exceeding the limits
+        if straw_level > 10:
+            straw_level = 10
+        if straw_level < 0:
+            straw_level = 0
 
         if int(straw_level) == 10:
             # Handle edge case when straw level is at the top

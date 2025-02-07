@@ -156,7 +156,7 @@ class AprilDetector:
 
     def plot_straw_level(self, frame_drawn, line_start, line_end, straw_level, color=(225, 105, 65)) -> np.ndarray:
         # fist check if the straw level is None
-        if straw_level is None or line_start[0] is None:
+        if straw_level is None or line_start[0] is np.nan:
             return frame_drawn
         cv2.line(frame_drawn, line_start, line_end, color, 2)
         if straw_level is None:
@@ -518,7 +518,7 @@ class RTSPStream(AprilDetector):
             if self.yolo_straw:
                 self.fps_test_results = {"fps": [], "load_time": [], "inference_time": [], "postprocess_time": [], "total_time": []}
             else:
-                self.fps_test_results = {"fps": [], "load_time": [], "½me": [], "inference_time": [], "postprocess_time": [], "total_time": []}
+                self.fps_test_results = {"fps": [], "load_time": [], "cutout_time": [], "inference_time": [], "postprocess_time": [], "total_time": []}
         with h5py.File(path, 'r+') as hf:
             timestamps = list(hf.keys())
             # sort timestamps
@@ -533,40 +533,40 @@ class RTSPStream(AprilDetector):
             self.save_counter = 0
             pbar = tqdm(timestamps)
             for i, timestamp in enumerate(pbar):
-                try:
-                    if 'type' in hf[timestamp].attrs.keys():
-                        if i == 0:
-                            self.previous_frame_type = hf[timestamp].attrs['type']
-                        pbar.set_description(f"{file_name}, #Saved frames: {self.save_counter}, {self.previous_frame_type}")
+                # try:
+                if 'type' in hf[timestamp].attrs.keys():
+                    if i == 0:
+                        self.previous_frame_type = hf[timestamp].attrs['type']
+                    pbar.set_description(f"{file_name}, #Saved frames: {self.save_counter}, {self.previous_frame_type}")
+                else:
+                    pbar.set_description(f"{file_name}, #Saved frames: {self.save_counter}")
+                frame_time = time.time()
+                self.prediction_dict = {}
+                frame = hf[timestamp]['image'][()]
+                frame = decode_binary_image(frame) # process the frame
+                with self.lock:
+                    self.frame = frame
+                    self.annotations = None # reset the annotations
+                    self.straw_percent_bbox_group = None
+                    self.straw_percent_fullness_group = None
+                    if 'annotations' in hf[timestamp].keys():
+                        self.annotations = hf[timestamp]['annotations']
+                # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                if 'type' in hf[timestamp].attrs.keys():
+                    if hf[timestamp].attrs['type'] != self.previous_frame_type:     
+                        self._warm_up_for_apriltags(path, i, 50)
+                        self.previous_frame_type = hf[timestamp].attrs['type']
+                if self.fps_test:
+                    self.fps_test_results["load_time"].append(time.time() - frame_time)
+                    self._process_fps_test(frame, frame_time)
+                else:
+                    if self.with_annotations:
+                        self._process_sensor_hdf5_frame(frame, hf, path, timestamp, frame_time)
                     else:
-                        pbar.set_description(f"{file_name}, #Saved frames: {self.save_counter}")
-                    frame_time = time.time()
-                    self.prediction_dict = {}
-                    frame = hf[timestamp]['image'][()]
-                    frame = decode_binary_image(frame) # process the frame
-                    with self.lock:
-                        self.frame = frame
-                        self.annotations = None # reset the annotations
-                        self.straw_percent_bbox_group = None
-                        self.straw_percent_fullness_group = None
-                        if 'annotations' in hf[timestamp].keys():
-                            self.annotations = hf[timestamp]['annotations']
-                    # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    if 'type' in hf[timestamp].attrs.keys():
-                        if hf[timestamp].attrs['type'] != self.previous_frame_type:     
-                            self._warm_up_for_apriltags(path, i, 50)
-                            self.previous_frame_type = hf[timestamp].attrs['type']
-                    if self.fps_test:
-                        self.fps_test_results["load_time"].append(time.time() - frame_time)
-                        self._process_fps_test(frame, frame_time)
-                    else:
-                        if self.with_annotations:
-                            self._process_sensor_hdf5_frame(frame, hf, path, timestamp, frame_time)
-                        else:
-                            self._process_hdf5_frame(frame, hf, path, timestamp, frame_time)
-                except Exception as e:
-                    print(f"\nError in processing frame {timestamp}: {e}\n")
-                    continue
+                        self._process_hdf5_frame(frame, hf, path, timestamp, frame_time)
+                # except Exception as e:
+                #     print(f"\nError in processing frame {timestamp}: {e}\n")
+                #     continue
         if self.fps_test:
             print(f"Results: {self.fps_test_results}")
             # save the results to a file
@@ -588,12 +588,21 @@ class RTSPStream(AprilDetector):
 
     def _process_fps_test_predictor(self, frame, frame_time) -> None:
         # Get predictor results
-        results, OD_time = time_function(self.OD.score_frame, frame.copy())
-        # Make sure the results are not empty
-        if len(results[0]) == 0:
-            results = "NA"
-        self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
-        frame_drawn = self._predictor_model(frame, frame, results)
+        if self.detect_april and self.tags is not None:
+            frame_drawn, cutout = self.draw(frame=frame.copy(), tags=self.tags.copy(), make_cutout=self.make_cutout, use_cutout=self.use_cutout)
+            # print shape of cutout
+        else:
+            frame_drawn, cutout = frame, None
+
+        if cutout is None:
+            results, OD_time = time_function(self.OD.score_frame, frame.copy())
+            # Make sure the results are not empty
+            if len(results[0]) == 0:
+                results = "NA"
+            self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
+        else:
+            results = None
+        frame_drawn = self._predictor_model(frame, frame_drawn, results, cutout=cutout)
         self._update_information(frame_time)
         self._display_frame(frame_drawn)
 
@@ -620,8 +629,8 @@ class RTSPStream(AprilDetector):
                 del hf[timestamp]["straw_percent_bbox"]
             if "straw_percent_fullness" in hf[timestamp].keys():
                 del hf[timestamp]["straw_percent_fullness"]
-            angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
 
+            angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
             line_start = (int(straw_level_bbox_line[0]), int(straw_level_bbox_line[1]))
             line_end = (int(straw_level_bbox_line[0])+300, int(straw_level_bbox_line[1]))
             line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
@@ -644,14 +653,7 @@ class RTSPStream(AprilDetector):
             if t2:
                 del hf[timestamp]["straw_percent_fullness"]
             straw_level = 0
-            straw_level_line = self.helpers._get_straw_to_pixel_level(straw_level)
-            if not straw_level_line[0] is None:
-                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
-                line_start = (int(straw_level_line[0]), int(straw_level_line[1]))
-                line_end = (int(straw_level_line[0])+300, int(straw_level_line[1]))
-                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-            else:
-                line_start, line_end = (np.nan, np.nan), (np.nan, np.nan)
+            line_start = self._extract_straw_level(straw_level)
 
             straw_percent_bbox_group = hf[timestamp].create_group('straw_percent_bbox')
             straw_percent_bbox_group.create_dataset('percent', data=straw_level)
@@ -746,15 +748,16 @@ class RTSPStream(AprilDetector):
 
         frame_drawn = self._yolo_model(frame, frame_drawn, None) # NOTE FILLING YOLO DATA HERE
 
-        # Get predictor results
-        results, OD_time = time_function(self.OD.score_frame, frame.copy())
-        # Make sure the results are not empty
-        if len(results[0]) == 0:
-            results = "NA"
+        if cutout is None:
+            # Get predictor results
+            results, OD_time = time_function(self.OD.score_frame, frame.copy())
+            # Make sure the results are not empty
+            if len(results[0]) == 0:
+                results = "NA"
 
         self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame_drawn = self._predictor_model(frame, frame_drawn, results) # NOTE FILLING CONVNEXTV2 DATA HERE
+        frame_drawn = self._predictor_model(frame, frame_drawn, results, cutout) # NOTE FILLING CONVNEXTV2 DATA HERE
 
         # Display frame and overlay text
         self._update_information(frame_time)
@@ -995,18 +998,29 @@ class RTSPStream(AprilDetector):
             # frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             # Predictor of the straw level
             if self.with_predictor:
-                return self._predictor_model(frame, frame_drawn, results, time_stamp)
+                return self._predictor_model(frame, frame_drawn, results, time_stamp, cutout=cutout)
             elif self.yolo_straw:
                 return self._yolo_model(frame, frame_drawn, cutout, time_stamp)
                 
-    def _predictor_model(self, frame: np.ndarray, frame_drawn: np.ndarray, results: list, time_stamp=None) -> None:
+    def _predictor_model(self, frame: np.ndarray, frame_drawn: np.ndarray, results: list, time_stamp=None, cutout=None) -> None:
         if results != "NA":
-            frame_drawn = self._process_predictions(frame, results, frame_drawn, time_stamp = time_stamp)
+            frame_drawn = self._process_predictions(frame, results, frame_drawn, time_stamp = time_stamp, cutout=cutout)
             if self.object_detect:
                 frame_drawn = self.plot_boxes(results, frame_drawn, model_type="obb")
             return frame_drawn
         else:
             return frame_drawn
+
+    def _extract_straw_level(self, straw_level: float) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+        x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
+        if x_pixel is not None:
+            line_start = (int(x_pixel), int(y_pixel))
+            line_end = (int(x_pixel) + 300, int(y_pixel))
+            angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+            line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+        else:
+            line_start, line_end = (np.nan, np.nan), (np.nan, np.nan)
+        return line_start, line_end
 
     def _yolo_model(self, frame: np.ndarray, frame_drawn: np.ndarray, cutout, time_stamp=None) -> None:
         # bgr to rgb
@@ -1036,37 +1050,17 @@ class RTSPStream(AprilDetector):
                     self.information["yolo_smooth"]["text"] = f'(T2) Smoothed Straw Level: {smoothed_straw_level:.2f} %'
             
             if straw_level is not None:
-                # Since the new straw level might be a smoothed value, we need to update the pixel values of the straw level. We do this everytime to ensure that the overlay is based on the same pixel values all the time. Otherwise the overlay would shift from being based on the bbox pixel values vs. based on the tags.
-                x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
-                if x_pixel is not None:
-                    # Define the overlay lines and orientation
-                    line_start = (int(x_pixel), int(y_pixel))
-                    line_end = (int(x_pixel) + 300, int(y_pixel))
-                    angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
-                    line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-                    # Plot the line on the frame
-                else:
-                    line_start, line_end = (np.nan, np.nan), (np.nan, np.nan)
-                if self.smoothing:
-                    smoothed_x_pixel, smoothed_y_pixel = self.helpers._get_straw_to_pixel_level(smoothed_straw_level)
-                    if smoothed_x_pixel is not None:
-                        smoothed_line_start = (int(smoothed_x_pixel), int(smoothed_y_pixel))
-                        smoothed_line_end = (int(smoothed_x_pixel) + 300, int(smoothed_y_pixel))
-                        angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
-                        smoothed_line_start, smoothed_line_end = self.helpers._rotate_line(smoothed_line_start, smoothed_line_end, angle=angle)
-                        frame_drawn = self.plot_straw_level(frame_drawn, smoothed_line_start, smoothed_line_end, smoothed_straw_level, self.yolo_color)
-                    else:
-                        smoothed_line_start, smoothed_line_end = (np.nan, np.nan), (np.nan, np.nan)
-                    frame_drawn = self.plot_straw_level(frame_drawn, smoothed_line_start, smoothed_line_end, smoothed_straw_level, self.yolo_color)
-                else:
-                    frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level, self.yolo_color)
+                line_start, line_end = self._extract_straw_level(straw_level)
             else:
                 straw_level = 0
                 line_start, line_end = (np.nan, np.nan), (np.nan, np.nan)
-                if self.smoothing:
-                    smoothed_straw_level = 0
-                    smoothed_line_start, smoothed_line_end = (np.nan, np.nan), (np.nan, np.nan)
-            
+
+            if self.smoothing:
+                smoothed_line_start, smoothed_line_end = self._extract_straw_level(smoothed_straw_level)
+                frame_drawn = self.plot_straw_level(frame_drawn, smoothed_line_start, smoothed_line_end, smoothed_straw_level, self.yolo_color)
+            else:
+                frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level, self.yolo_color)
+                    
             if self.recording_req:
                 # Get coordiantes for the original data
                 self.prediction_dict["yolo"] = {straw_level: [line_start, line_end]}
@@ -1081,37 +1075,25 @@ class RTSPStream(AprilDetector):
             self.information["yolo_model"]["text"] = f'(T2) YOLO Time: {inference_time:.2f} s'
         else:
             straw_level = 0          
-            x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
-            if x_pixel is not None:
-                line_start = (int(x_pixel), int(y_pixel))
-                line_end = (int(x_pixel) + 300, int(y_pixel))
-                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
-                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-            else:
-                line_start, line_end = (np.nan, np.nan), (np.nan, np.nan)
+            line_start, line_end = self._extract_straw_level(straw_level)
 
             if self.smoothing:
                 smoothed_straw_level = self.helpers._smooth_level(straw_level, 'yolo', time_stamp = time_stamp)
                 self.information["yolo_smooth"]["text"] = f'(T2) Smoothed Straw Level: {smoothed_straw_level:.2f} %'
-                smoothed_x_pixel, smoothed_y_pixel = self.helpers._get_straw_to_pixel_level(smoothed_straw_level)
-                if smoothed_x_pixel is not None:
-                    smoothed_line_start = (int(smoothed_x_pixel), int(smoothed_y_pixel))
-                    smoothed_line_end = (int(smoothed_x_pixel) + 300, int(smoothed_y_pixel))
-                    smoothed_line_start, smoothed_line_end = self.helpers._rotate_line(smoothed_line_start, smoothed_line_end, angle=angle)
-                else:
-                    smoothed_line_start, smoothed_line_end = (np.nan, np.nan), (np.nan, np.nan)
+                smoothed_line_start, smoothed_line_end = self._extract_straw_level(smoothed_straw_level)
                 frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, smoothed_straw_level, self.yolo_color)
             else:
                 frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level, self.yolo_color)
-            # self.information["yolo_level"]["text"] = f'(T2) YOLO Level: NA'
-            # if self.smoothing:
-            #     self.information["yolo_smooth"]["text"] = f'(T2) Smoothed Straw Level: NA'
+
             self.information["yolo_model"]["text"] = f'(T2) YOLO Time: {inference_time:.2f} s'
+            
             if self.recording_req:
                 # Get coordiantes for the original data
                 self.prediction_dict["yolo"] = {straw_level: [line_start, line_end]}
                 self.prediction_dict["attr."] = {False: np.nan}
                 if self.smoothing:
+                    if smoothed_straw_level is None:
+                        smoothed_straw_level = 0
                     self.prediction_dict["yolo_smooth"] = {smoothed_straw_level: [smoothed_line_start, smoothed_line_end]}
 
             if self.fps_test:
@@ -1119,11 +1101,12 @@ class RTSPStream(AprilDetector):
                 self.fps_test_results["postprocess_time"].append(time.time() - start)
         return frame_drawn
         
-    def _process_predictions(self, frame, results, frame_drawn, time_stamp=None) -> np.ndarray:
+    def _process_predictions(self, frame, results, frame_drawn, time_stamp=None, cutout=None) -> np.ndarray:
         """Run model predictions and update overlay."""
         # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        cutout_image, prep_time = time_function(self.helpers._prepare_for_inference, frame, results)
-    
+
+        cutout_image, prep_time = time_function(self.helpers._prepare_for_inference, frame, results, cutout)
+        
         if cutout_image is not None:
             if self.regressor:
                 if self.predictor_model != 'cnn':
@@ -1141,30 +1124,18 @@ class RTSPStream(AprilDetector):
                 straw_level = predicted[0]*10
             if self.fps_test:
                 start = time.time()
+
+            line_start, line_end = self._extract_straw_level(straw_level)            
             self.information["predictor_level"]["text"] = f'(T2) Predictor Level: {straw_level:.2f} %'
 
-            x_pixel, y_pixel = self.helpers._get_straw_to_pixel_level(straw_level)
-            if x_pixel is not None:
-                angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
-                line_start = (int(x_pixel), int(y_pixel))
-                line_end = (int(x_pixel)+300, int(y_pixel))
-                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-                self.information["predictor_model"]["text"] = f'(T2) Predictor Time: {inference_time:.2f} s'
-                self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
-            else:
-                line_start, line_end = (np.nan, np.nan), (np.nan, np.nan)
-
+            self.information["predictor_model"]["text"] = f'(T2) Predictor Time: {inference_time:.2f} s'
+            self.information["prep"]["text"] = f'(T2) Image Prep. Time: {prep_time:.2f} s'
+            
             # We smooth the straw level
             if self.smoothing:
                 smoothed_straw_level = self.helpers._smooth_level(straw_level, 'predictor', time_stamp = time_stamp)
                 self.information["predictor_smooth"]["text"] = f'(T2) Smoothed Straw Level: {smoothed_straw_level:.2f} %'
-                smoothed_x_pixel, smoothed_y_pixel = self.helpers._get_straw_to_pixel_level(smoothed_straw_level)
-                if smoothed_x_pixel is not None:
-                    smoothed_line_start = (int(smoothed_x_pixel), int(smoothed_y_pixel))
-                    smoothed_line_end = (int(smoothed_x_pixel)+300, int(smoothed_y_pixel))
-                    smoothed_line_start, smoothed_line_end = self.helpers._rotate_line(smoothed_line_start, smoothed_line_end, angle=angle)
-                else:
-                    smoothed_line_start, smoothed_line_end = (np.nan, np.nan), (np.nan, np.nan)
+                smoothed_line_start, smoothed_line_end = self._extract_straw_level(smoothed_straw_level)
                 frame_drawn = self.plot_straw_level(frame_drawn, smoothed_line_start, smoothed_line_end, smoothed_straw_level, self.predictor_color)
             else:
                 frame_drawn = self.plot_straw_level(frame_drawn, line_start, line_end, straw_level, self.predictor_color)
@@ -1364,7 +1335,8 @@ def get_args() -> Namespace:
     parser.add_argument('-vp', '--video_path', nargs='+', default=[], help='The path to the video file(s).')
     parser.add_argument('--carry_over', action='store_true', help='Carry over AprilTag Detection to the next frame')
     return parser.parse_args()
-    # python .\strawml\visualizations\stream.py file_predict --smoothing --save_as_new_hdf5 --process_like_recording --video_path data/predictions/recording_rotated_all_frames.hdf5
+
+
 def main(args: Namespace) -> None:
     """
     The main function that runs the script based on the arguments provided.
