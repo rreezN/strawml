@@ -856,7 +856,7 @@ def main(args: Namespace) -> None:
     elif args.mode == 'tree':
         print_hdf5_tree(args.hdf5_file)
     elif args.mode == 'h5_to_yolo':
-        hdf5_to_yolo(hdf5_file=args.hdf5_file, annotation_types = ['bbox_straw', 'whole'], new_size=None)
+        hdf5_to_yolo(hdf5_file=args.hdf5_file, annotation_types = ['bbox_chute'], new_size=None)
     elif args.mode == 'place_digits':
         place_digits_on_chute_images()
     elif args.mode == 'timm':

@@ -15,6 +15,8 @@ def retrieve_data(path):
     yolo_data = np.array([])
     convnextv2_data = np.array([])
     errors = 0
+    yolo_detection_errors = 0
+    conv_detection_errors = 0
     with h5py.File(data_dir + path, 'r') as f:
         keys = list(f.keys())
         if "frame" == keys[0].split("_")[0]:
@@ -27,7 +29,13 @@ def retrieve_data(path):
                 fullness_data = f[key]['straw_percent_fullness']['percent'][...]
                 scada_data_ = f[key]['scada']['percent'][...]
                 yolo_data_ = f[key]['yolo']['percent'][...]
+                s,e = f[key]['yolo']['pixel'][...]
+                if s[0] is np.nan:
+                    yolo_detection_errors += 1
                 convnextv2_data_ = f[key]['convnextv2']['percent'][...]
+                s,e = f[key]['convnextv2']['pixel'][...]
+                if s[0] is np.nan:
+                    conv_detection_errors += 1
                 label_bbox_data = np.append(label_bbox_data, bbox_data)
                 label_fullness_data = np.append(label_fullness_data, fullness_data)
                 scada_data = np.append(scada_data, scada_data_)
@@ -37,6 +45,8 @@ def retrieve_data(path):
                 # print(f"KeyError: {path}, {key}: {e}")
                 errors += 1
     print(f"Errors: {errors}")
+    print(f"Yolo Detection Errors: {yolo_detection_errors}")
+    print(f"Conv Detection Errors: {conv_detection_errors}")
     return label_bbox_data, label_fullness_data, scada_data, yolo_data, convnextv2_data
 
 def _get_accuracy_and_mae(label_data, prediction_data, percentage=10):
@@ -486,9 +496,9 @@ def _run_fps_metrics(data_dir: str = 'data/fps/'):
 if __name__ == '__main__':
     save_dict = {}
     # data_dir = 'data/train_data/yolo_chute/'
-    # data_dir = 'data/train_data/yolo_whole/'
-    # output = 'data/robustness_results.json'
-    # _run_extraction(data_dir, output)
+    data_dir = 'data/noisy_datasets/'
+    output = 'data/robustness_results_new.json'
+    _run_extraction(data_dir, output)
     # _run_plotting(output)
     # _run_model_metrics(data_dir)
-    _run_fps_metrics()
+    # _run_fps_metrics()

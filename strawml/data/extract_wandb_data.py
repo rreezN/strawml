@@ -3,12 +3,12 @@ import wandb
 api = wandb.Api()
 
 # Project is specified by <entity/project-name>
-runs = api.runs("meliora/straw_project")
+# runs = api.runs("meliora/straw_project")
 
-# api = wandb.Api()
-# # sweep = api.sweep("meliora/straw_project/xkh5pghf")
-# sweep = api.sweep("meliora/straw_project/4ccyh2d4")
-# runs = sweep.runs
+api = wandb.Api()
+# sweep = api.sweep("meliora/straw_project/nvowmnfu")
+sweep = api.sweep("meliora/straw_project/rb20563a")
+runs = sweep.runs
 summary_list, config_list, name_list = [], [], []
 for run in runs: 
     # .summary contains the output keys/values for metrics like accuracy.
@@ -30,4 +30,4 @@ runs_df = pd.DataFrame({
     "name": name_list
     })
 
-runs_df.to_csv("data/wandb/project.csv")
+runs_df.to_csv("data/wandb/rb20563a.csv")

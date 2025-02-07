@@ -461,8 +461,10 @@ if __name__ == '__main__':
     # file_path = "data/predictions/recording_rotated_all_frames_processed.hdf5"
     # file_path = "data/predictions/recording_rotated_all_frames_processed_combined.hdf5"
     # file_path = "data/predictions/recording_vertical_all_frames_processed_combined.hdf5"
+    file_path = "data/predictions/recording_vertical_all_frames_processed_combined_processed.hdf5"
 
     # file_path = "data/predictions/recording_combined_all_frames_processed.hdf5"
-    file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox.hdf5"
+    # file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox.hdf5"
     # file_path = 'data/noisy_datasets/noisy_scratches_lens_flare.hdf5'
-    main(file_path, name="sensors", name1='yolo_swift', name2='yolo_faithful', time_step=5, delta=False, use_label=True, label_as='straw_percent_bbox', with_threshold=True, iou=False)
+    # file_path = 'data/predictions/new_run/recording_vertical_all_frames_processed.hdf5'
+    main(file_path, name="sensors", name1='convnext', name2='yolo', time_step=5, delta=False, use_label=True, label_as='fullness', with_threshold=True, iou=False)
