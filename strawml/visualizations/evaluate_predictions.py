@@ -32,8 +32,8 @@ def retrieve_data(path):
                 s,e = f[key]['yolo']['pixel'][...]
                 if s[0] is np.nan:
                     yolo_detection_errors += 1
-                convnextv2_data_ = f[key]['convnextv2']['percent'][...]
-                s,e = f[key]['convnextv2']['pixel'][...]
+                convnextv2_data_ = f[key]['convnext']['percent'][...]
+                s,e = f[key]['convnext']['pixel'][...]
                 if s[0] is np.nan:
                     conv_detection_errors += 1
                 label_bbox_data = np.append(label_bbox_data, bbox_data)

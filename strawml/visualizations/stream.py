@@ -653,7 +653,7 @@ class RTSPStream(AprilDetector):
             if t2:
                 del hf[timestamp]["straw_percent_fullness"]
             straw_level = 0
-            line_start = self._extract_straw_level(straw_level)
+            line_start, line_end = self._extract_straw_level(straw_level)
 
             straw_percent_bbox_group = hf[timestamp].create_group('straw_percent_bbox')
             straw_percent_bbox_group.create_dataset('percent', data=straw_level)
