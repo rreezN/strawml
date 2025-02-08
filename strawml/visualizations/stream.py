@@ -165,7 +165,7 @@ class AprilDetector:
             cv2.putText(frame_drawn, f"{straw_level:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
         return frame_drawn
     
-    def plot_boxes(self, results, frame, model_type: str = 'obb'):
+    def plot_boxes(self, results, frame, model_type: str = 'obb', label=None):
         """
         Takes a frame and its results as input, and plots the bounding boxes and label on to the frame.
         :param results: contains labels and coordinates predicted by model on the given frame.
@@ -196,14 +196,18 @@ class AprilDetector:
                 cv2.line(frame, (x2, y2), (x3, y3), (138,43,226), 2)
                 cv2.line(frame, (x3, y3), (x4, y4), (138,43,226), 2)
                 cv2.line(frame, (x4, y4), (x1, y1), (138,43,226), 2)
+                if label is None:
+                    label = self.class_to_label(labels[i])
                 # plot label on the object
-                cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.putText(frame, label, (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
             else:
                 x1, y1, x2, y2 = cord[i].flatten()
                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 # plot label on the object
-                cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                if label is None:
+                    label = self.class_to_label(labels[i])
+                cv2.putText(frame, label, (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
         return frame
     
     def class_to_label(self, x):
@@ -733,6 +737,7 @@ class RTSPStream(AprilDetector):
 
         # Process scada data        
         scada_level = hf[timestamp]["scada"]["percent"][()]
+        # scada_level = float(hf[timestamp]['annotations']['sensor_fullness'][...]) * 100
         line_start, line_end, sensor_scada_data, scada_pixel_values = self._retrieve_scada_data(scada_level)
         if self.smoothing:
             self.recording_req =  (float(timestamp) - float(self.last_save_timestamp) >= self.record_threshold)
@@ -749,6 +754,7 @@ class RTSPStream(AprilDetector):
             cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, self.scada_color, 2, cv2.LINE_AA)
         # Get yolo results
 
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         frame_drawn = self._yolo_model(frame, frame_drawn, None) # NOTE FILLING YOLO DATA HERE
 
         if cutout is None:
@@ -760,8 +766,8 @@ class RTSPStream(AprilDetector):
             self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
         else:
             results = None
-        
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         frame_drawn = self._predictor_model(frame, frame_drawn, results, timestamp, cutout) # NOTE FILLING CONVNEXTV2 DATA HERE
 
         # Display frame and overlay text
@@ -859,7 +865,7 @@ class RTSPStream(AprilDetector):
                         predict_group.create_dataset(t2_name, data=t2)
                 except Exception as e:
                     print("###################")
-                    print(f"!ERROR! {timestamp}: {key},\n{t1_name}: {t1},\n{t2_name}: {t2}\n--- {e}")
+                    print(f"!ERROR! {timestamp}: {key}. {e}")
                     print("###################")
         if hf is not None:
             _save_results(hf, timestamp, hdf5_model_save_name=self.hdf5_model_save_name)
@@ -1030,13 +1036,13 @@ class RTSPStream(AprilDetector):
     def _yolo_model(self, frame: np.ndarray, frame_drawn: np.ndarray, cutout, time_stamp=None) -> None:
         # bgr to rgb
         output, inference_time = time_function(self.yolo_model.score_frame, frame.copy())
+        # plot the box on the frame
+        frame_drawn = self.plot_boxes(output, frame_drawn, model_type="obb", label="straw")	
         smoothed_straw_level = 0
         # If the output is not empty, we can plot the boxes and get the straw level
         if self.fps_test:
             start = time.time()
         if len(output[0]) != 0:
-            x_pixel, y_pixel = output[1][0][-1].cpu().numpy()
-
             if cutout is not None:
                 straw_level, interpolated, chute_nrs = self.helpers._get_pixel_to_straw_level_cutout(frame, output)
             else:
