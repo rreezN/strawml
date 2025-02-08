@@ -200,7 +200,7 @@ class AprilDetectorHelpers:
         """
         if results is None:
             return frame
-
+        
         bbox_chute = results[1][0].flatten().cpu().detach().numpy()
         if len(bbox_chute) != 8:  # Ensure bbox has 8 coordinates
             return frame

@@ -181,6 +181,10 @@ class AprilDetector:
             labels, cord, labels_conf = results
         n = len(labels)
 
+        # Account for the case where there are no detections and if there are more than 1 detection
+        if n > 1:
+            n=1
+
         for i in range(n):  
             # plot polygon around the object based on the coordinates cord
             if 'obb' in model_type:
@@ -446,7 +450,6 @@ class RTSPStream(AprilDetector):
         """
         for path in paths:
             # Start by running through the first 50 frames to get the tags
-            self.helpers._reset_tags()
             self._warm_up_for_apriltags(path, 0, 50)
             # pause to allow for the apriltag detect thread to catch up
             print("3 seconds pause to allow for apriltag detection to catch up...")
@@ -754,10 +757,12 @@ class RTSPStream(AprilDetector):
             # Make sure the results are not empty
             if len(results[0]) == 0:
                 results = "NA"
-
-        self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
+            self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
+        else:
+            results = None
+        
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame_drawn = self._predictor_model(frame, frame_drawn, results, cutout) # NOTE FILLING CONVNEXTV2 DATA HERE
+        frame_drawn = self._predictor_model(frame, frame_drawn, results, timestamp, cutout) # NOTE FILLING CONVNEXTV2 DATA HERE
 
         # Display frame and overlay text
         self._update_information(frame_time)
