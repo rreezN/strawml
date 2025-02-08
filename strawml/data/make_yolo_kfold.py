@@ -49,7 +49,7 @@ labels_df = labels_df.fillna(0.0)  # replace `nan` values with `0.0`
 #%% Split data into k-folds
 from sklearn.model_selection import KFold
 
-ksplit = 5
+ksplit = 4
 kf = KFold(n_splits=ksplit, shuffle=True, random_state=20)  # setting random_state for repeatable results
 
 kfolds = list(kf.split(labels_df))

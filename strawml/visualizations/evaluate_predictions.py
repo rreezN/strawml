@@ -15,6 +15,8 @@ def retrieve_data(path):
     yolo_data = np.array([])
     convnextv2_data = np.array([])
     errors = 0
+    yolo_detection_errors = 0
+    conv_detection_errors = 0
     with h5py.File(data_dir + path, 'r') as f:
         keys = list(f.keys())
         if "frame" == keys[0].split("_")[0]:
@@ -27,7 +29,13 @@ def retrieve_data(path):
                 fullness_data = f[key]['straw_percent_fullness']['percent'][...]
                 scada_data_ = f[key]['scada']['percent'][...]
                 yolo_data_ = f[key]['yolo']['percent'][...]
-                convnextv2_data_ = f[key]['convnextv2']['percent'][...]
+                s,e = f[key]['yolo']['pixel'][...]
+                if s[0] is np.nan:
+                    yolo_detection_errors += 1
+                convnextv2_data_ = f[key]['convnext']['percent'][...]
+                s,e = f[key]['convnext']['pixel'][...]
+                if s[0] is np.nan:
+                    conv_detection_errors += 1
                 label_bbox_data = np.append(label_bbox_data, bbox_data)
                 label_fullness_data = np.append(label_fullness_data, fullness_data)
                 scada_data = np.append(scada_data, scada_data_)
@@ -37,6 +45,8 @@ def retrieve_data(path):
                 # print(f"KeyError: {path}, {key}: {e}")
                 errors += 1
     print(f"Errors: {errors}")
+    print(f"Yolo Detection Errors: {yolo_detection_errors}")
+    print(f"Conv Detection Errors: {conv_detection_errors}")
     return label_bbox_data, label_fullness_data, scada_data, yolo_data, convnextv2_data
 
 def _get_accuracy_and_mae(label_data, prediction_data, percentage=10):
@@ -287,7 +297,7 @@ def _run_model_metrics(data_dir):
 def _plot_stats(stats):
     import pandas as pd
     keys = list(stats.keys())
-    data = {'name': [], 'model': [], 'processor': [], 'fps': [],  'load_time': [], 'inference_time': [], 'postprocess_time': [], 'total_time': []}
+    data = {'name': [], 'model': [], 'processor': [], 'fps': [],  'load_time': [], 'cutout_time':[], 'inference_time': [], 'postprocess_time': [], 'total_time': []}
     names = []
     for key in keys:
         model = key.split('_')[0]
@@ -319,7 +329,11 @@ def _plot_stats(stats):
         data['inference_time'].append(stats[key]['inference_time'])
         data['postprocess_time'].append(stats[key]['postprocess_time'])
         data['total_time'].append(stats[key]['total_time'])
-
+        if 'cutout_time' in stats[key].keys():
+            data['cutout_time'].append(stats[key]['cutout_time'])
+        else:
+            dummy_array = [np.nan]
+            data['cutout_time'].append(dummy_array)
 
     title_size = 20
     label_size = 18
@@ -327,44 +341,46 @@ def _plot_stats(stats):
 
     # make up some fake data
     pos_fps = np.array(data['fps'])[np.where(np.array(data['model']) == 'conv')]
+    pos_prep_time = np.array([x for sublist in data['cutout_time'] for x in (sublist if isinstance(sublist, list) else [sublist]) if not np.isnan(x)])
     pos_load_time = np.array(data['load_time'])[np.where(np.array(data['model']) == 'conv')]
     pos_inference_time = np.array(data['inference_time'])[np.where(np.array(data['model']) == 'conv')]
     pos_postprocess_time = np.array(data['postprocess_time'])[np.where(np.array(data['model']) == 'conv')]
+
     neg_fps = np.array(data['fps'])[np.where(np.array(data['model']) == 'yolo')]
     neg_load_time = np.array(data['load_time'])[np.where(np.array(data['model']) == 'yolo')]
     neg_inference_time = np.array(data['inference_time'])[np.where(np.array(data['model']) == 'yolo')]
     neg_postprocess_time = np.array(data['postprocess_time'])[np.where(np.array(data['model']) == 'yolo')]
     genes = np.array(data['processor'])[np.where(np.array(data['model']) == 'yolo')]
 
-    # first plot fps
-    with sns.axes_style("white"):
-        sns.set_style("ticks")
-        sns.set_context("talk")
+    # # first plot fps
+    # with sns.axes_style("white"):
+    #     sns.set_style("ticks")
+    #     sns.set_context("talk")
 
-        # plot details
-        bar_width = 0.35
-        epsilon = .015
-        line_width = 1
-        opacity = 0.7
-        pos_bar_positions = np.arange(len(pos_fps))
-        neg_bar_positions = pos_bar_positions + bar_width
+    #     # plot details
+    #     bar_width = 0.35
+    #     epsilon = .015
+    #     line_width = 1
+    #     opacity = 0.7
+    #     pos_bar_positions = np.arange(len(pos_fps))
+    #     neg_bar_positions = pos_bar_positions + bar_width
 
-        # make bar plots
-        hpv_pos_fps_bar = plt.bar(pos_bar_positions, pos_fps, bar_width,
-                                color='#ED0020',
-                                label='CONV FPS')
-        hpv_neg_fps_bar = plt.bar(neg_bar_positions, neg_fps, bar_width,
-                                color='#0000DD',
-                                label='YOLO FPS')
+    #     # make bar plots
+    #     hpv_pos_fps_bar = plt.bar(pos_bar_positions, pos_fps, bar_width,
+    #                             color='#ED0020',
+    #                             label='CONV FPS')
+    #     hpv_neg_fps_bar = plt.bar(neg_bar_positions, neg_fps, bar_width,
+    #                             color='#0000DD',
+    #                             label='YOLO FPS')
         
-        plt.xticks((neg_bar_positions+pos_bar_positions)/2, genes, rotation=45)
-        plt.legend(bbox_to_anchor=(1.1, 1.05))
-        # plt.tight_layout()
-        plt.ylabel('FPS')
-        plt.xlabel('Processor')
-        sns.despine()
-        plt.grid(axis='y')
-        plt.show()  
+    #     plt.xticks((neg_bar_positions+pos_bar_positions)/2, genes, rotation=45)
+    #     plt.legend(bbox_to_anchor=(1.1, 1.05))
+    #     # plt.tight_layout()
+    #     plt.ylabel('FPS')
+    #     plt.xlabel('Processor')
+    #     sns.despine()
+    #     plt.grid(axis='y')
+    #     plt.show()  
 
     
     with sns.axes_style("white"):
@@ -383,22 +399,34 @@ def _plot_stats(stats):
         hpv_pos_mut_bar = plt.bar(pos_bar_positions, pos_load_time, bar_width,
                                 color='indianred',
                                 label='CONV load time')
-        hpv_pos_cna_bar = plt.bar(pos_bar_positions, pos_inference_time, bar_width-epsilon,
+        
+        hpv_pos_prep = plt.bar(pos_bar_positions, pos_prep_time, bar_width-epsilon,
                                 bottom=pos_load_time,
+                                alpha=opacity,
+                                color='white',
+                                edgecolor='indianred',
+                                linewidth=line_width,
+                                hatch='X',
+                                label='CONV preprocess time')
+
+        hpv_pos_cna_bar = plt.bar(pos_bar_positions, pos_inference_time, bar_width-epsilon,
+                                bottom=pos_load_time + pos_prep_time,
                                 alpha=opacity,
                                 color='white',
                                 edgecolor='indianred',
                                 linewidth=line_width,
                                 hatch='//',
                                 label='CONV inference time')
+
         hpv_pos_both_bar = plt.bar(pos_bar_positions, pos_postprocess_time, bar_width-epsilon,
-                                bottom=pos_inference_time+pos_load_time,
+                                bottom=pos_inference_time + pos_prep_time + pos_load_time,
                                 alpha=opacity,
                                 color='white',
                                 edgecolor='indianred',
                                 linewidth=line_width,
                                 hatch='0',
                                 label='CONV postprocess time')
+
         hpv_neg_mut_bar = plt.bar(neg_bar_positions, neg_load_time, bar_width,
                                 color='royalblue',
                                 label='YOLO load time')
@@ -422,7 +450,7 @@ def _plot_stats(stats):
         # now we plot the total time above the bars for each processor and model type
         for i in range(len(pos_load_time)):
             # conv and yolo time values
-            conv_time = pos_load_time[i] + pos_inference_time[i] + pos_postprocess_time[i]
+            conv_time = pos_load_time[i] + pos_prep_time[i] +pos_inference_time[i] + pos_postprocess_time[i]
             yolo_time = neg_load_time[i] + neg_inference_time[i] + neg_postprocess_time[i]
             # slightly above the bar and to the left for conv and to the right for yolo
             dx = (neg_bar_positions[i] - pos_bar_positions[i])/4
@@ -436,7 +464,7 @@ def _plot_stats(stats):
                 fancybox=True, shadow=True, ncol=2, fontsize=text_size)        # plt.tight_layout()
         plt.ylabel('Time (s)', fontsize=text_size)
         plt.xlabel('Processor', fontsize=text_size)
-        plt.yscale('log')
+        # plt.yscale('log')
 
         sns.despine()
         plt.grid(axis='y')
@@ -468,9 +496,9 @@ def _run_fps_metrics(data_dir: str = 'data/fps/'):
 if __name__ == '__main__':
     save_dict = {}
     # data_dir = 'data/train_data/yolo_chute/'
-    # data_dir = 'data/train_data/yolo_whole/'
-    # output = 'data/robustness_results.json'
-    # _run_extraction(data_dir, output)
+    data_dir = 'data/noisy_datasets/'
+    output = 'data/robustness_results_new.json'
+    _run_extraction(data_dir, output)
     # _run_plotting(output)
     # _run_model_metrics(data_dir)
-    _run_fps_metrics()
+    # _run_fps_metrics()
