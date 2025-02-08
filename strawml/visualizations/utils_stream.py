@@ -628,7 +628,7 @@ class AprilDetectorHelpers:
         # First we divide the straw level by 10 to get it on the same scale as the tag ids
         straw_level = straw_level / 10
 
-        # no we account for exceeding the limits
+        # now we account for exceeding the limits
         if straw_level > 10:
             straw_level = 10
         if straw_level < 0:
@@ -636,24 +636,23 @@ class AprilDetectorHelpers:
 
         if int(straw_level) == 10:
             # Handle edge case when straw level is at the top
-            tag_under_closest = 9
-            tag_over_closest = 10
+            tag_under, tag_over = 9, 10
         else:
             # Determine closest tags
             tag_under, tag_over = int(straw_level), int(straw_level) + 1
 
-            # Find the closest tags in chute_numbers
-            tag_under_list = [key for key, _ in chute_numbers.items() if key <= tag_under]
-            tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
+        # Find the closest tags in chute_numbers
+        tag_under_list = [key for key, _ in chute_numbers.items() if key <= tag_under]
+        tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
 
-            if not tag_under_list or not tag_over_list:
-                return None, None
+        if not tag_under_list or not tag_over_list:
+            return None, None
 
-            tag_under_list = sorted(tag_under_list, reverse=True)
-            tag_over_list = sorted(tag_over_list)
+        tag_under_list = sorted(tag_under_list, reverse=True)
+        tag_over_list = sorted(tag_over_list)
 
-            tag_under_closest = tag_under_list[0]
-            tag_over_closest = tag_over_list[0]
+        tag_under_closest = tag_under_list[0]
+        tag_over_closest = tag_over_list[0]
 
         # calculate difference between tag ids
         tag_diff = tag_over_closest - tag_under_closest
