@@ -754,7 +754,7 @@ class RTSPStream(AprilDetector):
             cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, self.scada_color, 2, cv2.LINE_AA)
         # Get yolo results
 
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        # frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         frame_drawn = self._yolo_model(frame, frame_drawn, None) # NOTE FILLING YOLO DATA HERE
 
         if cutout is None:
@@ -766,8 +766,8 @@ class RTSPStream(AprilDetector):
             self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
         else:
             results = None
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         frame_drawn = self._predictor_model(frame, frame_drawn, results, timestamp, cutout) # NOTE FILLING CONVNEXTV2 DATA HERE
 
         # Display frame and overlay text
@@ -851,6 +851,8 @@ class RTSPStream(AprilDetector):
             else:
                 try:
                     for key, value in self.prediction_dict.items():
+                        if key == "convnext":
+                            key = 'convnext_apriltag'
                         if key in group.keys():
                             del group[key]
                         predict_group = group.create_group(key)
@@ -1458,7 +1460,7 @@ def main(args: Namespace) -> None:
                yolo_straw_model="models/obb_best_dazzling.pt",
                with_predictor=args.with_predictor, 
                predictor_model='convnext', 
-               model_load_path='models/convnext_regressor/', 
+               model_load_path='models/convnext_regressor_apriltag/', 
                regressor=args.regressor, 
                edges=args.edges, 
                heatmap=args.heatmap,

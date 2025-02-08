@@ -201,7 +201,7 @@ class JointPlot:
             # calculate accuracy of the model in terms of +- 5% threshold wrt. label data
             if self.use_label and self.label_as != 'scada':
                 if self.name1_data is not None:
-                    if self.name1 == 'convnext':
+                    if self.name1 == 'convnext' or self.name1 == 'convnext_apriltag':
                         label_data = self.label_data['straw_percent_fullness']
                     else:
                         label_data = self.label_data['straw_percent_bbox']
@@ -211,7 +211,7 @@ class JointPlot:
                     sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c1, 'darkslategray'], [0.2, 1, 0.2]), f'{self.name1.upper()}, Accuracy: {accuracy_name1:.2f}%, MAE: {mae_name1:.2f}'))
         
                 if self.name2_data is not None:
-                    if self.name2 == 'convnext':
+                    if self.name2 == 'convnext' or self.name2 == 'convnext_apriltag':
                         label_data = self.label_data['straw_percent_fullness']
                     else:
                         label_data = self.label_data['straw_percent_bbox']
@@ -219,7 +219,7 @@ class JointPlot:
                     mae_name2 = np.mean(np.abs(self.name2_data - label_data))
                     sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c2, 'darkslategray'], [0.2, 1, 0.2]), f'{self.name2.upper()}, Accuracy: {accuracy_name2:.2f}%, MAE: {mae_name2:.2f}'))
 
-                if self.name3_data is not None:
+                if self.name3_data is not None or self.name3 == 'convnext_apriltag':
                     if self.name3 == 'convnext':
                         label_data = self.label_data['straw_percent_fullness']
                     else:
@@ -401,22 +401,23 @@ def _smooth_data(sensor_data, model_data):
 
     return smoothed_sensor_data, smoothed_model_data, x_axis
 
-def _print_summary_statistics(name1, name2, name1_data, name2_data, label_data, label_as='scada'):
+def _print_summary_statistics(name1, name2, name3, name1_data, name2_data, name3_data, label_data_dict, label_as='scada'):
     print(f"\nSummary Statistics:")
-    if name1_data is not None and name2_data is not None:
-        print(f"  -- Data Length:        #1:  {len(name1_data)}, #2: {len(name2_data)}")
-        print(f"  -- {name1} Data:    Mean:  {np.mean(name1_data):.2f}, STD: {np.std(name1_data):.2f}")
-        print(f"  -- {name2} Data:    Mean:  {np.mean(name2_data):.2f}, STD: {np.std(name2_data):.2f}")
-        print(f"  -- Delta:           Mean:  {np.mean(name1_data - name2_data):.2f}, STD: {np.std(name1_data - name2_data):.2f}")
 
-    if label_data is not None and label_as != 'scada':
+    if label_as != 'scada':
         # Print accuracies with different thresholds, for all labels, labels below 50% and labels above 50%
         percentages = [2.5, 5, 10]
         # create list of data to loop through only if not None
-        data = [name1_data, name2_data] if name1_data is not None and name2_data is not None else [name1_data] if name1_data is not None else [name2_data]
-        names = [name1, name2] if name1_data is not None and name2_data is not None else [name1] if name1_data is not None else [name2]
+        # create list of names and data to loop through only if not None
+        names = [name1, name2, name3] if name1_data is not None and name2_data is not None and name3_data is not None else [name1, name2] if name1_data is not None and name2_data is not None else [name1] if name1_data is not None else [name2] if name2_data is not None else [name3] if name3_data is not None else []
+        data = [name1_data, name2_data, name3_data] if name1_data is not None and name2_data is not None and name3_data is not None else [name1_data, name2_data] if name1_data is not None and name2_data is not None else [name1_data] if name1_data is not None else [name2_data] if name2_data is not None else [name3_data] if name3_data is not None else []
+        
         for percentage in percentages:
             for i, name in enumerate(names):
+                if name == 'convnext' or name == 'convnext_apriltag':
+                    label_data = label_data_dict['straw_percent_fullness']
+                else:
+                    label_data = label_data_dict['straw_percent_bbox']
                 print(f"\nAccuracy (+-{percentage}%) for {name}:")
                 accuracy = np.mean((data[i] >= label_data - percentage) & (data[i] <= label_data + percentage)) * 100
                 print(f"  -- Accuracy:                      {accuracy:.2f}%")
@@ -487,7 +488,7 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
         if delta:
             JointPlot(x_axis_data, label_data, name1_data, name2_data, name3_data, name1=name1, name2=name2, name3=name3, marginal_x=False, marginal_y=True, plot_data=False, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes[1])
 
-        # _print_summary_statistics(name1, name2, name1_data, name2_data, label_data, label_as)
+        _print_summary_statistics(name1, name2, name3, name1_data, name2_data, name3_data, label_data_dict=label_data, label_as=label_as)
         name = file_path.split("/")[-1].split(".")[0].split("_")
         if "rotated" in name:
             name = "Rotated"
@@ -513,9 +514,9 @@ if __name__ == '__main__':
     # file_path = "data/predictions/recording_vertical_all_frames_processed_combined_processed.hdf5"
 
     # file_path = "data/predictions/recording_combined_all_frames_processed.hdf5"
-    file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox_processed.hdf5"
+    # file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox_processed.hdf5"
     # file_path = 'data/noisy_datasets/noisy_scratches_lens_flare.hdf5'
-    # file_path = 'data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5'
+    file_path = 'data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5'
     # file_path = 'data/predictions/new_run/recording_rotated_all_frames_processed_combined.hdf5'
 
-    main(file_path, name="sensors", name1='scada', name2='yolo', name3='convnext', time_step=5, delta=False, use_label=True, label_as=['straw_percent_fullness', 'straw_percent_bbox'], with_threshold=True, iou=False)
+    main(file_path, name="sensors", name1='yolo', name2='convnext', name3='convnext_apriltag', time_step=5, delta=False, use_label=True, label_as=['straw_percent_fullness', 'straw_percent_bbox'], with_threshold=True, iou=False)
