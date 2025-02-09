@@ -486,11 +486,14 @@ def distort_image_wand(frame_data: np.ndarray, bboxes: list = None):
     
     return img
 
-def create_noisy_dataset(hdf5: h5py, save_path: str):
+def create_noisy_dataset(hdf5: h5py, save_path: str, num_changes: int = 6, possible_changes: list = ['lens_flare', 'random_augment', 'dust', 'scratches', 'people', 'partial_gaussian_blur']):
     # Get a list of all the keys in the hdf5 file
     frame_names = list(hdf5.keys())
     # Sort frame_names
-    frame_names = sorted(frame_names, key=lambda x: int(x.split('_')[1]))
+    if "frame" == frame_names[0].split("_")[0]:
+        frame_names = sorted(frame_names, key=lambda x: int(x.split('_')[1]))
+    else:
+        frame_names = sorted(frame_names, key=lambda x: float(x))
     
     # Create a new hdf5 file to store the noisy data
     noisy_hf = h5py.File(save_path, 'w')
@@ -503,17 +506,17 @@ def create_noisy_dataset(hdf5: h5py, save_path: str):
         frame_data = decode_binary_image(frame['image'][...])
         frame_data = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
         
-        bbox_chute = frame['annotations']['bbox_chute'][...]
-        if 'bbox_straw' in frame['annotations']:
-            bbox_straw = frame['annotations']['bbox_straw'][...]
+        # bbox_chute = frame['annotations']['bbox_chute'][...]
+        # if 'bbox_straw' in frame['annotations']:
+        #     bbox_straw = frame['annotations']['bbox_straw'][...]
         
-        bboxes = [bbox_chute, bbox_straw]
+        # bboxes = [bbox_chute, bbox_straw]
         
-        # num_changes = np.random.randint(1, 7)
-        num_changes = 2
-
-        changes = np.random.choice(['lens_flare', 'random_augmet', 'dust', 'scratches', 'people', 'partial_gaussian_blur', 'distort'], 
-                                   num_changes, replace=False)
+        if num_changes == len(possible_changes):
+            changes = possible_changes
+        else:
+            changes = np.random.choice(possible_changes, 
+                                   num_changes, replace=False) # 'distort'
         
         pbar.set_description(f'Creating noisy dataset, num_changes: {num_changes}, changes: {changes}')
         if 'lens_flare' in changes:
@@ -528,10 +531,10 @@ def create_noisy_dataset(hdf5: h5py, save_path: str):
             frame_data = partial_gaussian_blur(frame_data)
         if 'random_augment' in changes:
             frame_data = random_augment_frame(frame_data)
-        if 'distort' in changes:
-            frame_data, bboxes = translate_image(frame_data, bboxes)
-            frame_data, bboxes = rotate_image(frame_data, bboxes)
-            frame_data, bboxes = distort_image(frame_data, bboxes)
+        # if 'distort' in changes:
+        #     frame_data, bboxes = translate_image(frame_data, bboxes)
+        #     frame_data, bboxes = rotate_image(frame_data, bboxes)
+        #     frame_data, bboxes = distort_image(frame_data, bboxes)
  
         # Display the frame
         # frame_data = cv2.resize(frame_data, (frame_data.shape[1]//2, frame_data.shape[0]//2))
@@ -546,8 +549,11 @@ def create_noisy_dataset(hdf5: h5py, save_path: str):
         # Save the frame to the new hdf5 file
         # Image and image diff
         frame_group = noisy_hf.create_group(current_frame)
+        frame_data = cv2.imencode('.jpg', frame_data)[1]
         frame_group.create_dataset('image', data=frame_data)
-        frame_group.create_dataset('image_diff', data=hdf5[current_frame]['image_diff'][...])
+        if 'image_diff' in hdf5[current_frame]:
+            img = cv2.imencode('.jpg', hdf5[current_frame]['image_diff'][...])[1]
+            frame_group.create_dataset('image_diff', data=img)
         
         # Annotations
         frame_group.create_group('annotations')
@@ -557,7 +563,15 @@ def create_noisy_dataset(hdf5: h5py, save_path: str):
             anno_group.create_dataset('bbox_straw', data=hdf5[current_frame]['annotations']['bbox_straw'][...])
         anno_group.create_dataset('fullness', data=hdf5[current_frame]['annotations']['fullness'][...])
         anno_group.create_dataset('obstructed', data=hdf5[current_frame]['annotations']['obstructed'][...])
-        anno_group.create_dataset('sensor_fullness', data=hdf5[current_frame]['annotations']['sensor_fullness'][...])
+        if 'sensor_fullness' in hdf5[current_frame]['annotations']:
+            anno_group.create_dataset('sensor_fullness', data=hdf5[current_frame]['annotations']['sensor_fullness'][...])
+        if 'scada' in hdf5[current_frame].keys():
+            frame_group.create_group('scada')
+            scada_group = frame_group['scada']
+            scada_percent = hdf5[current_frame]['scada']['percent'][...]
+            scada_group.create_dataset('percent', data=scada_percent)
+            scada_pixel = hdf5[current_frame]['scada']['pixel'][...]
+            scada_group.create_dataset('pixel', data=scada_pixel)
         
         pbar.update(1)
         
@@ -567,11 +581,12 @@ def create_noisy_dataset(hdf5: h5py, save_path: str):
 
 if __name__ == '__main__':
     # Load the hdf5 file
-    path_to_hdf5 = 'data/processed/sensors.hdf5'
-    save_path = 'data/processed/noisy_3.hdf5'
+    noisy_id = 'random_augment_blur'
+    path_to_hdf5 = 'data/processed/recording_combined_all_frames_processed.hdf5'
+    save_path = f'data/processed/noisy_{noisy_id}.hdf5'
     hf = h5py.File(path_to_hdf5, 'r')
     
-    create_noisy_dataset(hf, save_path)
+    create_noisy_dataset(hf, save_path, num_changes=2, possible_changes=['random_augment', 'partial_gaussian_blur'])
     
 
 
