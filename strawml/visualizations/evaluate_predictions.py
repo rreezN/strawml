@@ -42,7 +42,7 @@ def retrieve_data(path):
                 yolo_data = np.append(yolo_data, yolo_data_)
                 convnextv2_data = np.append(convnextv2_data, convnextv2_data_)
             except KeyError as e:
-                print(f"KeyError: {path}, {key}: {e}")
+                # print(f"KeyError: {path}, {key}: {e}")
                 errors += 1
     print(f"Errors: {errors}")
     print(f"Yolo Detection Errors: {yolo_detection_errors}")

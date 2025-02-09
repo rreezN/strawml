@@ -865,16 +865,17 @@ class RTSPStream(AprilDetector):
                         #     key = 'convnext_apriltag'
                         if key in group.keys():
                             del group[key]
-                        predict_group = group.create_group(key)
-                        t1, t2 = list(value.items())[0]
-                        if key == 'attr.':
-                            t1_name = 'interpolated'
-                            t2_name = 'tags'
                         else:
-                            t1_name = 'percent'
-                            t2_name = 'pixel'
-                        predict_group.create_dataset(t1_name, data=t1)
-                        predict_group.create_dataset(t2_name, data=t2)
+                            predict_group = group.create_group(key)
+                            t1, t2 = list(value.items())[0]
+                            if key == 'attr.':
+                                t1_name = 'interpolated'
+                                t2_name = 'tags'
+                            else:
+                                t1_name = 'percent'
+                                t2_name = 'pixel'
+                            predict_group.create_dataset(t1_name, data=t1)
+                            predict_group.create_dataset(t2_name, data=t2)
                 except Exception as e:
                     print("###################")
                     print(f"!ERROR! {timestamp}: {key}. {e}")
@@ -1011,10 +1012,11 @@ class RTSPStream(AprilDetector):
                 results = results 
             elif self.object_detect:
                 results, OD_time = time_function(self.OD.score_frame, frame.copy())
-                self.prediction_dict["yolo_cutout"] = results[1][0].flatten().cpu().detach().numpy()
                 # Make sure the results are not empty
                 if len(results[0]) == 0:
                     results = "NA"
+                else:
+                    self.prediction_dict["yolo_cutout"] = results[1][0].flatten().cpu().detach().numpy()
                 self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
             else:
                 results = results
