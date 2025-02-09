@@ -1,20 +1,45 @@
 from __init__ import *
 from ultralytics import YOLO
-# import wandb
-# from wandb.integration.ultralytics import add_wandb_callback
+import wandb
+from wandb.integration.ultralytics import add_wandb_callback
 
 
-# Load a pre-trained YOLOv10n model
-model = YOLO("models/yolo11n-obb.pt")
+# Load a pre-trained YOLOv10s model
+model = YOLO("models/yolo11s-obb.pt")
 model.to("cuda")
-wandb.init(project="yolov11", entity='meliora')
-add_wandb_callback(model)
+# wandb.init(project="yolov-final-runs", entity='meliora')
+# add_wandb_callback(model)
 # Load a pre-trained YOLOv10n model
 # model.to("cuda")
 if __name__ == '__main__':
     # train the model on our own dataset
-    results = model.train(data="data/processed/0_chute_data.yaml", imgsz=256, epochs=50, device="cuda", optimizer='Adam', augment=True)
-
+    model.train(
+            data="data/processed/0_straw_data_whole.yaml",
+            imgsz=579,
+            epochs=300,
+            batch=20,
+            lr0=0.0021696499235375,
+            optimizer="Adam",
+            device="cuda",
+            hsv_h=0.015,
+            hsv_s=0.7,
+            hsv_v=0.4,
+            degrees=45.0,
+            translate=0.1,
+            scale=0.5,
+            shear=10.0,
+            perspective=0.0,
+            flipud=0.0,
+            fliplr=0.5,
+            bgr=0.0,
+            mosaic=1.0,
+            mixup=0.0,
+            copy_paste=0.0,
+            erasing=0.4,
+            crop_fraction=1,
+            patience=50,
+            project="yolov-final-runs",
+            name='swift full image')
     # results = model.val()  # evaluate model performance on the validation set
     # results = model("data/chute_digit.jpg")  # predict on an image
     # results = model("data/processed/yolo_format/train/frame_0.jpg")  # predict on a video

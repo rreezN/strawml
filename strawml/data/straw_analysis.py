@@ -10,10 +10,13 @@ from skimage.metrics import structural_similarity as ssim
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from tqdm import tqdm
+import collections
 import re
+import seaborn as sns
 
 from strawml.data.make_dataset import decode_binary_image
 from strawml.models.straw_classifier.chute_cropper import rotate_and_crop_to_bbox
+import strawml.models.straw_classifier.chute_cropper as cc
 
 
 # TODO: Big list in chatgpt: https://chatgpt.com/share/66f6ca92-e2fc-8003-a85f-cb4b4c023eeb
@@ -713,26 +716,210 @@ def plot_tsne(frames: h5py.File, class_dict: dict) -> None:
     plt.show()
 
 
+def save_frame_as_png(frames: h5py.File):
+    """Save a frame as a PNG image.
+    """
+    frame_name = list(frames.keys())[0]
+    image = decode_binary_image(frames[frame_name]['image'][...])
+    edges = cv2.Canny(image, 100, 200)
+    # heatmap = decode_binary_image(frames[frame_name]['image_diff'][...])
+    # heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2GRAY)
+    # heatmap = np.clip(heatmap * 1, 0, 255)
+    # Rescale heatmap to be in range [0, 255]
+    # heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap)) * 255
+    # heatmap = heatmap.astype(np.uint8)
+    # heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_MAGMA)
+    
+    bbox = frames[frame_name]['annotations']['bbox_chute'][...]
+    bbox_int = np.int32(bbox)
+    bbox_int = bbox_int.reshape((-1, 1, 2))
+    image = cv2.polylines(image, [bbox_int], True, (0, 255, 0), 10)
+    image_cutout, bbox = cc.rotate_to_bbox(image, bbox)
+    cv2.imwrite('reports/figures/frame_rotated_to_bbox.png', image_cutout)
+    
+    image_cutout, bbox = cc.crop_to_bbox(image_cutout, bbox)
+    image_cutout = cv2.resize(image_cutout, (208, 672))
+    cv2.imwrite('reports/figures/frame_cropped_to_bbox.png', image_cutout)
+    
+    april_tag_cutout = decode_binary_image(frames[frame_name]['april_cutout_image']['image'][...])
+    april_tag_cutout = cv2.resize(april_tag_cutout, (208, 672))
+    cv2.imwrite('reports/figures/frame_april_tag_cutout.png', april_tag_cutout)
+    # image_cutout, bbox = rotate_and_crop_to_bbox(image, frames[frame_name]['annotations']['bbox_chute'][...])
+    # image_cutout = cv2.resize(image_cutout, (672, 208))
+    # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    cv2.imwrite('reports/figures/frame_rotated.png', image)
+    cv2.imwrite('reports/figures/frame_edges.png', edges)
+    # cv2.imwrite('reports/figures/frame_heatmap.png', heatmap)
+    # cv2.imwrite('reports/figures/frame_rotated_cutout.png', image_cutout)
+    
 
-# TODO:
-# - Look into some feature engineering
-#    - Histogram of Oriented Gradients (HOG)
-#    - Local Binary Patterns (LBP)
-#    - Fourier Transform
-# - Per-Class Heatmaps
-#    - Heatmap of feature importance for each class e.g. using Grad-CAM
-# - Shannon Entroyp
-# - Mutual Information
-# - Some of the stuff is hardcoded for 21 classes currently, might need to change that if we decide to go with less classes
-#   - PCA and t-SNE are hardcoded for 21 classes (get_idx_of_class)
+def plot_fullness_distribution(plot_type='hist'):
+    train = h5py.File('data/processed/train.hdf5', 'r')
+    sensor = h5py.File('data/processed/sensors_with_strawbbox.hdf5', 'r')
+    vertical = h5py.File('data/processed/recording_vertical_all_frames_processed_combined.hdf5', 'r')
+    rotated = h5py.File('data/processed/recording_rotated_all_frames_processed_combined.hdf5', 'r')
+    
+    train_fullness = [frame['annotations']['fullness'][...].item() for frame in train.values()]
+    train_bbox_fullness = [frame['straw_percent_bbox']['percent'][...].item() for frame in train.values()]
+    sensor_fullness = [frame['annotations']['fullness'][...].item() for frame in sensor.values()]
+    sensor_bbox_fullness = [frame['straw_percent_bbox']['percent'][...].item() for frame in sensor.values()]
+    sensor_scada = [frame['annotations']['sensor_fullness'][...].item() for frame in sensor.values()]
+    vertical_fullness = [frame['annotations']['fullness'][...].item() for frame in vertical.values()]
+    vertical_bbox_fullness = [frame['straw_percent_bbox']['percent'][...].item() for frame in vertical.values()]
+    vertical_scada = [frame['scada']['percent'][...].item() for frame in vertical.values()]
+    rotated_fullness = [frame['annotations']['fullness'][...].item() for frame in rotated.values()]
+    rotated_bbox_fullness = [frame['straw_percent_bbox']['percent'][...].item() for frame in rotated.values()]
+    rotated_scada = [frame['scada']['percent'][...].item() for frame in rotated.values()]
+    
+    
+    # Round scada to nearest 0.05
+    if plot_type == 'hist':
+        sensor_scada = [round(x * 20) / 20 for x in sensor_scada]
+        # Round vertical and rotated scada to nearest 5
+        vertical_scada = [round(x / 5) * 5 for x in vertical_scada]
+        rotated_scada = [round(x / 5) * 5 for x in rotated_scada]
+    
+    # Change fullness to [0:100]
+    train_fullness = [int(x*100) for x in train_fullness]
+    # train_bbox_fullness = [int(x*100) for x in train_bbox_fullness]
+    sensor_fullness = [int(x*100) for x in sensor_fullness]
+    # sensor_bbox_fullness = [int(x*100) for x in sensor_bbox_fullness]
+    sensor_scada = [int(x*100) for x in sensor_scada]
+    vertical_fullness = [int(x*100) for x in vertical_fullness]
+    # vertical_bbox_fullness = [int(x*100) for x in vertical_bbox_fullness]
+    rotated_fullness = [int(x*100) for x in rotated_fullness]
+    # rotated_bbox_fullness = [int(x*100) for x in rotated_bbox_fullness]
+    
+    train_class_counts = collections.Counter(train_fullness)
+    if plot_type == 'hist':
+        sensor_class_counts = collections.Counter(sensor_fullness)
+        sensor_scada_class_counts = collections.Counter(sensor_scada)
+        vertical_class_counts = collections.Counter(vertical_fullness)
+        vertical_scada_class_counts = collections.Counter(vertical_scada)
+        rotated_class_counts = collections.Counter(rotated_fullness)
+        rotated_scada_class_counts = collections.Counter(rotated_scada)
+    
+    # # Create balanced train dataset
+    train_class_counts_balanced = {}
+    train_class_counts_remainder = {}
+    for key in train_class_counts:
+        train_class_counts_balanced[key] = min(train_class_counts[key], 400)
+        # calculate remainder
+        train_class_counts_remainder[key] = train_class_counts[key] - train_class_counts_balanced[key]
+    
+    train_balanced_fullness = []
+    for key in train_class_counts_balanced:
+        train_balanced_fullness += [key]*train_class_counts_balanced[key]
+    
+    # Define plot colors and other variables
+    annotation_color = 'darkslategray'
+    sensor_color = 'goldenrod'
+    all_data_ls = ':'
+    bbox_fullness_ls = '--'
+    
+    # y_axis_max = max(train_class_counts.values()) + 10
+    # y_axis = np.arange(0, y_axis_max, 100)
+    
+    # Plot the fullness distribution of the dataset
+    fig, ax = plt.subplots(2, 2, figsize=(22, 11))
+    ax = ax.ravel()
+    # Train dataset
+    if plot_type == 'kde':
+        # Plot kde of train_fullness
+        sns.kdeplot(train_fullness, color=annotation_color, ax=ax[0], label='All annotations', fill=False, ls=all_data_ls)
+        sns.kdeplot(train_bbox_fullness, color=annotation_color, ax=ax[0], label='Bbox annotations', fill=False, ls=bbox_fullness_ls)
+        sns.kdeplot(train_balanced_fullness, color=annotation_color, ax=ax[0], label='Balanced annotations', fill=False)
+    elif plot_type == 'hist':
+        width = 4
+        # Create vertically stacked bar plot of train_class_counts_balanced and train_class_counts_remainder
+        ax[0].bar(train_class_counts_balanced.keys(), train_class_counts_balanced.values(), color=annotation_color, ec=annotation_color,
+               label='Balanced Annotations', width=width)
+        ax[0].bar(train_class_counts_remainder.keys(), train_class_counts_remainder.values(), bottom=train_class_counts_balanced.values(),
+               edgecolor=annotation_color, fill=False, label='Remainder Annotations', hatch='//', width=width)
+    
+    # Sensor dataset (test)
+    if plot_type == 'kde':
+        sns.kdeplot(sensor_fullness, color=annotation_color, ax=ax[1], label='Annotations', fill=False)
+        sns.kdeplot(sensor_bbox_fullness, color=annotation_color, ax=ax[1], label='Bbox annotations', fill=False, ls=bbox_fullness_ls)
+        sns.kdeplot(sensor_scada, color=sensor_color, ax=ax[1], label='Sensor (SCADA)', fill=False)
+    elif plot_type == 'hist':
+        width = 1
+        sensor_x_values = np.array([key for key in sensor_class_counts.keys()])
+        ax[1].bar(sensor_x_values, sensor_class_counts.values(), color=annotation_color, ec=annotation_color, label='Annotations',
+                width=width)
+        scada_x_values = np.array([key for key in sensor_scada_class_counts.keys()])
+        ax[1].bar(scada_x_values + width+0.5, sensor_scada_class_counts.values(), color=sensor_color, ec=sensor_color, label='Sensor (SCADA)',
+                width=width)
+    
+    # Vertical dataset
+    if plot_type == 'kde':
+        sns.kdeplot(vertical_fullness, color=annotation_color, ax=ax[2], label='Annotations', fill=False)
+        sns.kdeplot(vertical_bbox_fullness, color=annotation_color, ax=ax[2], label='Bbox annotations', fill=False, ls=bbox_fullness_ls)
+        sns.kdeplot(vertical_scada, color=sensor_color, ax=ax[2], label='Sensor (SCADA)', fill=False)
+    elif plot_type == 'hist':
+        width = 1
+        vertical_x_values = np.array([key for key in vertical_class_counts.keys()])
+        ax[2].bar(vertical_x_values, vertical_class_counts.values(), color=annotation_color, ec=annotation_color, label='Annotations',
+                width=width)
+        scada_x_values = np.array([key for key in vertical_scada_class_counts.keys()])
+        ax[2].bar(scada_x_values + width+0.5, vertical_scada_class_counts.values(), color=sensor_color, ec=sensor_color, label='Sensor (SCADA)',
+                width=width)
+    
+    # Rotated dataset
+    if plot_type == 'kde':
+        sns.kdeplot(rotated_fullness, color=annotation_color, ax=ax[3], label='Annotations', fill=False)
+        sns.kdeplot(rotated_bbox_fullness, color=annotation_color, ax=ax[3], label='Bbox annotations', fill=False, ls=bbox_fullness_ls)
+        sns.kdeplot(rotated_scada, color=sensor_color, ax=ax[3], label='Sensor (SCADA)', fill=False)
+    elif plot_type == 'hist':
+        width = 1
+        rotated_x_values = np.array([key for key in rotated_class_counts.keys()])
+        ax[3].bar(rotated_x_values, rotated_class_counts.values(), color=annotation_color, ec=annotation_color, label='Annotations',
+                width=width)
+        scada_x_values = np.array([key for key in rotated_scada_class_counts.keys()])
+        ax[3].bar(scada_x_values + width+0.5, rotated_scada_class_counts.values(), color=sensor_color, ec=sensor_color, label='Sensor (SCADA)',
+                width=width)
+    
+    # Plot adjustments
+    font_size = 20
+    fig.suptitle('Dataset Fullness Distribution', fontsize=font_size+4)
+    for axis in ax:
+        if plot_type == 'hist':
+            axis.grid(axis='y', linestyle='--', alpha=0.5)
+        axis.legend(fontsize=font_size-4, loc='upper left')
+        axis.set_xlabel('Fullness', fontsize=font_size)
+        if plot_type == 'hist':
+            axis.set_ylabel('Count', fontsize=font_size)
+        elif plot_type == 'kde':
+            axis.set_ylabel('KDE', fontsize=font_size)
+            axis.set_ylim(0, 0.0275)
+        # x = np.arange(0, 101, 10)
+        axis.set_xticks(np.arange(0, 101, 10))
+        # axis.set_xticklabels(x, fontsize=font_size-4)
+        axis.tick_params(axis='both', labelsize=font_size-4)
+        # axis.set_yticks(y_axis)
+    
+    balanced_total = sum(train_class_counts_balanced.values())
+    ax[0].set_title(f'Train Dataset, total | balanced: {len(train_fullness)}| {balanced_total} frames', fontsize=font_size)
+    ax[1].set_title(f'Test Dataset, total: {len(sensor_fullness)} frames', fontsize=font_size)
+    ax[2].set_title(f'Vertical Dataset, total: {len(vertical_fullness)} frames', fontsize=font_size)
+    ax[3].set_title(f'Rotated Dataset, total: {len(rotated_fullness)} frames', fontsize=font_size)
+    
+    fig.tight_layout()
+    
+    # plt.show()
+    plt.savefig(f'reports/figures/data_distributions.pdf', dpi=300)
+    plt.close()
+    
 
 
 if __name__ == '__main__':
-    frames = h5py.File('data/processed/sensors_with_strawbbox.hdf5', 'r')
-    class_dictionary = get_frames_by_class(frames)
+    frames = h5py.File('data/processed/recording_rotated_all_frames_processed_combined.hdf5', 'r')
+    # class_dictionary = get_frames_by_class(frames)
+    # plot_fullness_distribution(plot_type='kde')
+    save_frame_as_png(frames)
     
     ## These functions create plots of the dataset for the straw level monitoring model ##
-    plot_class_distribution(class_dictionary, frames, direction='horizontal') # horizontal or vertical
+    # plot_class_distribution(class_dictionary, frames, direction='horizontal') # horizontal or vertical
     # plot_class_distribution_and_examples(class_dictionary, frames)
     # plot_pixel_intensities(class_dictionary, frames)
     # plot_pixel_means_and_variance(class_dictionary, frames)

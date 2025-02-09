@@ -577,7 +577,43 @@ def create_noisy_dataset(hdf5: h5py, save_path: str, num_changes: int = 6, possi
         
     pbar.close()
     
+
+def create_examples(hf, save_path):
+    image = hf['frame_0']['image'][...]
+    image = decode_binary_image(image)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     
+    image_lens_flare = insert_lens_flare(image.copy())
+    image_dust = insert_dust(image.copy())
+    image_scratches = insert_scratches(image.copy())
+    image_people = insert_people(image.copy())
+    image_gaussian_blur = partial_gaussian_blur(image.copy())
+    image_random_augment = random_augment_frame(image.copy())
+    
+    # Save the images in the folder
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    
+    cv2.imwrite(os.path.join(save_path, 'lens_flare.jpg'), cv2.cvtColor(image_lens_flare, cv2.COLOR_RGB2BGR))
+    cv2.imwrite(os.path.join(save_path, 'dust.jpg'), cv2.cvtColor(image_dust, cv2.COLOR_RGB2BGR))
+    cv2.imwrite(os.path.join(save_path, 'scratches.jpg'), cv2.cvtColor(image_scratches, cv2.COLOR_RGB2BGR))
+    cv2.imwrite(os.path.join(save_path, 'people.jpg'), cv2.cvtColor(image_people, cv2.COLOR_RGB2BGR))
+    cv2.imwrite(os.path.join(save_path, 'gaussian_blur.jpg'), cv2.cvtColor(image_gaussian_blur, cv2.COLOR_RGB2BGR))
+    cv2.imwrite(os.path.join(save_path, 'random_augment.jpg'), cv2.cvtColor(image_random_augment, cv2.COLOR_RGB2BGR))
+
+
+def create_one_plot():
+    list_of_images = os.listdir('reports/noisy_examples')
+    list_of_images = [image for image in list_of_images if image.endswith('.jpg')]
+    fig, axs = plt.subplots(2, 3, figsize=(20, 10))
+    for i, image in enumerate(list_of_images):
+        img = cv2.imread(os.path.join('reports/noisy_examples', image))
+        img = cv2.resize(img, (img.shape[1]//4, img.shape[0]//4))
+        axs[i//3, i%3].imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        axs[i//3, i%3].axis('off')
+        axs[i//3, i%3].set_title(image.split('.')[0], fontsize=30)
+    plt.tight_layout()
+    plt.savefig('reports/noisy_examples/noisy_examples.pdf', dpi=300, bbox_inches='tight')
 
 if __name__ == '__main__':
     # Load the hdf5 file
@@ -586,7 +622,9 @@ if __name__ == '__main__':
     save_path = f'data/processed/noisy_{noisy_id}.hdf5'
     hf = h5py.File(path_to_hdf5, 'r')
     
-    create_noisy_dataset(hf, save_path, num_changes=2, possible_changes=['random_augment', 'partial_gaussian_blur'])
+    # create_noisy_dataset(hf, save_path, num_changes=2, possible_changes=['random_augment', 'partial_gaussian_blur'])
+    # create_examples(hf, 'reports/noisy_examples/')
+    create_one_plot()
     
 
 

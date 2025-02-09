@@ -504,7 +504,8 @@ def initialize_wandb(args: argparse.Namespace) -> None:
             'num_hidden_layers': args.num_hidden_layers,
             'num_neurons': args.num_neurons,
             'balanced_dataset': args.balanced_dataset,
-            'load_model': args.load_model
+            'load_model': args.load_model,
+            'cutout_type': args.cutout_type
         })
 
 
@@ -541,6 +542,7 @@ def get_args():
     parser.add_argument('--num_neurons', type=int, default=512, help='Number of neurons for the regressor')
     parser.add_argument('--balanced_dataset', action='store_true', help='Balance the dataset setting the maximum number of samples in each class to a max of 400')
     parser.add_argument('--load_model', type=str, default='', help='Load a model from path to continue training. If cont is set, the path should point to a folder containing the feature extractor and regressor')
+    parser.add_argument('--cutout_type', type=str, default='annotation', help='The type of cutout to use', choices=['annotation', 'yolo', 'apriltag'])
     
     return parser.parse_args()
 
@@ -549,8 +551,8 @@ if __name__ == '__main__':
     
     # Is this how we want to do it?
     if args.hpc:
-        # user = 'davos'
-        user = 's194247'
+        user = 'davos'
+        # user = 's194247'
         path_to_data = f'/work3/{user}/data/'
         if not os.path.exists(path_to_data):
             raise FileNotFoundError(f'Path to data not found: {path_to_data}')
@@ -565,7 +567,8 @@ if __name__ == '__main__':
         sensor_path = f'/work3/{user}/data/sensors.hdf5'
         if not os.path.exists(sensor_path):
             raise FileNotFoundError(f'Sensor data path not found: {sensor_path}')
-        
+    else:
+        sensor_path = 'data/processed/sensors_with_strawbbox.hdf5'
     
     args.image_size = tuple(args.image_size)
     print(f'Using image size: {args.image_size}')
@@ -582,10 +585,20 @@ if __name__ == '__main__':
             
     image_size = args.image_size
     
+    if args.cutout_type == 'yolo':
+        use_yolo = True
+    else:
+        use_yolo = False
+    
+    if args.cutout_type == 'apriltag':
+        use_april = True
+    else:
+        use_april = False
+    
     train_set = dl.Chute(data_path=args.data_path, data_type='train', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                          random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
                          num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=0.5, greyscale=args.greyscale,
-                         balance_dataset=args.balanced_dataset)
+                         balance_dataset=args.balanced_dataset, use_yolo_to_cutout=use_yolo, use_april_tag_image=use_april)
     # test_set = dl.Chute(data_path=args.data_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
     #                     random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, 
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont, subsample=args.data_subsample, augment_probability=0.0)
@@ -601,7 +614,8 @@ if __name__ == '__main__':
     #                     num_classes_straw=args.num_classes_straw, continuous=args.cont)
     sensor_set = dl.Chute(data_path=sensor_path, data_type='test', inc_heatmap=args.inc_heatmap, inc_edges=args.inc_edges,
                           random_state=args.seed, force_update_statistics=False, data_purpose='straw', image_size=image_size, continuous=args.cont, subsample=1.0,
-                          augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics, greyscale=args.greyscale)
+                          augment_probability=0, num_classes_straw=args.num_classes_straw, override_statistics=statistics, greyscale=args.greyscale,
+                          use_yolo_to_cutout=use_yolo, use_april_tag_image=use_april)
     
     
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)

@@ -12,12 +12,13 @@ import cv2
 
 from strawml.data.make_dataset import decode_binary_image
 from strawml.models.straw_classifier import chute_cropper as cc
+from strawml.visualizations.stream import ObjectDetect
 
 class Chute(torch.utils.data.Dataset):
     def __init__(self, data_path: str = 'data/processed/augmented/chute_detection.hdf5', data_type: str = 'train', inc_heatmap: bool = True, inc_edges: bool = False,
                  random_state: int = 42, force_update_statistics: bool = False, data_purpose: str = "chute", image_size=(448, 448), num_classes_straw: int = 21,
                  continuous: bool = False, subsample: float = 1.0, augment_probability: float = 0.5, override_statistics: tuple = (), greyscale: bool = False, sensor: bool = False,
-                 balance_dataset: bool = False) -> torch.utils.data.Dataset:
+                 balance_dataset: bool = False, use_yolo_to_cutout: bool = False, use_april_tag_image: bool = False) -> torch.utils.data.Dataset:
         
         self.image_size = image_size
         self.data_purpose = data_purpose
@@ -32,6 +33,18 @@ class Chute(torch.utils.data.Dataset):
         self.augment_probability = augment_probability
         self.greyscale = greyscale
         self.sensor = sensor
+        self.use_yolo_to_cutout = use_yolo_to_cutout
+        self.use_april_tag_image = use_april_tag_image
+        
+        if self.use_yolo_to_cutout:
+            if self.use_april_tag_image:
+                print('Dataloader: Both yolo and april tag image enabled. Using april tag image to make cutouts')
+            else:
+                print('Dataloader: Using yolo to make cutouts')
+                device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                self.OD = ObjectDetect('models/obb_chute_best.pt', yolo_threshold=0.5, device=device, verbose=False)
+        if self.use_april_tag_image:
+            print('Dataloader: Using april tag image cutouts')
         
         if len(override_statistics) > 0:
             self.train_mean, self.train_std = override_statistics[:2]
@@ -168,7 +181,10 @@ class Chute(torch.utils.data.Dataset):
             
         # Define variable to contain the current segment data
         frame = self.frames[self.indices[idx]]
-        frame_data = decode_binary_image(frame['image'][...])
+        if self.use_april_tag_image:
+            frame_data = decode_binary_image(frame['april_cutout_image']['image'][...])
+        else:
+            frame_data = decode_binary_image(frame['image'][...])
         frame_data = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
         
         if self.inc_heatmap:
@@ -196,22 +212,34 @@ class Chute(torch.utils.data.Dataset):
             print(f'\nKeyError: {e} in frame {self.indices[idx]}')
             print(frame['annotations'].keys(), "\n")
         
-        # Rotate and crop the image to the bounding box if we are training on the straw dataset
-        if self.data_purpose == "straw":
-            # if self.indices[idx] in self.bad_frames:
-            #     print(f"Bad frame detected: {self.indices[idx]}")
-            frame_data, bbox_chute_rotated = cc.rotate_and_crop_to_bbox(frame_data, bbox_chute)
-            if self.inc_heatmap:
-                heatmap, _ = cc.rotate_and_crop_to_bbox(heatmap, bbox_chute)
+       # Rotate and crop the image to the bounding box if we are training on the straw dataset
+        if self.data_purpose == "straw" and not self.use_april_tag_image:
+            if self.use_yolo_to_cutout:
+                frame_data_bgr = cv2.cvtColor(frame_data.copy(), cv2.COLOR_RGB2BGR)
+                results = self.OD.score_frame(frame_data_bgr)
+                if len(results[0]) == 0:
+                    bbox_chute = bbox_chute
+                    print(f'\nDid not find bbox for {idx}, using annotation')
+                else:
+                    bbox_chute = results[1][0].detach().cpu().numpy().flatten()
 
-            bbox_chute = bbox_chute_rotated
-            # print("1.5 Rotation and cropping to bbox")
-            # self.plot_data(frame_data=(frame_data, heatmap), labels = [bbox_chute])
+                frame_data, bbox_chute_rotated = cc.rotate_and_crop_to_bbox(frame_data, bbox_chute)
+                bbox_chute = bbox_chute_rotated
+            else:
+                # if self.indices[idx] in self.bad_frames:
+                #     print(f"Bad frame detected: {self.indices[idx]}")
+                frame_data, bbox_chute_rotated = cc.rotate_and_crop_to_bbox(frame_data, bbox_chute)
+                if self.inc_heatmap:
+                    heatmap, _ = cc.rotate_and_crop_to_bbox(heatmap, bbox_chute)
+
+                bbox_chute = bbox_chute_rotated
+                # print("1.5 Rotation and cropping to bbox")
+                # self.plot_data(frame_data=(frame_data, heatmap), labels = [bbox_chute])
 
         
         
-        # if self.inc_edges:
-        #     edges = self.get_edge_features(frame_data)
+        if self.inc_edges:
+            edges = self.get_edge_features(frame_data)
         
         # Transform to tensor images
         if self.inc_heatmap:
@@ -644,6 +672,13 @@ class Chute(torch.utils.data.Dataset):
                     Continuous:               {self.continuous}\n \
                     Class counts:             {self.class_counts}\n \
                         ')
+    
+    def save_distribution(self):
+        """Saves the distribution of the dataset to a file."""
+        with open('data_distribution.txt', 'w') as f:
+            f.write(f'Class distribution: {self.class_counts}')
+        
+        
 
 def plot_batch(data, labels, frame_start=0, mean=None, std=None, grey=False):
     data_num = data.shape[0]
@@ -728,6 +763,61 @@ def plot_multiple_images(dataloader: Chute, num_images: int = 10, mode: str = 'r
     plt.show()
     
 
+def visualize_transformations():
+    hf = h5py.File('data/processed/train.hdf5', 'r')
+    frame = hf['frame_0']
+    image = decode_binary_image(frame['image'][...])
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+    bbox = frame['annotations']['bbox_chute'][...]
+    
+    # Rotate and crop the image to the bounding box
+    image, bbox = cc.rotate_and_crop_to_bbox(image, bbox)
+    
+    image = cv2.resize(image, (208, 672))
+    
+    # Define the transformation to apply to the data
+    transform = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)]) 
+    
+    # Transformations
+    color_jitter = transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.5, hue=0.05)
+    jpeg = transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.JPEG(quality=(1, 100)), transforms.ToDtype(torch.float32, scale=True)])
+    gaussian_blur = transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 5.0))
+    gaussian_noise = transforms.GaussianNoise(mean=0.0, sigma=0.1)
+    equalize = transforms.RandomEqualize(p=1.0)
+    posterize = transforms.Compose([transforms.ToDtype(torch.uint8, scale=True), transforms.RandomPosterize(bits=np.random.randint(3, 5), p=1.0), transforms.ToDtype(torch.float32, scale=True)])
+    sharpness = transforms.RandomAdjustSharpness(p=1.0, sharpness_factor=np.random.uniform(1.0, 2.0))
+    
+    
+    # Get the images after augmentation
+    image = transform(image)
+    image_color_jitter = color_jitter(image)
+    image_jpeg = jpeg(image)
+    image_gaussian_blur = gaussian_blur(image)
+    image_gaussian_noise = gaussian_noise(image)
+    image_equalize = equalize(image)
+    image_posterize = posterize(image)
+    image_sharpness = sharpness(image)
+    
+    images = [image, image_color_jitter, image_jpeg, image_gaussian_blur, image_gaussian_noise, image_equalize, image_posterize, image_sharpness]
+    titles = ['Original', 'Color Jitter', 'JPEG', 'Gaussian Blur', 'Gaussian Noise', 'Equalize', 'Posterize', 'Sharpness']
+    images = [img.permute(1, 2, 0).detach().numpy() for img in images]
+    images = [np.clip(img, 0, 1) for img in images]
+    
+    fig, ax = plt.subplots(2, 4, figsize=(8, 5))
+    ax = ax.flatten()
+    for i in range(len(images)):
+        ax[i].imshow(images[i])
+        ax[i].set_title(titles[i], fontsize=20)
+        ax[i].axis('off')
+    
+    plt.tight_layout()    
+    plt.savefig('reports/figures/straw_model_augmentations.pdf', dpi=300, bbox_inches='tight')
+
+# if __name__ == '__main__':
+#     visualize_transformations()
+
+
 if __name__ == '__main__':
     import time
     from torch.utils.data import DataLoader
@@ -786,21 +876,24 @@ if __name__ == '__main__':
     print("Extracting statistics for straw dataset with heatmaps and greyscale images")
     train_set = Chute(data_path=data_path, data_type='train', inc_heatmap=False, inc_edges=False,
                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), 
-                         num_classes_straw=21, continuous=True, subsample=1.0, augment_probability=1.0, greyscale=False, balance_dataset=False)
+                         num_classes_straw=21, continuous=True, subsample=1.0, augment_probability=0.0, greyscale=False, balance_dataset=False,
+                         use_yolo_to_cutout=False, use_april_tag_image=False, sensor=False)
+    # train_set.save_distribution()
     
-    print('Testing normalizing')
-    train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
-    for i, (data, target) in enumerate(train_loader):
-        # Print the data shape
-        print(f'Data shape: {data.shape}')
-        print(f'Target shape: {target.shape}')
+    
+    # print('Testing normalizing')
+    # train_loader = DataLoader(train_set, batch_size=8, shuffle=False, num_workers=0)
+    # for i, (data, target) in enumerate(train_loader):
+    #     # Print the data shape
+    #     print(f'Data shape: {data.shape}')
+    #     print(f'Target shape: {target.shape}')
         
-        # Print the mean and std of the data
-        print(f'Mean: {data.mean()}')
-        print(f'Std: {data.std()}')
-        print(f'Min: {data.min()}')
-        print(f'Max: {data.max()}')
-        plot_batch(data, target, i*8, train_set.train_mean, train_set.train_std, grey=train_set.greyscale)
+    #     # Print the mean and std of the data
+    #     print(f'Mean: {data.mean()}')
+    #     print(f'Std: {data.std()}')
+    #     print(f'Min: {data.min()}')
+    #     print(f'Max: {data.max()}')
+    #     plot_batch(data, target, i*8, train_set.train_mean, train_set.train_std, grey=train_set.greyscale)
     
     
     # for i in range(10):
@@ -810,15 +903,18 @@ if __name__ == '__main__':
     #     data, target = train_set[i]
     #     train_set.plot_data(frame_data=data, labels=target)
     
-    # mean, std = train_set.train_mean, train_set.train_std
-    # statistics = (mean, std)
-    # sensor_set = Chute(data_path='data/processed/sensors.hdf5', data_type='test', inc_heatmap=False, inc_edges=True,
-    #                       random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(384, 384), continuous=True, subsample=1.0,
-    #                       augment_probability=0, num_classes_straw=1, override_statistics=statistics, greyscale=True)
-    # sensor_loader = DataLoader(sensor_set, batch_size=8, shuffle=False, num_workers=0)
+    mean, std = train_set.train_mean, train_set.train_std
+    statistics = (mean, std)
+    sensor_set = Chute(data_path='data/processed/sensors_with_strawbbox.hdf5', data_type='test', inc_heatmap=False, inc_edges=False,
+                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), continuous=True, subsample=1.0,
+                          augment_probability=0, num_classes_straw=21, override_statistics=statistics, greyscale=False, balance_dataset=False, sensor=True,
+                          use_yolo_to_cutout=False, use_april_tag_image=True)
+    # sensor_set.save_distribution()
+    sensor_loader = DataLoader(sensor_set, batch_size=8, shuffle=False, num_workers=0)
     
-    # for i, (data, target) in enumerate(sensor_loader):
-    #     plot_batch(data, target, i*8, mean, std, grey=sensor_set.greyscale)
+    for i, (data, target, sensor_fullness) in enumerate(sensor_loader):
+        print(f'Batch {i+1}/{len(sensor_loader)}')
+        plot_batch(data, target, i*8, mean, std, grey=sensor_set.greyscale)
     
     
     
