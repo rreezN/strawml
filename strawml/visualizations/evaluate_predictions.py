@@ -13,7 +13,8 @@ def retrieve_data(path):
     label_fullness_data = np.array([])
     scada_data = np.array([])
     yolo_data = np.array([])
-    convnextv2_data = np.array([])
+    convnext_data = np.array([])
+    convnext_data_at = np.array([])
     errors = 0
     yolo_detection_errors = 0
     conv_detection_errors = 0
@@ -29,73 +30,93 @@ def retrieve_data(path):
                 fullness_data = f[key]['straw_percent_fullness']['percent'][...]
                 scada_data_ = f[key]['scada']['percent'][...]
                 yolo_data_ = f[key]['yolo']['percent'][...]
-                s,e = f[key]['yolo']['pixel'][...]
-                if s[0] is np.nan:
-                    yolo_detection_errors += 1
-                convnextv2_data_ = f[key]['convnext_apriltag']['percent'][...]
-                s,e = f[key]['convnext_apriltag']['pixel'][...]
-                if s[0] is np.nan:
-                    conv_detection_errors += 1
+                convnext_data_ = f[key]['convnext']['percent'][...]
+                convnext_data_at_ = f[key]['convnext_apriltag']['percent'][...]
+
                 label_bbox_data = np.append(label_bbox_data, bbox_data)
                 label_fullness_data = np.append(label_fullness_data, fullness_data)
                 scada_data = np.append(scada_data, scada_data_)
                 yolo_data = np.append(yolo_data, yolo_data_)
-                convnextv2_data = np.append(convnextv2_data, convnextv2_data_)
+                convnext_data = np.append(convnext_data, convnext_data_)
+                convnext_data_at = np.append(convnext_data_at, convnext_data_at_)
             except KeyError as e:
-                # print(f"KeyError: {path}, {key}: {e}")
+                print(f"KeyError: {path}, {key}: {e}")
                 errors += 1
     print(f"Errors: {errors}")
     print(f"Yolo Detection Errors: {yolo_detection_errors}")
     print(f"Conv Detection Errors: {conv_detection_errors}")
-    return label_bbox_data, label_fullness_data, scada_data, yolo_data, convnextv2_data
+    return label_bbox_data, label_fullness_data, scada_data, yolo_data, convnext_data, convnext_data_at
 
 def _get_accuracy_and_mae(label_data, prediction_data, percentage=10):
     # calculate accuracy and mean absolute error only where the label data is not nan and the prediction data is not nan
     mask = ~np.isnan(label_data) & ~np.isnan(prediction_data)
+    frame_detection_accuracy  = np.sum(~np.isnan(prediction_data)) / len(prediction_data)
     label_data = label_data[mask]
     prediction_data = prediction_data[mask]
     accuracy = np.mean((prediction_data >= label_data - percentage) & (prediction_data <= label_data + percentage)) * 100
     mae = np.mean(np.abs(label_data - prediction_data))
-    return accuracy, mae
+    # round to 3 decimal places 
+    return round(accuracy, 3), round(mae, 3), round(frame_detection_accuracy, 3)
 
 def _run_extraction(data_dir, output):
 # Get list of files in directory
     data_files  = os.listdir(data_dir)
     for path in data_files:
-        label_bbox_data, label_fullness_data, scada_data, yolo_data, convnextv2_data = retrieve_data(path)
+        label_bbox_data, label_fullness_data, scada_data, yolo_data, convnextv2_data, convnext_data_at = retrieve_data(path)
         # scada
-        scada_bbox_accuracy, scada_bbox_mae = _get_accuracy_and_mae(label_bbox_data, scada_data)
-        scada_fullness_accuracy, scada_fullness_mae = _get_accuracy_and_mae(label_fullness_data, scada_data)
+        scada_bbox_accuracy, scada_bbox_mae, scada_bbox_frame_detection_accuracy = _get_accuracy_and_mae(label_bbox_data, scada_data)
+        scada_fullness_accuracy, scada_fullness_mae, scada_fullness_frame_detection_accuracy = _get_accuracy_and_mae(label_fullness_data, scada_data)
         # yolo
-        yolo_bbox_accuracy, yolo_bbox_mae = _get_accuracy_and_mae(label_bbox_data, yolo_data)
-        yolo_fullness_accuracy, yolo_fullness_mae = _get_accuracy_and_mae(label_fullness_data, yolo_data)
+        yolo_bbox_accuracy, yolo_bbox_mae, yolo_bbox_frame_detection_accuracy = _get_accuracy_and_mae(label_bbox_data, yolo_data)
+        yolo_fullness_accuracy, yolo_fullness_mae, yolo_fullness_frame_detection_accuracy = _get_accuracy_and_mae(label_fullness_data, yolo_data)
         # convnextv2
-        convnextv2_bbox_accuracy, convnextv2_bbox_mae = _get_accuracy_and_mae(label_bbox_data, convnextv2_data)
-        convnextv2_fullness_accuracy, convnextv2_fullness_mae = _get_accuracy_and_mae(label_fullness_data, convnextv2_data)
+        convnextv2_bbox_accuracy, convnextv2_bbox_mae, convnextv2_bbox_frame_detection_accuracy = _get_accuracy_and_mae(label_bbox_data, convnextv2_data)
+        convnextv2_fullness_accuracy, convnextv2_fullness_mae, convnextv2_fullness_frame_detection_accuracy = _get_accuracy_and_mae(label_fullness_data, convnextv2_data)
+        # convnextv2 apriltag
+        convnextv2_bbox_accuracy_at, convnextv2_bbox_mae_at, convnextv2_bbox_frame_detection_accuracy_at = _get_accuracy_and_mae(label_bbox_data, convnext_data_at)
+        convnextv2_fullness_accuracy_at, convnextv2_fullness_mae_at, convnextv2_fullness_frame_detection_accuracy_at = _get_accuracy_and_mae(label_fullness_data, convnext_data_at)
+
         print("-------------------")
         print(f"File: {path}")
-        print(f"Scada Bbox Accuracy: {scada_bbox_accuracy}, Scada Bbox MAE: {scada_bbox_mae}")
-        print(f"Scada Fullness Accuracy: {scada_fullness_accuracy}, Scada Fullness MAE: {scada_fullness_mae}")
-        print(f"Yolo Bbox Accuracy: {yolo_bbox_accuracy}, Yolo Bbox MAE: {yolo_bbox_mae}")
-        print(f"Yolo Fullness Accuracy: {yolo_fullness_accuracy}, Yolo Fullness MAE: {yolo_fullness_mae}")
-        print(f"Convnextv2 Bbox Accuracy: {convnextv2_bbox_accuracy}, Convnextv2 Bbox MAE: {convnextv2_bbox_mae}")
-        print(f"Convnextv2 Fullness Accuracy: {convnextv2_fullness_accuracy}, Convnextv2 Fullness MAE: {convnextv2_fullness_mae}")
+        print(f"Scada Bbox Accuracy: {scada_bbox_accuracy}, Scada Bbox MAE: {scada_bbox_mae}, Frame Detection Accuracy: {scada_bbox_frame_detection_accuracy}")
+        print(f"Scada Fullness Accuracy: {scada_fullness_accuracy}, Scada Fullness MAE: {scada_fullness_mae}, Frame Detection Accuracy: {scada_fullness_frame_detection_accuracy}")
+        print("       --:--       ")
+        print(f"Yolo Bbox Accuracy: {yolo_bbox_accuracy}, Yolo Bbox MAE: {yolo_bbox_mae}, Frame Detection Accuracy: {yolo_bbox_frame_detection_accuracy}")
+        print(f"Yolo Fullness Accuracy: {yolo_fullness_accuracy}, Yolo Fullness MAE: {yolo_fullness_mae}, Frame Detection Accuracy: {yolo_fullness_frame_detection_accuracy}")
+        print("       --:--       ")
+        print(f"Convnextv2 Bbox Accuracy: {convnextv2_bbox_accuracy}, Convnextv2 Bbox MAE: {convnextv2_bbox_mae}, Frame Detection Accuracy: {convnextv2_bbox_frame_detection_accuracy}")
+        print(f"Convnextv2 Fullness Accuracy: {convnextv2_fullness_accuracy}, Convnextv2 Fullness MAE: {convnextv2_fullness_mae}, Frame Detection Accuracy: {convnextv2_fullness_frame_detection_accuracy}")
+        print("       --:--       ")
+        print(f"Convnextv2 Bbox Accuracy (Apriltag): {convnextv2_bbox_accuracy_at}, Convnextv2 Bbox MAE (Apriltag): {convnextv2_bbox_mae_at}, Frame Detection Accuracy (Apriltag): {convnextv2_bbox_frame_detection_accuracy_at}")
+        print(f"Convnextv2 Fullness Accuracy (Apriltag): {convnextv2_fullness_accuracy_at}, Convnextv2 Fullness MAE (Apriltag): {convnextv2_fullness_mae_at}, Frame Detection Accuracy (Apriltag): {convnextv2_fullness_frame_detection_accuracy_at}")
         print("-------------------")
 
         # append values to existing json file 
         save_dict[path] = {
                 "scada_bbox_accuracy": scada_bbox_accuracy,
                 "scada_bbox_mae": scada_bbox_mae,
+                "scada_bbox_frame_detection_accuracy": scada_bbox_frame_detection_accuracy,
                 "scada_fullness_accuracy": scada_fullness_accuracy,
                 "scada_fullness_mae": scada_fullness_mae,
+                "scada_fullness_frame_detection_accuracy": scada_fullness_frame_detection_accuracy,
                 "yolo_bbox_accuracy": yolo_bbox_accuracy,
                 "yolo_bbox_mae": yolo_bbox_mae,
+                "yolo_bbox_frame_detection_accuracy": yolo_bbox_frame_detection_accuracy,
                 "yolo_fullness_accuracy": yolo_fullness_accuracy,
                 "yolo_fullness_mae": yolo_fullness_mae,
+                "yolo_fullness_frame_detection_accuracy": yolo_fullness_frame_detection_accuracy,
                 "convnextv2_bbox_accuracy": convnextv2_bbox_accuracy,
                 "convnextv2_bbox_mae": convnextv2_bbox_mae,
+                "convnextv2_bbox_frame_detection_accuracy": convnextv2_bbox_frame_detection_accuracy,
                 "convnextv2_fullness_accuracy": convnextv2_fullness_accuracy,
-                "convnextv2_fullness_mae": convnextv2_fullness_mae
+                "convnextv2_fullness_mae": convnextv2_fullness_mae,
+                "convnextv2_fullness_frame_detection_accuracy": convnextv2_fullness_frame_detection_accuracy,
+                "convnextv2_bbox_accuracy_at": convnextv2_bbox_accuracy_at,
+                "convnextv2_bbox_mae_at": convnextv2_bbox_mae_at,
+                "convnextv2_bbox_frame_detection_accuracy_at": convnextv2_bbox_frame_detection_accuracy_at,
+                "convnextv2_fullness_accuracy_at": convnextv2_fullness_accuracy_at,
+                "convnextv2_fullness_mae_at": convnextv2_fullness_mae_at,
+                "convnextv2_fullness_frame_detection_accuracy_at": convnextv2_fullness_frame_detection_accuracy_at
             }
     with open(output, 'w') as f:
         json.dump(save_dict, f)
@@ -117,21 +138,27 @@ def _plot_noisy_data(data, keys):
     mae_yolo = []
     accuracy_cn = []
     mae_cn = []
+    accuracy_cn_at = []
+    mae_cn_at = []
     for name in keys:
         accuracy_cn.append(data[name]['convnextv2_bbox_accuracy'])
         mae_cn.append(data[name]['convnextv2_bbox_mae'])
         accuracy_yolo.append(data[name]['yolo_bbox_accuracy'])
         mae_yolo.append(data[name]['yolo_bbox_mae'])
-    
+        accuracy_cn_at.append(data[name]['convnextv2_bbox_accuracy_at'])
+        mae_cn_at.append(data[name]['convnextv2_bbox_mae_at'])
     # add values at the start
-    accuracy_cn.insert(0, 74.17)
-    mae_cn.insert(0, 8.22)
-    accuracy_yolo.insert(0, 89.48)
-    mae_yolo.insert(0, 4.46)
+    accuracy_cn.insert(0, 92.87)
+    mae_cn.insert(0, 4.64)
+    accuracy_yolo.insert(0, 94.35)
+    mae_yolo.insert(0, 3.03)
+    accuracy_cn_at.insert(0, 92.87)
+    mae_cn_at.insert(0, 4.64)
 
     # plot line plots for accuracy and mae for yolo and convnextv2 in the same plot
     # Create a figure and axis
     # plt.style.use('seaborn-darkgrid')
+
     fig, ax = plt.subplots(figsize=(16, 8))
     title_size = 20
     label_size = 18
@@ -146,53 +173,70 @@ def _plot_noisy_data(data, keys):
     ax.plot(x_axis, accuracy_yolo, label='Yolo Accuracy', color='royalblue', linestyle='-', zorder=2)
     ax.plot(x_axis, mae_yolo, label='Yolo MAE', color='royalblue', linestyle='--', zorder=2)
     ax.plot(x_axis, accuracy_cn, label='ConvNeXtv2 Accuracy', color='indianred', linestyle='-', zorder=2)
-    ax.plot(x_axis, mae_cn, label='ConvNeXtv2 MAE', color='indianred', linestyle='--', zorder=2)
+    ax.plot(x_axis, mae_cn, label='ConvNeXt MAE', color='indianred', linestyle='--', zorder=2)
+    ax.plot(x_axis, accuracy_cn_at, label='ConvNeXt (Apriltag) Accuracy', color='mediumseagreen', linestyle='-', zorder=2)
+    ax.plot(x_axis, mae_cn_at, label='ConvNeXt (Apriltag) MAE', color='mediumseagreen', linestyle='--', zorder=2)
 
     # Scatter points for all values
     ax.scatter(x_axis, accuracy_yolo, color='royalblue', zorder=3, s=50)
     ax.scatter(x_axis, accuracy_cn, color='indianred', zorder=3, s=50)
     ax.scatter(x_axis, mae_yolo, color='royalblue', zorder=3, s=50)
     ax.scatter(x_axis, mae_cn, color='indianred', zorder=3, s=50)
-
-    # Add text annotations with dynamic placement logic for both accuracy and MAE
+    ax.scatter(x_axis, accuracy_cn_at, color='mediumseagreen', zorder=3, s=50)
+    ax.scatter(x_axis, mae_cn_at, color='mediumseagreen', zorder=3, s=50)
+    # Add text annotations with dynamic placement logic for accuracy and MAE
     texts = []
 
-    for x, accuracy_y, mae_y, accuracy_c, mae_c in zip(x_axis, accuracy_yolo, mae_yolo, accuracy_cn, mae_cn):
+    for x, accuracy_y, mae_y, accuracy_c, mae_c, accuracy_c_at, mae_c_at in zip(
+        x_axis, accuracy_yolo, mae_yolo, accuracy_cn, mae_cn, accuracy_cn_at, mae_cn_at
+    ):
         # Logic for accuracy annotations
         if accuracy_c < accuracy_y:
-            # Place ConvNeXtV2 text below, YOLO text above
             accuracy_offset_c = -5  # Move ConvNeXtV2 annotation down
             accuracy_offset_y = 1   # Move YOLO annotation up
         else:
-            # Place YOLO text below, ConvNeXtV2 text above
             accuracy_offset_y = -5  # Move YOLO annotation down
             accuracy_offset_c = 1   # Move ConvNeXtV2 annotation up
-        
+
+        if accuracy_c_at < accuracy_y:
+            accuracy_offset_c_at = -5  # Move ConvNeXtV2 (AT) annotation down
+        else:
+            accuracy_offset_c_at = 1   # Move ConvNeXtV2 (AT) annotation up
+
         # Logic for MAE annotations
         if mae_c < mae_y:
-            # Place ConvNeXtV2 MAE text below, YOLO MAE text above
             mae_offset_c = -5  # Move ConvNeXtV2 MAE annotation down
             mae_offset_y = 1   # Move YOLO MAE annotation up
         else:
-            # Place YOLO MAE text below, ConvNeXtV2 MAE text above
             mae_offset_y = -5  # Move YOLO MAE annotation down
             mae_offset_c = 1   # Move ConvNeXtV2 MAE annotation up
-        
+
+        if mae_c_at < mae_y:
+            mae_offset_c_at = -5  # Move ConvNeXtV2 (AT) MAE annotation down
+        else:
+            mae_offset_c_at = 1   # Move ConvNeXtV2 (AT) MAE annotation up
+
         # Add text for YOLO accuracy
         texts.append(plt.text(x, accuracy_y + accuracy_offset_y, f'{accuracy_y:.2f}', fontsize=text_size))
         # Add text for ConvNeXtV2 accuracy
         texts.append(plt.text(x, accuracy_c + accuracy_offset_c, f'{accuracy_c:.2f}', fontsize=text_size))
-        
+        # Add text for ConvNeXtV2 (AT) accuracy
+        texts.append(plt.text(x, accuracy_c_at + accuracy_offset_c_at, f'{accuracy_c_at:.2f}', fontsize=text_size))
+
         # Add text for YOLO MAE
         texts.append(plt.text(x, mae_y + mae_offset_y, f'{mae_y:.2f}', fontsize=text_size))
         # Add text for ConvNeXtV2 MAE
         texts.append(plt.text(x, mae_c + mae_offset_c, f'{mae_c:.2f}', fontsize=text_size))
+        # Add text for ConvNeXtV2 (AT) MAE
+        texts.append(plt.text(x, mae_c_at + mae_offset_c_at, f'{mae_c_at:.2f}', fontsize=text_size))
 
+    # Adjust text positions to avoid overlapping
     adjust_text(texts, ax=ax)
+
 
     # Add legend
     ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.07),
-            fancybox=True, shadow=True, ncol=2, fontsize=text_size)
+            fancybox=True, shadow=True, ncol=3, fontsize=text_size)
 
     # Add labels and title
     ax.set_xlabel('#Random Augments', fontsize=label_size)
@@ -502,7 +546,7 @@ if __name__ == '__main__':
     # data_dir = 'data/train_data/yolo_chute/'
     data_dir = 'data/noisy_datasets/'
     output = 'data/robustness_results_new.json'
-    _run_extraction(data_dir, output)
-    # _run_plotting(output)
+    # _run_extraction(data_dir, output)
+    _run_plotting(output)
     # _run_model_metrics(data_dir)
     # _run_fps_metrics()
