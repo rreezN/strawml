@@ -78,7 +78,7 @@ def plot_training_curves():
     list_of_csvs = os.listdir("reports/training curves")
     list_of_csvs = [x for x in list_of_csvs if x.endswith(".csv")]
 
-    fig, ax = plt.subplots(1, 2, figsize=(15, 5))
+    fig, ax = plt.subplots(1, 2, figsize=(15, 4))
     ax = ax.ravel()
     
     for j, csv in enumerate(list_of_csvs):
@@ -139,7 +139,7 @@ def plot_training_curves():
         ax[j].set_ylabel('Loss (MSE)', fontsize=font_size)
         ax[j].set_ylim(0, 0.0035)
         ax[j].grid()
-        ax[j].legend(fontsize=font_size-8)
+        ax[j].legend(fontsize=font_size-8, ncol=2)#len(model_names))
     
     plt.tight_layout()
     plt.savefig("reports/training curves/straw_model_training_curves.pdf", dpi=300, bbox_inches='tight')
@@ -201,7 +201,7 @@ def plot_hyper_parameters_vs_accuracy():
     list_of_csvs = os.listdir("reports/straw sweep all")
     list_of_csvs = [x for x in list_of_csvs if x.endswith(".csv")]
     
-    plt.figure(figsize=(10, 5))
+    plt.figure(figsize=(15, 5))
     fontsize = 20
     for j, csv in enumerate(list_of_csvs):
         df = pd.read_csv("reports/straw sweep all/" + csv, sep=',')
@@ -262,7 +262,7 @@ def plot_final_run_curves():
     list_of_csvs = os.listdir("reports/training curves/final run")
     list_of_csvs = [x for x in list_of_csvs if x.endswith(".csv")]
 
-    fig, ax = plt.subplots(1, 2, figsize=(15, 5))
+    fig, ax = plt.subplots(1, 2, figsize=(15, 4))
     ax = ax.ravel()
     
     for j, csv in enumerate(list_of_csvs):
@@ -328,7 +328,7 @@ def plot_final_run_curves():
             axis.set_ylabel('Loss (MSE)', fontsize=font_size)
             # axis.set_ylim(0, 0.0035)
             axis.grid()
-            axis.legend(fontsize=font_size-8)
+            axis.legend(fontsize=font_size-8, ncol=3)
     
     fig.suptitle('Straw Level Models Final Training and Validation Losses', fontsize=font_size)
     
@@ -428,5 +428,5 @@ if __name__ == '__main__':
     # analyse_model_selection()
     # plot_training_curves()
     # plot_hyper_parameters_vs_accuracy()
-    # plot_final_run_curves()
-    create_table_of_model()
+    plot_final_run_curves()
+    # create_table_of_model()
