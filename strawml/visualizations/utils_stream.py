@@ -317,10 +317,12 @@ class AprilDetectorHelpers:
     
     def _load_normalisation_constants(self):
         # Loads the normalisation constants from data/processed/statistics.yaml
-        with h5py.File("data/processed/train.hdf5", "r") as file:
-            # data = yaml.safe_load(file)
-            mean = file.attrs['mean']
-            std = file.attrs['std']
+        # with h5py.File("data/processed/train.hdf5", "r") as file:
+        #     # data = yaml.safe_load(file)
+        #     mean = file.attrs['mean']
+        #     std = file.attrs['std']
+        mean = [116.17, 119.36, 100.02]
+        std = [33.586, 31.703, 55.446]
         return mean, std
         
     def _load_camera_params(self):
@@ -623,7 +625,7 @@ class AprilDetectorHelpers:
         chute_numbers = self.ADI.chute_numbers.copy()
         # make sure there are chute numbers to work with, otherwise we return
         if not len(chute_numbers) >= 2:
-            return None, None
+            return np.nan, np.nan
 
         # First we divide the straw level by 10 to get it on the same scale as the tag ids
         straw_level = straw_level / 10
@@ -646,7 +648,7 @@ class AprilDetectorHelpers:
         tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
 
         if not tag_under_list or not tag_over_list:
-            return None, None
+            return np.nan, np.nan
 
         tag_under_list = sorted(tag_under_list, reverse=True)
         tag_over_list = sorted(tag_over_list)
@@ -659,7 +661,7 @@ class AprilDetectorHelpers:
         # get the pixel value of the straw level
         excess = straw_level - tag_under_closest
         if excess > 1:
-            return None, None
+            return np.nan, np.nan
         # get the distance between the two closest tags
         x_under, y_under = chute_numbers[tag_under_closest]
         x_over, y_over = chute_numbers[tag_over_closest]

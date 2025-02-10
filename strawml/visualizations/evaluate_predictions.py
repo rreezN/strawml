@@ -32,8 +32,8 @@ def retrieve_data(path):
                 s,e = f[key]['yolo']['pixel'][...]
                 if s[0] is np.nan:
                     yolo_detection_errors += 1
-                convnextv2_data_ = f[key]['convnext']['percent'][...]
-                s,e = f[key]['convnext']['pixel'][...]
+                convnextv2_data_ = f[key]['convnext_apriltag']['percent'][...]
+                s,e = f[key]['convnext_apriltag']['pixel'][...]
                 if s[0] is np.nan:
                     conv_detection_errors += 1
                 label_bbox_data = np.append(label_bbox_data, bbox_data)
@@ -50,6 +50,10 @@ def retrieve_data(path):
     return label_bbox_data, label_fullness_data, scada_data, yolo_data, convnextv2_data
 
 def _get_accuracy_and_mae(label_data, prediction_data, percentage=10):
+    # calculate accuracy and mean absolute error only where the label data is not nan and the prediction data is not nan
+    mask = ~np.isnan(label_data) & ~np.isnan(prediction_data)
+    label_data = label_data[mask]
+    prediction_data = prediction_data[mask]
     accuracy = np.mean((prediction_data >= label_data - percentage) & (prediction_data <= label_data + percentage)) * 100
     mae = np.mean(np.abs(label_data - prediction_data))
     return accuracy, mae
