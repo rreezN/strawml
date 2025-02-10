@@ -115,6 +115,8 @@ class JointPlot:
             self.c3 = 'indianred'
             self.c4 = '#892A2A'
 
+        self.n_cols = 5 if name4_data is not None else 4 if name3_data is not None else 3 if name2_data is not None else 2
+
     def plot(self, ax=None):
         """
         Plots the jointplot with optional marginal distributions.
@@ -204,6 +206,11 @@ class JointPlot:
             ax_joint.set_ylabel("Straw level (%)")
             ax_joint.set_yticks(np.arange(0, 101, 10))
             ax_joint.set_yticklabels(np.arange(0, 101, 10))
+
+            # # set xtiks with 90 degree rotation
+            # ax_joint.set_xticks(np.arange(0, len(self.x), 1))
+            # ax_joint.set_xticklabels(np.arange(0, len(self.x), 1), rotation=90)
+
             # Shrink current axis's height by 10% on the bottom
             box = ax_joint.get_position()
             ax_joint.set_position([box.x0, box.y0 + box.height * 0.1,
@@ -276,7 +283,7 @@ class JointPlot:
 
             # Put a legend below the current axis
             ax_joint.legend(sorted_handles, sorted_labels, handler_map={MulticolorPatch: MulticolorPatchHandler()}, loc='upper center', 
-                            bbox_to_anchor=(0.5, 1.12), fancybox=True, shadow=True, ncol=5)
+                            bbox_to_anchor=(0.5, 1.12), fancybox=True, shadow=True, ncol=self.n_cols)
             
             if ax is None:
                 plt.tight_layout()
@@ -560,7 +567,7 @@ if __name__ == '__main__':
     # file_path = "data/predictions/recording_combined_all_frames_processed.hdf5"
     # file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox_processed.hdf5"
     # file_path = 'data/noisy_datasets/noisy_scratches_lens_flare.hdf5'
-    file_path = 'data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5'
-    # file_path = 'data/predictions/new_run/recording_rotated_all_frames_processed_combined.hdf5'
+    # file_path = 'data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5'
+    file_path = 'data/predictions/new_run/recording_rotated_all_frames_processed_combined.hdf5'
 
-    main(file_path, name="sensors", name1='yolo', name2='yolo_smooth', name3='convnext', name4='convnext_smooth', time_step=5, delta=False, use_label=True, label_as=['straw_percent_fullness', 'straw_percent_bbox'], with_threshold=True, iou=False)
+    main(file_path, name="sensors", name1='yolo', name2='yolo_clipped_2.5', name3=None, name4=None, time_step=1, delta=False, use_label=True, label_as=['straw_percent_fullness', 'straw_percent_bbox'], with_threshold=True, iou=False)
