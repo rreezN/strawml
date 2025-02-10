@@ -78,7 +78,7 @@ def plot_training_curves():
     list_of_csvs = os.listdir("reports/training curves")
     list_of_csvs = [x for x in list_of_csvs if x.endswith(".csv")]
 
-    fig, ax = plt.subplots(1, 2, figsize=(15, 5))
+    fig, ax = plt.subplots(1, 2, figsize=(15, 4))
     ax = ax.ravel()
     
     for j, csv in enumerate(list_of_csvs):
@@ -139,7 +139,7 @@ def plot_training_curves():
         ax[j].set_ylabel('Loss (MSE)', fontsize=font_size)
         ax[j].set_ylim(0, 0.0035)
         ax[j].grid()
-        ax[j].legend(fontsize=font_size-8)
+        ax[j].legend(fontsize=font_size-8, ncol=2)#len(model_names))
     
     plt.tight_layout()
     plt.savefig("reports/training curves/straw_model_training_curves.pdf", dpi=300, bbox_inches='tight')
@@ -201,7 +201,7 @@ def plot_hyper_parameters_vs_accuracy():
     list_of_csvs = os.listdir("reports/straw sweep all")
     list_of_csvs = [x for x in list_of_csvs if x.endswith(".csv")]
     
-    plt.figure(figsize=(10, 5))
+    plt.figure(figsize=(15, 5))
     fontsize = 20
     for j, csv in enumerate(list_of_csvs):
         df = pd.read_csv("reports/straw sweep all/" + csv, sep=',')
@@ -262,7 +262,7 @@ def plot_final_run_curves():
     list_of_csvs = os.listdir("reports/training curves/final run")
     list_of_csvs = [x for x in list_of_csvs if x.endswith(".csv")]
 
-    fig, ax = plt.subplots(1, 2, figsize=(15, 5))
+    fig, ax = plt.subplots(1, 2, figsize=(15, 4))
     ax = ax.ravel()
     
     for j, csv in enumerate(list_of_csvs):
@@ -279,26 +279,33 @@ def plot_final_run_curves():
         for model_name in model_names:
             training_losses[model_name] = df[f'{model_name} - train_loss'].tolist()
             validation_losses[model_name] = df[f'{model_name} - val_loss'].tolist()
-            
+        
+        v1_apriltag_best = 77
         v1_best = 68
         v2_best = 15
         
-        best = [v1_best, v2_best]
-        best_y_train = [training_losses['ConvNeXtV1'][v1_best-1], training_losses['ConvNeXtV2'][v2_best-1]]
-        best_y_val = [validation_losses['ConvNeXtV1'][v1_best-1], validation_losses['ConvNeXtV2'][v2_best-1]]
+        best = [v1_apriltag_best, v1_best, v2_best]
+        best_y_train = [training_losses['ConvNeXtV1-AprilTag'][v1_apriltag_best-1], training_losses['ConvNeXtV1'][v1_best-1], training_losses['ConvNeXtV2'][v2_best-1]]
+        best_y_val = [validation_losses['ConvNeXtV1-AprilTag'][v1_apriltag_best-1], validation_losses['ConvNeXtV1'][v1_best-1], validation_losses['ConvNeXtV2'][v2_best-1]]
         
-        if best_y_train[0] < best_y_train[1]:
-            text_offset_train = [0.000075, -0.000075]
-        else:
-            text_offset_train = [-0.000075, 0.000075]
         
-        if best_y_val[0] < best_y_val[1]:
-            text_offset_val = [0.003, -0.003]
-        else:
-            text_offset_val = [-0.003, 0.003]
+        # if best_y_train[0] < best_y_train[1]:
+        #     text_offset_train = [0.000075, -0.000075]
+        # else:
+        #     text_offset_train = [-0.000075, 0.000075]
+        
+        # if best_y_val[0] < best_y_val[1]:
+        #     text_offset_val = [0.003, -0.003]
+        # else:
+        #     text_offset_val = [-0.003, 0.003]
+        
+        # Get min and max values for text offset
+        text_offset_train = [0.000075, -0.000075, 0.000075]
+        text_offset_val = [0.003, -0.003, -0.003]
+        
         
         # Plot the training and validation losses
-        colors = ['indianred', 'royalblue']
+        colors = ['seagreen', 'indianred', 'royalblue',]
         x = df['Step']
         font_size = 20
         for i, model_name in enumerate(model_names):
@@ -309,8 +316,8 @@ def plot_final_run_curves():
             ax[1].plot(x, validation_losses[model_name], label=f'{model_name} - val', color=colors[i], linestyle='dashed')
             
             # Plot point where best model was selected
-            ax[0].scatter(best[i], best_y_train[i], color=colors[i], marker='.', s=100)
-            ax[1].scatter(best[i], best_y_val[i], color=colors[i], marker='.', s=100)
+            ax[0].scatter(best[i], best_y_train[i], color=colors[i], marker='.', s=150, zorder=10)
+            ax[1].scatter(best[i], best_y_val[i], color=colors[i], marker='.', s=150, zorder=10)
             
             # plot the best model loss above the point
             ax[0].text(best[i], best_y_train[i]+text_offset_train[i], f'{best_y_train[i]:.5f}', fontsize=font_size-6, ha='center', va='center',
@@ -328,7 +335,7 @@ def plot_final_run_curves():
             axis.set_ylabel('Loss (MSE)', fontsize=font_size)
             # axis.set_ylim(0, 0.0035)
             axis.grid()
-            axis.legend(fontsize=font_size-8)
+            axis.legend(fontsize=font_size-8, ncol=3)
     
     fig.suptitle('Straw Level Models Final Training and Validation Losses', fontsize=font_size)
     
@@ -428,5 +435,5 @@ if __name__ == '__main__':
     # analyse_model_selection()
     # plot_training_curves()
     # plot_hyper_parameters_vs_accuracy()
-    # plot_final_run_curves()
-    create_table_of_model()
+    plot_final_run_curves()
+    # create_table_of_model()
