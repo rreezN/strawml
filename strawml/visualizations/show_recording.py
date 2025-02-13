@@ -602,7 +602,7 @@ if __name__ == '__main__':
     file_path = ['data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5', 'data/predictions/new_run/recording_rotated_all_frames_processed_combined.hdf5']
     # file_path = ['data/predictions/new_run/recording_rotated_all_frames_processed_combined.hdf5']
     # file_path = ['data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5']
-    # file_path = ["data/predictions/new_run/sensors_with_strawbbox.hdf5"]
+    file_path = ["data/predictions/new_run/sensors_with_strawbbox.hdf5"]
 
 
     main(file_path, name="sensors", name1='yolo_clipped_2.5', name2="convnext", name3='average', name4=None, time_step=5, delta=False, use_label=True, label_as=['straw_percent_fullness', 'straw_percent_bbox'], with_threshold=True, iou=False)
