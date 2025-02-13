@@ -271,9 +271,9 @@ def plot_noisy_data_curves():
     convnextv1_text_offset = [-7, -6, -6, -6, -6, -6, -6]
     
     convapril_frame = [100, 100, 91.4, 81.6, 79.7, 77.2, 71.8]
-    convapril_acc = [54.70, 73.217, 61.464, 52.345, 48.201, 39.077, 19.734]
-    convapril_mae = [12.804, 7.413, 10.86, 16.931, 18.341, 27.104, 36.803]
-    convapril_text_offset = [7, -10, -7, -7, -6, -8, 7]
+    convapril_acc = [75.391, 73.217, 61.464, 52.345, 48.201, 39.077, 19.734]
+    convapril_mae = [6.442, 7.413, 10.86, 16.931, 18.341, 27.104, 36.803]
+    convapril_text_offset = [-7, -10, -7, -7, -6, 7, 7]
     
     model_names = ['YOLO', 'ConvNeXtV1', 'ConvNeXtV1 (A)']
     model_colors = ['royalblue', 'indianred', 'seagreen']

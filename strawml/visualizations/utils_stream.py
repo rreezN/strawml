@@ -242,7 +242,7 @@ class AprilDetectorHelpers:
         """
         # Convert frame for visualization
         vis_frame = frame_data
-        vis_frame = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
+        # vis_frame = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
         vis_frame = cv2.resize(vis_frame, (0, 0), fx=0.6, fy=0.6)
         cv2.imshow("Frame", vis_frame)
 
