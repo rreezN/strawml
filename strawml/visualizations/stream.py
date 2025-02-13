@@ -622,66 +622,65 @@ class RTSPStream(AprilDetector):
         2. Save the straw level as label to the existing group
         3. run the normal _process_hdf5_frame 
         """
-        # try:
-        # Load and calculate the straw level based on the bbox and the fullness score
-        straw_bbox = hf[timestamp]['annotations']['bbox_straw'][...]
-        straw_level_bbox = self.helpers._get_pixel_to_straw_level(frame, straw_bbox, object=False)[0]
-        if straw_level_bbox is None:
-            straw_level_bbox = 0            
-        straw_level_bbox_line = self.helpers._get_straw_to_pixel_level(straw_level_bbox)
+        try:
+            # Load and calculate the straw level based on the bbox and the fullness score
+            straw_bbox = hf[timestamp]['annotations']['bbox_straw'][...]
+            straw_level_bbox = self.helpers._get_pixel_to_straw_level(frame, straw_bbox, object=False)[0]
+            if straw_level_bbox is None:
+                straw_level_bbox = 0            
+            straw_level_bbox_line = self.helpers._get_straw_to_pixel_level(straw_level_bbox)
 
-        straw_level_fullness =  hf[timestamp]['annotations']['fullness'][...] * 100
-        straw_level_fullness_line = self.helpers._get_straw_to_pixel_level(straw_level_fullness)
+            straw_level_fullness =  hf[timestamp]['annotations']['fullness'][...] * 100
+            straw_level_fullness_line = self.helpers._get_straw_to_pixel_level(straw_level_fullness)
 
-        # prepare the straw level for saving by checking if the group already exists and
-        # if they do we delete them and replace them with the new values
-        if "straw_percent_bbox" in hf[timestamp].keys():
-            del hf[timestamp]["straw_percent_bbox"]
-        if "straw_percent_fullness" in hf[timestamp].keys():
-            del hf[timestamp]["straw_percent_fullness"]
+            # prepare the straw level for saving by checking if the group already exists and
+            # if they do we delete them and replace them with the new values
+            if "straw_percent_bbox" in hf[timestamp].keys():
+                del hf[timestamp]["straw_percent_bbox"]
+            if "straw_percent_fullness" in hf[timestamp].keys():
+                del hf[timestamp]["straw_percent_fullness"]
 
-        angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
-        if straw_level_bbox_line[0] is np.nan:
-            line_start = (np.nan, np.nan)
-            line_end = (np.nan, np.nan)
-        else:
-            line_start = (int(straw_level_bbox_line[0]), int(straw_level_bbox_line[1]))
-            line_end = (int(straw_level_bbox_line[0])+300, int(straw_level_bbox_line[1]))
-            line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-        straw_percent_bbox_group = hf[timestamp].create_group('straw_percent_bbox')
-        straw_percent_bbox_group.create_dataset('percent', data=straw_level_bbox)
-        straw_percent_bbox_group.create_dataset('pixel', data=[line_start, line_end])
-        
-        if straw_level_fullness_line[0] is np.nan:
-            line_start = (np.nan, np.nan)
-            line_end = (np.nan, np.nan)
-        else:
-            line_start = (int(straw_level_fullness_line[0]), int(straw_level_fullness_line[1]))
-            line_end = (int(straw_level_fullness_line[0])+300, int(straw_level_fullness_line[1]))
-            line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-        straw_percent_fullness_group = hf[timestamp].create_group('straw_percent_fullness')
-        straw_percent_fullness_group.create_dataset('percent', data=straw_level_fullness)
-        straw_percent_fullness_group.create_dataset('pixel', data=[line_start, line_end])
+            angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
+            if straw_level_bbox_line[0] is np.nan:
+                line_start = (np.nan, np.nan)
+                line_end = (np.nan, np.nan)
+            else:
+                line_start = (int(straw_level_bbox_line[0]), int(straw_level_bbox_line[1]))
+                line_end = (int(straw_level_bbox_line[0])+300, int(straw_level_bbox_line[1]))
+                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+            straw_percent_bbox_group = hf[timestamp].create_group('straw_percent_bbox')
+            straw_percent_bbox_group.create_dataset('percent', data=straw_level_bbox)
+            straw_percent_bbox_group.create_dataset('pixel', data=[line_start, line_end])
+            
+            if straw_level_fullness_line[0] is np.nan:
+                line_start = (np.nan, np.nan)
+                line_end = (np.nan, np.nan)
+            else:
+                line_start = (int(straw_level_fullness_line[0]), int(straw_level_fullness_line[1]))
+                line_end = (int(straw_level_fullness_line[0])+300, int(straw_level_fullness_line[1]))
+                line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
+            straw_percent_fullness_group = hf[timestamp].create_group('straw_percent_fullness')
+            straw_percent_fullness_group.create_dataset('percent', data=straw_level_fullness)
+            straw_percent_fullness_group.create_dataset('pixel', data=[line_start, line_end])
+        except Exception as e:
+            t1 = "straw_percent_bbox" in hf[timestamp].keys()
+            t2 = "straw_percent_fullness" in hf[timestamp].keys()
+            if t1:
+                del hf[timestamp]["straw_percent_bbox"]
+            if t2:
+                del hf[timestamp]["straw_percent_fullness"]
+            straw_level = 0
+            line_start, line_end = self._extract_straw_level(straw_level)
 
-        # except Exception as e:
-        #     t1 = "straw_percent_bbox" in hf[timestamp].keys()
-        #     t2 = "straw_percent_fullness" in hf[timestamp].keys()
-        #     if t1:
-        #         del hf[timestamp]["straw_percent_bbox"]
-        #     if t2:
-        #         del hf[timestamp]["straw_percent_fullness"]
-        #     straw_level = 0
-        #     line_start, line_end = self._extract_straw_level(straw_level)
+            straw_percent_bbox_group = hf[timestamp].create_group('straw_percent_bbox')
+            straw_percent_bbox_group.create_dataset('percent', data=straw_level)
+            straw_percent_bbox_group.create_dataset('pixel', data=[line_start, line_end])
 
-        #     straw_percent_bbox_group = hf[timestamp].create_group('straw_percent_bbox')
-        #     straw_percent_bbox_group.create_dataset('percent', data=straw_level)
-        #     straw_percent_bbox_group.create_dataset('pixel', data=[line_start, line_end])
-
-        #     straw_percent_fullness_group = hf[timestamp].create_group('straw_percent_fullness')
-        #     straw_percent_fullness_group.create_dataset('percent', data=straw_level)
-        #     straw_percent_fullness_group.create_dataset('pixel', data=[line_start, line_end])
-        #     print(f"{timestamp}: {e}, replaced: {t1, t2}")
-        # self.straw_percent_fullness_group = straw_percent_fullness_group
+            straw_percent_fullness_group = hf[timestamp].create_group('straw_percent_fullness')
+            straw_percent_fullness_group.create_dataset('percent', data=straw_level)
+            straw_percent_fullness_group.create_dataset('pixel', data=[line_start, line_end])
+            print(f"{timestamp}: {e}, replaced: {t1, t2}")
+        self.straw_percent_fullness_group = straw_percent_fullness_group
         self.straw_percent_bbox_group = straw_percent_bbox_group
         self._process_hdf5_frame(frame, hf, path, timestamp, frame_time)
 
@@ -1019,13 +1018,14 @@ class RTSPStream(AprilDetector):
                 if len(results[0]) == 0:
                     results = "NA"
                 else:
-                    self.prediction_dict["yolo_cutout"] = results[1][0].flatten().cpu().detach().numpy()
+                    if self.recording_req:
+                        self.prediction_dict["yolo_cutout"] = results[1][0].flatten().cpu().detach().numpy()
                 self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
             else:
                 results = results
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             # Predictor of the straw level
             if self.with_predictor:
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 return self._predictor_model(frame, frame_drawn, results, time_stamp, cutout=cutout)
             elif self.yolo_straw:
                 return self._yolo_model(frame, frame_drawn, cutout, time_stamp)
@@ -1058,7 +1058,7 @@ class RTSPStream(AprilDetector):
         # bgr to rgb
         output, inference_time = time_function(self.yolo_model.score_frame, frame.copy())
         # plot the box on the frame
-        frame_drawn = self.plot_boxes(output, frame_drawn, model_type="obb", label="straw")	
+        # frame_drawn = self.plot_boxes(output, frame_drawn, model_type="obb", label="straw")	
         smoothed_straw_level = 0
         # If the output is not empty, we can plot the boxes and get the straw level
         if self.fps_test:
@@ -1483,7 +1483,7 @@ def main(args: Namespace) -> None:
                yolo_straw_model="models/obb_best_dazzling.pt",
                with_predictor=args.with_predictor, 
                predictor_model='convnext', 
-               model_load_path='models/convnext_regressor_apriltag/', 
+               model_load_path='models/convnext_regressor/', 
                regressor=args.regressor, 
                edges=args.edges, 
                heatmap=args.heatmap,
