@@ -199,11 +199,11 @@ class AprilDetectorHelpers:
             The cropped (or original) frame.
         """
         if results is None:
-            return frame
+            return None
         
         bbox_chute = results[1][0].flatten().cpu().detach().numpy()
         if len(bbox_chute) != 8:  # Ensure bbox has 8 coordinates
-            return frame
+            return None
 
         return cc.rotate_and_crop_to_bbox(frame, bbox_chute)[0]
     
@@ -491,6 +491,9 @@ class AprilDetectorHelpers:
             frame_data = self._crop_to_bbox(frame, results)
         else:
             frame_data = cutout
+
+        if frame_data is None:
+            return None
 
         if torch.from_numpy(frame_data).numel() == 0:
             return None

@@ -109,6 +109,11 @@ class JointPlot:
             self.c4 = 'indianred'
         
         # if none of the data is None then we specify special colors for the data
+        # if name3 == 'convnext_apriltag' and name4 is None:
+        self.c1 = 'royalblue'
+        self.c2 = 'indianred'
+        self.c3 = 'goldenrod'
+
         if name1_data is not None and name2_data is not None and name3_data is not None and name4_data is not None:
             self.c1 = 'royalblue'
             self.c2 = '#182e6f'
@@ -155,9 +160,9 @@ class JointPlot:
             if self.name1_data is not None:
                 ax_joint.plot(self.x, self.name1_data, label=f"{self.name1.upper()} data", c=self.c1, linestyle='-', alpha=1)
             if self.name2_data is not None:
-                ax_joint.plot(self.x, self.name2_data, label=f"{self.name2.upper()} data", c=self.c2, linestyle='--', alpha=1)
+                ax_joint.plot(self.x, self.name2_data, label=f"{self.name2.upper()} data", c=self.c2, linestyle='-', alpha=1)
             if self.name3_data is not None:
-                ax_joint.plot(self.x, self.name3_data, label=f"{self.name3.upper()} data", c=self.c3, linestyle='-', alpha=1)
+                ax_joint.plot(self.x, self.name3_data, label=f"{self.name3.upper()} data", c=self.c3, linestyle='--', alpha=1)
             if self.name4_data is not None:
                 ax_joint.plot(self.x, self.name4_data, label=f"{self.name4.upper()} data", c=self.c4, linestyle='--', alpha=1)
 
@@ -188,9 +193,9 @@ class JointPlot:
                 if self.name1_data is not None:
                     sns.kdeplot(self.name1_data, ax=ax_marginal_y, color=self.c1, fill=False, vertical=True, clip_on=False, linestyle='-')
                 if self.name2_data is not None:
-                    sns.kdeplot(self.name2_data, ax=ax_marginal_y, color=self.c2, fill=False, vertical=True, clip_on=False, linestyle='--')
+                    sns.kdeplot(self.name2_data, ax=ax_marginal_y, color=self.c2, fill=False, vertical=True, clip_on=False, linestyle='-')
                 if self.name3_data is not None:
-                    sns.kdeplot(self.name3_data, ax=ax_marginal_y, color=self.c3, fill=False, vertical=True, clip_on=False, linestyle='-')
+                    sns.kdeplot(self.name3_data, ax=ax_marginal_y, color=self.c3, fill=False, vertical=True, clip_on=False, linestyle='--')
                 if self.name4_data is not None:
                     sns.kdeplot(self.name4_data, ax=ax_marginal_y, color=self.c4, fill=False, vertical=True, clip_on=False, linestyle='--')
                 if self.use_label:
@@ -284,7 +289,6 @@ class JointPlot:
             # Put a legend below the current axis
             ax_joint.legend(sorted_handles, sorted_labels, handler_map={MulticolorPatch: MulticolorPatchHandler()}, loc='upper center', 
                             bbox_to_anchor=(0.5, 1.12), fancybox=True, shadow=True, ncol=self.n_cols)
-            
             if ax is None:
                 plt.tight_layout()
                 plt.show()
@@ -365,54 +369,72 @@ def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv
     name4_data = np.array([])
     # We then load the data from the file path
     errors = 0
-    with h5py.File(file_path, 'r') as f:
-        keys = list(f.keys())
-        changed_index = None 
-        if "frame" == keys[0].split("_")[0]:
-            keys = sorted(keys, key=lambda x: int(x.split('_')[1]))
-        else:
-            keys = sorted(keys, key=lambda x: float(x))
-        if 'type' in f[keys[0]].attrs.keys():
-            old_type = f[keys[0]].attrs['type']
-        for key in keys:
-            try:
-                if use_label:
-                    # scada, straw_percent_bbox, straw_percent_fullness, fullness
-                    for label in label_as:
-                        if label not in f[key].keys():
-                            label_data[label] = np.append(label_data[label], np.array([0.0]))
+
+    for path in file_path:
+        with h5py.File(path, 'r') as f:
+            keys = list(f.keys())
+            print(f"No. of keys: {len(keys)}")
+            changed_index = None 
+            if "frame" == keys[0].split("_")[0]:
+                keys = sorted(keys, key=lambda x: int(x.split('_')[1]))
+            else:
+                keys = sorted(keys, key=lambda x: float(x))
+            if 'type' in f[keys[0]].attrs.keys():
+                old_type = f[keys[0]].attrs['type']
+            for key in keys:
+                try:
+                    if use_label:
+                        # scada, straw_percent_bbox, straw_percent_fullness, fullness
+                        for label in label_as:
+                            if label not in f[key].keys():
+                                label_data[label] = np.append(label_data[label], np.array([0.0]))
+                            else:
+                                label_data[label] = np.append(label_data[label], f[key][label]['percent'][...])
+
+                    if name1 is not None:
+                        if name1 not in f[key].keys():
+                            name1_data = np.append(name1_data, np.array([0.0]))
                         else:
-                            label_data[label] = np.append(label_data[label], f[key][label]['percent'][...])
+                            name1_data = np.append(name1_data, f[key][name1]['percent'][...])
+                    else:
+                        name1_data = np.append(name1_data, np.array([0.0]))
 
-                if name1 not in f[key].keys():
-                    name1_data = np.append(name1_data, np.array([0.0]))
-                else:
-                    name1_data = np.append(name1_data, f[key][name1]['percent'][...])
+                    if name2 is not None:
+                        if name2 not in f[key].keys():
+                            name2_data = np.append(name2_data, np.array([0.0]))
+                        else:
+                            name2_data = np.append(name2_data, f[key][name2]['percent'][...])
+                    else:
+                        name2_data = np.append(name2_data, np.array([0.0]))
 
-                if name2 not in f[key].keys():
-                    name2_data = np.append(name2_data, np.array([0.0]))
-                else:
-                    name2_data = np.append(name2_data, f[key][name2]['percent'][...])
+                    if name3 is not None:
+                        if name3 not in f[key].keys():
+                            if name3.lower() == 'average':
+                                name3_data = np.append(name3_data, (f[key][name1]['percent'][...] + f[key][name2]['percent'][...])/2)
+                            else:
+                                name3_data = np.append(name3_data, np.array([0.0]))
+                        else:
+                            name3_data = np.append(name3_data, f[key][name3]['percent'][...])
+                    else:
+                        name3_data = np.append(name3_data, np.array([0.0]))
 
-                if name3 not in f[key].keys():
-                    name3_data = np.append(name3_data, np.array([0.0]))
-                else:
-                    name3_data = np.append(name3_data, f[key][name3]['percent'][...])
+                    if name4 is not None:
+                        if name4 not in f[key].keys():
+                            name4_data = np.append(name4_data, np.array([0.0]))
+                        else:
+                            name4_data = np.append(name4_data, f[key][name4]['percent'][...])
+                    else:
+                        name4_data = np.append(name4_data, np.array([0.0]))
 
-                if name4 not in f[key].keys():
-                    name4_data = np.append(name4_data, np.array([0.0]))
-                else:
-                    name4_data = np.append(name4_data, f[key][name4]['percent'][...])
-
-                if 'type' in f[key].attrs.keys():
-                    if f[key].attrs['type'] != old_type:
-                        print(f"Old type: {old_type}, new type: {f[key].attrs['type']}")
-                        print(f"Changed index: {key}")
-                        changed_index = keys.index(key)
-                        old_type = f[key].attrs['type']
-            except Exception as e:
-                errors += 1
-                print(f"Error in loading data from key: {key}")
+                    if 'type' in f[key].attrs.keys():
+                        if f[key].attrs['type'] != old_type:
+                            print(f"Old type: {old_type}, new type: {f[key].attrs['type']}")
+                            print(f"Changed index: {key}")
+                            changed_index = keys.index(key)
+                            old_type = f[key].attrs['type']
+                except Exception as e:
+                    errors += 1
+                    print(f"Error in loading data from key: {key}, {e}")
     
     print(f"Errors in loading data: {errors}")
     x_axis = np.arange(len(name1_data))
@@ -467,16 +489,23 @@ def _print_summary_statistics(name1, name2, name3, name4, name1_data, name2_data
                     label_data = label_data_dict['straw_percent_fullness']
                 else:
                     label_data = label_data_dict['straw_percent_bbox']
+
+                mask = ~np.isnan(label_data) & ~np.isnan(data[i])
+                frame_detection_accuracy  = np.sum(~np.isnan(data[i])) / len(data[i]) * 100
+                print(f"\nFrame Detection Accuracy for {name}: {frame_detection_accuracy}%" )
+                label_data = label_data[mask]
+                prediction_data = data[i][mask]
                 print(f"\nAccuracy (+-{percentage}%) for {name}:")
-                accuracy = np.mean((data[i] >= label_data - percentage) & (data[i] <= label_data + percentage)) * 100
+                accuracy = np.mean((prediction_data >= label_data - percentage) & (prediction_data <= label_data + percentage)) * 100
                 print(f"  -- Accuracy:                      {accuracy:.2f}%")
                 # accuracy_below_50 = np.mean((label_data < 50) & (data[i] >= label_data - percentage) & (data[i] <= label_data + percentage)) * 100
                 mask = label_data < 50
-                accuracy_below_50 = np.mean((data[i][mask] >= label_data[mask] - percentage) & (data[i][mask] <= label_data[mask] + percentage)) * 100
-                print(f"  -- Accuracy for labels below 50%: {accuracy_below_50:.2f}%")
+                accuracy_below_50 = np.mean((prediction_data[mask] >= label_data[mask] - percentage) & (prediction_data[mask] <= label_data[mask] + percentage)) * 100
+                print(f"  -- Accuracy for labels below 50%: {accuracy_below_50:.2f}%, n = {len(prediction_data[mask])}")
                 mask = label_data >= 50
-                accuracy_above_50 = np.mean((data[i][mask] >= label_data[mask] - percentage) & (data[i][mask] <= label_data[mask] + percentage)) * 100
-                print(f"  -- Accuracy for labels above 50%: {accuracy_above_50:.2f}%")
+                accuracy_above_50 = np.mean((prediction_data[mask] >= label_data[mask] - percentage) & (prediction_data[mask] <= label_data[mask] + percentage)) * 100
+                print(f"  -- Accuracy for labels above 50%: {accuracy_above_50:.2f}%, n = {len(prediction_data[mask])}")
+                
 
 def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', name3=None, name4=None, time_step:int = 5, delta:bool = True, use_label=False, label_as='scada', with_threshold=False, iou=False):  
     # We first define the figure on which we wish to plot the data
@@ -540,13 +569,16 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
             JointPlot(x_axis_data, label_data, name1_data, name2_data, name3_data, name4_data, name1=name1, name2=name2, name3=name3, name4=name4, marginal_x=False, marginal_y=True, plot_data=False, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes[1])
 
         _print_summary_statistics(name1, name2, name3, name4, name1_data, name2_data, name3_data, name4_data, label_data_dict=label_data, label_as=label_as)
-        name = file_path.split("/")[-1].split(".")[0].split("_")
+        
+        if len(file_path) > 1:
+            name = 'Vertical and Rotated combined'
+        else:
+            file_path = file_path[0]
+            name = file_path.split("/")[-1].split(".")[0].split("_")
         if "rotated" in name:
             name = "Rotated"
         elif "vertical" in name:
             name = "Vertical"
-        elif "combined" in name:
-            name = "Vertical_and_Rotated_Combined"
         # replace _ with space
         try:
             fig.suptitle(f"{name.replace('_', ' ')}", y=0.96, fontsize=25)
@@ -564,10 +596,13 @@ if __name__ == '__main__':
     # file_path = "data/predictions/recording_vertical_all_frames_processed_combined.hdf5"
     # file_path = "data/predictions/recording_vertical_all_frames_processed_combined_processed.hdf5"
 
-    # file_path = "data/predictions/recording_combined_all_frames_processed.hdf5"
-    # file_path = "D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox_processed.hdf5"
-    # file_path = 'data/noisy_datasets/noisy_scratches_lens_flare.hdf5'
-    # file_path = 'data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5'
-    file_path = 'data/predictions/new_run/recording_rotated_all_frames_processed_combined.hdf5'
+    # file_path = "data/predictions/new_run/recording_combined_all_frames_processed.hdf5"
+    # file_path = ["D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox_processed.hdf5"]
+    # file_path = 'data/noisy_datasets/noisy_1.hdf5'
+    file_path = ['data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5', 'data/predictions/new_run/recording_rotated_all_frames_processed_combined.hdf5']
+    # file_path = ['data/predictions/new_run/recording_rotated_all_frames_processed_combined.hdf5']
+    # file_path = ['data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5']
+    # file_path = ["data/predictions/new_run/sensors_with_strawbbox.hdf5"]
 
-    main(file_path, name="sensors", name1='yolo', name2='yolo_clipped_2.5', name3=None, name4=None, time_step=1, delta=False, use_label=True, label_as=['straw_percent_fullness', 'straw_percent_bbox'], with_threshold=True, iou=False)
+
+    main(file_path, name="sensors", name1='yolo_clipped_2.5', name2="convnext", name3='average', name4=None, time_step=5, delta=False, use_label=True, label_as=['straw_percent_fullness', 'straw_percent_bbox'], with_threshold=True, iou=False)

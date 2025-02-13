@@ -31,14 +31,14 @@ def retrieve_data(path):
                 scada_data_ = f[key]['scada']['percent'][...]
                 yolo_data_ = f[key]['yolo']['percent'][...]
                 convnext_data_ = f[key]['convnext']['percent'][...]
-                convnext_data_at_ = f[key]['convnext_apriltag']['percent'][...]
+                # convnext_data_at_ = f[key]['convnext_apriltag_alone']['percent'][...]
 
                 label_bbox_data = np.append(label_bbox_data, bbox_data)
                 label_fullness_data = np.append(label_fullness_data, fullness_data)
                 scada_data = np.append(scada_data, scada_data_)
                 yolo_data = np.append(yolo_data, yolo_data_)
                 convnext_data = np.append(convnext_data, convnext_data_)
-                convnext_data_at = np.append(convnext_data_at, convnext_data_at_)
+                # convnext_data_at = np.append(convnext_data_at, convnext_data_at_)
             except KeyError as e:
                 print(f"KeyError: {path}, {key}: {e}")
                 errors += 1
@@ -72,9 +72,9 @@ def _run_extraction(data_dir, output):
         # convnextv2
         convnextv2_bbox_accuracy, convnextv2_bbox_mae, convnextv2_bbox_frame_detection_accuracy = _get_accuracy_and_mae(label_bbox_data, convnextv2_data)
         convnextv2_fullness_accuracy, convnextv2_fullness_mae, convnextv2_fullness_frame_detection_accuracy = _get_accuracy_and_mae(label_fullness_data, convnextv2_data)
-        # convnextv2 apriltag
-        convnextv2_bbox_accuracy_at, convnextv2_bbox_mae_at, convnextv2_bbox_frame_detection_accuracy_at = _get_accuracy_and_mae(label_bbox_data, convnext_data_at)
-        convnextv2_fullness_accuracy_at, convnextv2_fullness_mae_at, convnextv2_fullness_frame_detection_accuracy_at = _get_accuracy_and_mae(label_fullness_data, convnext_data_at)
+        # # convnextv2 apriltag
+        # convnextv2_bbox_accuracy_at, convnextv2_bbox_mae_at, convnextv2_bbox_frame_detection_accuracy_at = _get_accuracy_and_mae(label_bbox_data, convnext_data_at)
+        # convnextv2_fullness_accuracy_at, convnextv2_fullness_mae_at, convnextv2_fullness_frame_detection_accuracy_at = _get_accuracy_and_mae(label_fullness_data, convnext_data_at)
 
         print("-------------------")
         print(f"File: {path}")
@@ -86,9 +86,9 @@ def _run_extraction(data_dir, output):
         print("       --:--       ")
         print(f"Convnextv2 Bbox Accuracy: {convnextv2_bbox_accuracy}, Convnextv2 Bbox MAE: {convnextv2_bbox_mae}, Frame Detection Accuracy: {convnextv2_bbox_frame_detection_accuracy}")
         print(f"Convnextv2 Fullness Accuracy: {convnextv2_fullness_accuracy}, Convnextv2 Fullness MAE: {convnextv2_fullness_mae}, Frame Detection Accuracy: {convnextv2_fullness_frame_detection_accuracy}")
-        print("       --:--       ")
-        print(f"Convnextv2 Bbox Accuracy (Apriltag): {convnextv2_bbox_accuracy_at}, Convnextv2 Bbox MAE (Apriltag): {convnextv2_bbox_mae_at}, Frame Detection Accuracy (Apriltag): {convnextv2_bbox_frame_detection_accuracy_at}")
-        print(f"Convnextv2 Fullness Accuracy (Apriltag): {convnextv2_fullness_accuracy_at}, Convnextv2 Fullness MAE (Apriltag): {convnextv2_fullness_mae_at}, Frame Detection Accuracy (Apriltag): {convnextv2_fullness_frame_detection_accuracy_at}")
+        # print("       --:--       ")
+        # print(f"Convnextv2 Bbox Accuracy (Apriltag): {convnextv2_bbox_accuracy_at}, Convnextv2 Bbox MAE (Apriltag): {convnextv2_bbox_mae_at}, Frame Detection Accuracy (Apriltag): {convnextv2_bbox_frame_detection_accuracy_at}")
+        # print(f"Convnextv2 Fullness Accuracy (Apriltag): {convnextv2_fullness_accuracy_at}, Convnextv2 Fullness MAE (Apriltag): {convnextv2_fullness_mae_at}, Frame Detection Accuracy (Apriltag): {convnextv2_fullness_frame_detection_accuracy_at}")
         print("-------------------")
 
         # append values to existing json file 
@@ -111,12 +111,12 @@ def _run_extraction(data_dir, output):
                 "convnextv2_fullness_accuracy": convnextv2_fullness_accuracy,
                 "convnextv2_fullness_mae": convnextv2_fullness_mae,
                 "convnextv2_fullness_frame_detection_accuracy": convnextv2_fullness_frame_detection_accuracy,
-                "convnextv2_bbox_accuracy_at": convnextv2_bbox_accuracy_at,
-                "convnextv2_bbox_mae_at": convnextv2_bbox_mae_at,
-                "convnextv2_bbox_frame_detection_accuracy_at": convnextv2_bbox_frame_detection_accuracy_at,
-                "convnextv2_fullness_accuracy_at": convnextv2_fullness_accuracy_at,
-                "convnextv2_fullness_mae_at": convnextv2_fullness_mae_at,
-                "convnextv2_fullness_frame_detection_accuracy_at": convnextv2_fullness_frame_detection_accuracy_at
+                # "convnextv2_bbox_accuracy_at": convnextv2_bbox_accuracy_at,
+                # "convnextv2_bbox_mae_at": convnextv2_bbox_mae_at,
+                # "convnextv2_bbox_frame_detection_accuracy_at": convnextv2_bbox_frame_detection_accuracy_at,
+                # "convnextv2_fullness_accuracy_at": convnextv2_fullness_accuracy_at,
+                # "convnextv2_fullness_mae_at": convnextv2_fullness_mae_at,
+                # "convnextv2_fullness_frame_detection_accuracy_at": convnextv2_fullness_frame_detection_accuracy_at
             }
     with open(output, 'w') as f:
         json.dump(save_dict, f)
@@ -148,12 +148,12 @@ def _plot_noisy_data(data, keys):
         accuracy_cn_at.append(data[name]['convnextv2_bbox_accuracy_at'])
         mae_cn_at.append(data[name]['convnextv2_bbox_mae_at'])
     # add values at the start
-    accuracy_cn.insert(0, 92.87)
-    mae_cn.insert(0, 4.64)
-    accuracy_yolo.insert(0, 94.35)
-    mae_yolo.insert(0, 3.03)
-    accuracy_cn_at.insert(0, 92.87)
-    mae_cn_at.insert(0, 4.64)
+    accuracy_cn.insert(0, 92.783)
+    mae_cn.insert(0, 4.639)
+    accuracy_yolo.insert(0, 94.522)
+    mae_yolo.insert(0, 2.919)
+    accuracy_cn_at.insert(0, 54.348)
+    mae_cn_at.insert(0, 12.804)
 
     # plot line plots for accuracy and mae for yolo and convnextv2 in the same plot
     # Create a figure and axis
@@ -544,9 +544,10 @@ def _run_fps_metrics(data_dir: str = 'data/fps/'):
 if __name__ == '__main__':
     save_dict = {}
     # data_dir = 'data/train_data/yolo_chute/'
-    data_dir = 'data/noisy_datasets/'
+    data_dir = 'data/predictions/new_run/'
+    # data_dir = 'data/noisy_datasets/'
     output = 'data/robustness_results_new.json'
-    # _run_extraction(data_dir, output)
-    _run_plotting(output)
+    _run_extraction(data_dir, output)
+    # _run_plotting(output)
     # _run_model_metrics(data_dir)
     # _run_fps_metrics()
