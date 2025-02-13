@@ -1021,13 +1021,14 @@ class RTSPStream(AprilDetector):
                 if len(results[0]) == 0:
                     results = "NA"
                 else:
-                    self.prediction_dict["yolo_cutout"] = results[1][0].flatten().cpu().detach().numpy()
+                    if self.recording_req:
+                        self.prediction_dict["yolo_cutout"] = results[1][0].flatten().cpu().detach().numpy()
                 self.information["od"]["text"] = f'(T2) OD Time: {OD_time:.2f} s'
             else:
                 results = results
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             # Predictor of the straw level
             if self.with_predictor:
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 return self._predictor_model(frame, frame_drawn, results, time_stamp, cutout=cutout)
             elif self.yolo_straw:
                 return self._yolo_model(frame, frame_drawn, cutout, time_stamp)
@@ -1060,7 +1061,7 @@ class RTSPStream(AprilDetector):
         # bgr to rgb
         output, inference_time = time_function(self.yolo_model.score_frame, frame.copy())
         # plot the box on the frame
-        frame_drawn = self.plot_boxes(output, frame_drawn, model_type="obb", label="straw")	
+        # frame_drawn = self.plot_boxes(output, frame_drawn, model_type="obb", label="straw")	
         smoothed_straw_level = 0
         # If the output is not empty, we can plot the boxes and get the straw level
         if self.fps_test:
@@ -1485,7 +1486,7 @@ def main(args: Namespace) -> None:
                yolo_straw_model="models/obb_best_dazzling.pt",
                with_predictor=args.with_predictor, 
                predictor_model='convnext', 
-               model_load_path='models/convnext_regressor_apriltag/', 
+               model_load_path='models/convnext_regressor/', 
                regressor=args.regressor, 
                edges=args.edges, 
                heatmap=args.heatmap,
