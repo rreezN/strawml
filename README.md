@@ -4,7 +4,7 @@
 ![OpenCV](https://img.shields.io/badge/opencv-%23white.svg?style=for-the-badge&logo=opencv&logoColor=white)
 [<img src="https://img.shields.io/badge/Weights_&_Biases-FFBE00?style=for-the-badge&logo=WeightsAndBiases&logoColor=white">]()
 
-This repository contains code developed for the Master's project _Machine Learning for Continuous Straw Level Measurement_ for the Fall 2024 semester. The project is done by [David Ari Ostenfeldt (s194237)](https://www.linkedin.com/in/david-ostenfeldt/) and [Dennis Chenxi Zhuang (s194247)](https://www.linkedin.com/in/dennis-chenxi-zhuang/) at [The Technical University of Denmark](https://www.dtu.dk/) in collaboration with [Meliora Bio](https://meliora-bio.com/) and [Helix Lab](https://helixlab.dk/).
+This repository contains code developed for the Master's project _Machine Learning for Continuous Straw Level Measurement_ for the Fall 2024 semester. The project is done by [David Ari Ostenfeldt (s194237)](https://www.linkedin.com/in/david-ostenfeldt/) and [Dennis Chenxi Zhuang (s194247)](https://www.linkedin.com/in/dennis-chenxi-zhuang/) at [The Technical University of Denmark](https://www.dtu.dk/) in collaboration with [Meliora Bio](https://meliora-bio.com/). The thesis work was done in relation to a fellowship provided by [Helix Lab](https://helixlab.dk/).
 # Quick Guide
 
 
