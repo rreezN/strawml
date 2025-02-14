@@ -515,7 +515,7 @@ class AprilDetectorHelpers:
         #     self._visualize_frame(frame_data, edges)
 
         # Stack edges with the frame if required
-        # cutout_image = self._combine_with_edges(frame_data, edges)
+        frame_data = self._combine_with_edges(frame_data, edges)
 
         # Resize and add batch dimension
         cutout_image = self.ADI.resize(frame_data).unsqueeze(0)
