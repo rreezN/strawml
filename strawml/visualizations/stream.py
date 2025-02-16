@@ -135,7 +135,7 @@ class AprilDetector:
                 model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=num_classes, img_size=image_size)
         
         
-        # model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
+        model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
         return model, image_size
 
     def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = False, num_hidden_layers: int = 0, num_neurons: int = 512) -> None:
@@ -145,8 +145,8 @@ class AprilDetector:
             feature_size = torch.flatten(features, 1).shape[1]
             self.regressor_model = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=use_sigmoid, num_hidden_layers=num_hidden_layers, num_neurons=num_neurons)
             
-            # self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
-            # self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor.pth', weights_only=True))
+            self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
+            self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor.pth', weights_only=True))
             self.regressor_model.to(self.device)
             self.regressor_model.eval()
         else:
@@ -622,24 +622,24 @@ class RTSPStream(AprilDetector):
         2. Save the straw level as label to the existing group
         3. run the normal _process_hdf5_frame 
         """
+        bbox_replace_percentage = True
+        fullness_replace_percentage = True
         try:
-            # Load and calculate the straw level based on the bbox and the fullness score
-            straw_bbox = hf[timestamp]['annotations']['bbox_straw'][...]
-            straw_level_bbox = self.helpers._get_pixel_to_straw_level(frame, straw_bbox, object=False)[0]
-            if straw_level_bbox is None:
-                straw_level_bbox = 0            
-            straw_level_bbox_line = self.helpers._get_straw_to_pixel_level(straw_level_bbox)
-
-            straw_level_fullness =  hf[timestamp]['annotations']['fullness'][...] * 100
-            straw_level_fullness_line = self.helpers._get_straw_to_pixel_level(straw_level_fullness)
-
             # prepare the straw level for saving by checking if the group already exists and
             # if they do we delete them and replace them with the new values
             if "straw_percent_bbox" in hf[timestamp].keys():
                 del hf[timestamp]["straw_percent_bbox"]
-            if "straw_percent_fullness" in hf[timestamp].keys():
-                del hf[timestamp]["straw_percent_fullness"]
 
+            straw_bbox = hf[timestamp]['annotations']['bbox_straw'][...]
+            # Load and calculate the straw level based on the bbox and the fullness score
+            straw_level_bbox = self.helpers._get_pixel_to_straw_level(frame, straw_bbox, object=False)[0]
+            if straw_level_bbox is None:
+                straw_level_bbox = 0           
+            straw_percent_bbox_group = hf[timestamp].create_group('straw_percent_bbox')
+            straw_percent_bbox_group.create_dataset('percent', data=straw_level_bbox)
+            bbox_replace_percentage = False
+
+            straw_level_bbox_line = self.helpers._get_straw_to_pixel_level(straw_level_bbox)
             angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
             if straw_level_bbox_line[0] is np.nan:
                 line_start = (np.nan, np.nan)
@@ -648,10 +648,36 @@ class RTSPStream(AprilDetector):
                 line_start = (int(straw_level_bbox_line[0]), int(straw_level_bbox_line[1]))
                 line_end = (int(straw_level_bbox_line[0])+300, int(straw_level_bbox_line[1]))
                 line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-            straw_percent_bbox_group = hf[timestamp].create_group('straw_percent_bbox')
-            straw_percent_bbox_group.create_dataset('percent', data=straw_level_bbox)
             straw_percent_bbox_group.create_dataset('pixel', data=[line_start, line_end])
-            
+        except Exception as e:
+            t1 = "straw_percent_bbox" in hf[timestamp].keys()
+            if t1 and bbox_replace_percentage:
+                del hf[timestamp]["straw_percent_bbox"]
+            if not bbox_replace_percentage:
+                # replace only the line with np.nan
+                line_start = (np.nan, np.nan)
+                line_end = (np.nan, np.nan)
+                straw_percent_bbox_group = hf[timestamp]['straw_percent_bbox'].create_dataset('pixel', data=[line_start, line_end])
+            else:
+                straw_level = 0
+                line_start, line_end = self._extract_straw_level(straw_level)
+                straw_percent_bbox_group = hf[timestamp].create_group('straw_percent_bbox')
+                straw_percent_bbox_group.create_dataset('percent', data=straw_level)
+                straw_percent_bbox_group.create_dataset('pixel', data=[line_start, line_end])
+            print(f"{timestamp}: {e}, bbox replaced: {t1}")
+
+        try:
+            if "straw_percent_fullness" in hf[timestamp].keys():
+                del hf[timestamp]["straw_percent_fullness"]
+
+            straw_level_fullness =  hf[timestamp]['annotations']['fullness'][...] * 100
+
+            straw_percent_fullness_group = hf[timestamp].create_group('straw_percent_fullness')
+            straw_percent_fullness_group.create_dataset('percent', data=straw_level_fullness)
+            fullness_replace_percentage = False
+                
+            straw_level_fullness_line = self.helpers._get_straw_to_pixel_level(straw_level_fullness)
+            angle = self.helpers._get_tag_angle(list(self.chute_numbers.values()))
             if straw_level_fullness_line[0] is np.nan:
                 line_start = (np.nan, np.nan)
                 line_end = (np.nan, np.nan)
@@ -659,31 +685,26 @@ class RTSPStream(AprilDetector):
                 line_start = (int(straw_level_fullness_line[0]), int(straw_level_fullness_line[1]))
                 line_end = (int(straw_level_fullness_line[0])+300, int(straw_level_fullness_line[1]))
                 line_start, line_end = self.helpers._rotate_line(line_start, line_end, angle=angle)
-            straw_percent_fullness_group = hf[timestamp].create_group('straw_percent_fullness')
-            straw_percent_fullness_group.create_dataset('percent', data=straw_level_fullness)
             straw_percent_fullness_group.create_dataset('pixel', data=[line_start, line_end])
-
         except Exception as e:
-            t1 = "straw_percent_bbox" in hf[timestamp].keys()
-            t2 = "straw_percent_fullness" in hf[timestamp].keys()
-            if t1:
-                del hf[timestamp]["straw_percent_bbox"]
-            if t2:
+            t1 = "straw_percent_fullness" in hf[timestamp].keys()
+            if t1 and fullness_replace_percentage:
                 del hf[timestamp]["straw_percent_fullness"]
-            straw_level = 0
-            line_start, line_end = self._extract_straw_level(straw_level)
-
-            straw_percent_bbox_group = hf[timestamp].create_group('straw_percent_bbox')
-            straw_percent_bbox_group.create_dataset('percent', data=straw_level)
-            straw_percent_bbox_group.create_dataset('pixel', data=[line_start, line_end])
-
-            straw_percent_fullness_group = hf[timestamp].create_group('straw_percent_fullness')
-            straw_percent_fullness_group.create_dataset('percent', data=straw_level)
-            straw_percent_fullness_group.create_dataset('pixel', data=[line_start, line_end])
-            print(f"{timestamp}: {e}, replaced: {t1, t2}")
-        self.straw_percent_fullness_group = straw_percent_fullness_group
-        self.straw_percent_bbox_group = straw_percent_bbox_group
-        self._process_hdf5_frame(frame, hf, path, timestamp, frame_time)
+            if not fullness_replace_percentage:
+                # replace only the line with np.nan
+                line_start = (np.nan, np.nan)
+                line_end = (np.nan, np.nan)
+                straw_percent_fullness_group = hf[timestamp]['straw_percent_fullness'].create_dataset('pixel', data=[line_start, line_end])
+            else:
+                straw_level = 0
+                line_start, line_end = self._extract_straw_level(straw_level)
+                straw_percent_fullness_group = hf[timestamp].create_group('straw_percent_fullness')
+                straw_percent_fullness_group.create_dataset('percent', data=straw_level)
+                straw_percent_fullness_group.create_dataset('pixel', data=[line_start, line_end])
+            print(f"{timestamp}: {e}, fullness replaced: {t1}")
+        # self.straw_percent_fullness_group = straw_percent_fullness_group
+        # self.straw_percent_bbox_group = straw_percent_bbox_group
+        # self._process_hdf5_frame(frame, hf, path, timestamp, frame_time)
 
     def _process_hdf5_frame(self, frame, hf, path, timestamp, frame_time) -> None:
         results = None 
