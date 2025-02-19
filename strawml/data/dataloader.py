@@ -60,8 +60,10 @@ class Chute(torch.utils.data.Dataset):
         frame_names = list(self.frames.keys())
         
         # Sort frame_names
-        frame_names = sorted(frame_names, key=lambda x: int(x.split('_')[1]))
-
+        if "frame" == frame_names[0].split("_")[0]:
+            frame_names = sorted(frame_names, key=lambda x: int(x.split('_')[1]))
+        else:
+            frame_names = sorted(frame_names, key=lambda x: float(x))
 
         # Balance the dataset by reducing the number of frames in the dataset to a threshold based on the minimum class count
         if balance_dataset:
@@ -870,7 +872,7 @@ if __name__ == '__main__':
     # train_set.plot_data(frame_idx=9)
     
     print("---- STRAW DETECTION DATASET ----")
-    data_path = 'data/processed/train.hdf5'
+    data_path = 'data/predictions/recording_vertical_all_frames_processed.hdf5'
     # data_path = f'/work3/davos/data/train.hdf5'
 
     print("Extracting statistics for straw dataset with heatmaps and greyscale images")
@@ -901,20 +903,20 @@ if __name__ == '__main__':
     
     # for i in range(len(train_set)):
     #     data, target = train_set[i]
-    #     train_set.plot_data(frame_data=data, labels=target)
+    # #     train_set.plot_data(frame_data=data, labels=target)
     
-    mean, std = train_set.train_mean, train_set.train_std
-    statistics = (mean, std)
-    sensor_set = Chute(data_path='data/processed/sensors_with_strawbbox.hdf5', data_type='test', inc_heatmap=False, inc_edges=False,
-                          random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), continuous=True, subsample=1.0,
-                          augment_probability=0, num_classes_straw=21, override_statistics=statistics, greyscale=False, balance_dataset=False, sensor=True,
-                          use_yolo_to_cutout=False, use_april_tag_image=True)
-    # sensor_set.save_distribution()
-    sensor_loader = DataLoader(sensor_set, batch_size=8, shuffle=False, num_workers=0)
+    # mean, std = train_set.train_mean, train_set.train_std
+    # statistics = (mean, std)
+    # sensor_set = Chute(data_path='data/processed/sensors_with_strawbbox.hdf5', data_type='test', inc_heatmap=False, inc_edges=False,
+    #                       random_state=42, force_update_statistics=False, data_purpose='straw', image_size=(672, 208), continuous=True, subsample=1.0,
+    #                       augment_probability=0, num_classes_straw=21, override_statistics=statistics, greyscale=False, balance_dataset=False, sensor=True,
+    #                       use_yolo_to_cutout=False, use_april_tag_image=True)
+    # # sensor_set.save_distribution()
+    # sensor_loader = DataLoader(sensor_set, batch_size=8, shuffle=False, num_workers=0)
     
-    for i, (data, target, sensor_fullness) in enumerate(sensor_loader):
-        print(f'Batch {i+1}/{len(sensor_loader)}')
-        plot_batch(data, target, i*8, mean, std, grey=sensor_set.greyscale)
+    # for i, (data, target, sensor_fullness) in enumerate(sensor_loader):
+    #     print(f'Batch {i+1}/{len(sensor_loader)}')
+    #     plot_batch(data, target, i*8, mean, std, grey=sensor_set.greyscale)
     
     
     

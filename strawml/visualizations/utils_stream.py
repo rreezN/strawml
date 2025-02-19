@@ -377,6 +377,7 @@ class AprilDetectorHelpers:
         """
         tag_ids = np.array([int(tag.tag_id) for tag in tags])
         if len(tag_ids) == 0:
+            print("No tags detected in the frame.")
             self._reset_tags()
             return
         accumulated_error = 0

@@ -547,7 +547,7 @@ if __name__ == '__main__':
     data_dir = 'data/predictions/new_run/'
     # data_dir = 'data/noisy_datasets/'
     output = 'data/robustness_results_new.json'
-    _run_extraction(data_dir, output)
+    # _run_extraction(data_dir, output)
     # _run_plotting(output)
     # _run_model_metrics(data_dir)
-    # _run_fps_metrics()
+    _run_fps_metrics()
