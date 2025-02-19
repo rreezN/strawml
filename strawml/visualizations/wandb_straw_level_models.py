@@ -275,7 +275,7 @@ def plot_noisy_data_curves():
     convapril_mae = [6.442, 7.413, 10.86, 16.931, 18.341, 27.104, 36.803]
     convapril_text_offset = [-7, -10, -7, -7, -6, 7, 7]
     
-    model_names = ['YOLO', 'ConvNeXtV1', 'ConvNeXtV1 (A)']
+    model_names = ['YOLO-S', 'ConvNeXtV1', 'ConvNeXtA']
     model_colors = ['royalblue', 'indianred', 'seagreen']
     
     all_acc = [yolo_acc, convnextv1_acc, convapril_acc]
@@ -286,7 +286,7 @@ def plot_noisy_data_curves():
     
     fig, ax = plt.subplots(2, 1, figsize=(10, 8), gridspec_kw={'height_ratios': [3, 1]})
     axes = ax.ravel()
-    fontsize = 20
+    fontsize = 18
     
     x = [0, 1, 2, 3, 4, 5, 6]
     

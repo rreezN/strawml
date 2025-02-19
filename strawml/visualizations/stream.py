@@ -135,7 +135,7 @@ class AprilDetector:
                 model = timm.create_model('caformer_m36.sail_in22k_ft_in1k_384', in_chans=input_channels, num_classes=num_classes, img_size=image_size)
         
         
-        # model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
+        model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
         return model, image_size
 
     def setup_regressor(self, image_size: tuple, input_channels: int, use_sigmoid: bool = False, num_hidden_layers: int = 0, num_neurons: int = 512) -> None:
@@ -145,8 +145,8 @@ class AprilDetector:
             feature_size = torch.flatten(features, 1).shape[1]
             self.regressor_model = feature_model.FeatureRegressor(image_size=image_size, input_size=feature_size, output_size=1, use_sigmoid=use_sigmoid, num_hidden_layers=num_hidden_layers, num_neurons=num_neurons)
             
-            # self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
-            # self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor.pth', weights_only=True))
+            self.model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_feature_extractor.pth', weights_only=True))
+            self.regressor_model.load_state_dict(torch.load(f'{self.model_load_path}/{self.predictor_model}_regressor.pth', weights_only=True))
             self.regressor_model.to(self.device)
             self.regressor_model.eval()
         else:
@@ -726,6 +726,9 @@ class RTSPStream(AprilDetector):
             #     self._display_frame(frame_drawn)
             #     return
             
+            if cutout is not None:
+                cutout = cv2.cvtColor(cutout, cv2.COLOR_BGR2RGB)
+            
             # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frame_drawn = self._process_frame_content(frame, frame_drawn, cutout, results, time_stamp=timestamp)
 
@@ -864,8 +867,8 @@ class RTSPStream(AprilDetector):
             else:
                 try:
                     for key, value in self.prediction_dict.items():
-                        # if key == "convnext":
-                        #     key = 'convnext_apriltag_alone'
+                        if key == "convnext":
+                            key = 'convnext_apriltag_alone'
                         if key == 'yolo_cutout':
                             continue
                         if key in group.keys():
@@ -1485,8 +1488,8 @@ def main(args: Namespace) -> None:
                yolo_straw=args.yolo_straw, 
                yolo_straw_model="models/obb_best_dazzling.pt",
                with_predictor=args.with_predictor, 
-               predictor_model='vit', 
-               model_load_path='models/vit_regressor/', 
+               predictor_model='convnext', 
+               model_load_path='models/convnext_regressor_apriltag/', 
                regressor=args.regressor, 
                edges=args.edges, 
                heatmap=args.heatmap,

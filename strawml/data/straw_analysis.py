@@ -880,7 +880,7 @@ def plot_fullness_distribution(plot_type='hist'):
                 width=width)
     
     # Plot adjustments
-    font_size = 20
+    font_size = 24
     fig.suptitle('Dataset Fullness Distribution', fontsize=font_size+4)
     for axis in ax:
         if plot_type == 'hist':
@@ -913,10 +913,10 @@ def plot_fullness_distribution(plot_type='hist'):
 
 
 if __name__ == '__main__':
-    frames = h5py.File('data/processed/recording_rotated_all_frames_processed_combined.hdf5', 'r')
+    frames = h5py.File('data/processed/train.hdf5', 'r')
     # class_dictionary = get_frames_by_class(frames)
-    # plot_fullness_distribution(plot_type='kde')
-    save_frame_as_png(frames)
+    plot_fullness_distribution(plot_type='kde')
+    # save_frame_as_png(frames)
     
     ## These functions create plots of the dataset for the straw level monitoring model ##
     # plot_class_distribution(class_dictionary, frames, direction='horizontal') # horizontal or vertical
