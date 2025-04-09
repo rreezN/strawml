@@ -531,7 +531,7 @@ class RTSPStream(AprilDetector):
             if not file_exists:
                 # Write header if file does not exist
                 writer.writerow(['timestamp', 'model', 'prediction', 'scada_reading'])
-            write.writerow([timestamp, model, prediction, scada_reading])
+            writer.writerow([timestamp, model, prediction, scada_reading])
     
     def _retrieve_scada_data(self, sensor_scada_data, time_stamp = None) -> None:
         # Get scada
