@@ -110,15 +110,16 @@ class JointPlot:
         
         # if none of the data is None then we specify special colors for the data
         # if name3 == 'convnext_apriltag' and name4 is None:
-        # self.c1 = 'royalblue'
-        # self.c2 = 'indianred'
-        # self.c3 = 'goldenrod'
+        self.c1 = 'goldenrod'
+        self.c2 = 'royalblue'
+        self.c3 = 'indianred'
+        self.c4 = 'purple'
 
-        if name1_data is not None and name2_data is not None and name3_data is not None and name4_data is not None:
-            self.c1 = 'royalblue'
-            self.c2 = '#182e6f'
-            self.c3 = 'indianred'
-            self.c4 = '#892A2A'
+        # if name1_data is not None and name2_data is not None and name3_data is not None and name4_data is not None:
+        #     self.c1 = 'royalblue'
+        #     self.c2 = '#182e6f'
+        #     self.c3 = 'indianred'
+        #     self.c4 = '#892A2A'
 
         self.n_cols = 3 if name4_data is not None else 3 if name3_data is not None else 2 if name2_data is not None else 2
         # self.n_cols = 2
@@ -168,7 +169,7 @@ class JointPlot:
             if self.name3_data is not None:
                 ax_joint.plot(self.x, self.name3_data, label=f"{self.name3.upper()} data", c=self.c3, linestyle='-', alpha=1)
             if self.name4_data is not None:
-                ax_joint.plot(self.x, self.name4_data, label=f"{self.name4.upper()} data", c=self.c4, linestyle='--', alpha=1)
+                ax_joint.plot(self.x, self.name4_data, label=f"{self.name4.upper()} data", c=self.c4, linestyle='-', alpha=1)
 
             ax_joint.yaxis.tick_right()
             # draw confidence intervals of +- 5%
@@ -211,7 +212,7 @@ class JointPlot:
                 ax_joint.axvline(x=self.x[self.changed_index], color=self.change_color, linestyle='--')
             # plot circle at x=28 and self.name1_data[28] to indicate the change in the model
             ax_joint.grid()
-            ax_joint.set_xlabel("Time (s)", fontsize=15)
+            ax_joint.set_xlabel("Frame", fontsize=15)
             ax_joint.set_ylabel("Straw level (%)", fontsize=15)
             ax_joint.set_yticks(np.arange(0, 101, 10))
             ax_joint.set_yticklabels(np.arange(0, 101, 10))
@@ -257,8 +258,8 @@ class JointPlot:
                     mae_name1 = np.mean(np.abs(self.name1_data - label_data))
                     # add the accuracy to the legend
                     label_name = self.name1.upper()
-                    sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c1, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}, Accuracy: {accuracy_name1:.2f}%, MAE: {mae_name1:.2f}'))
-                    # sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c1, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}'))
+                    # sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c1, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}, Accuracy: {accuracy_name1:.2f}%, MAE: {mae_name1:.2f}'))
+                    sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c1, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}'))
 
                 if self.name2_data is not None:
                     if self.name2 == 'convnext' or self.name2 == 'convnext_apriltag' or self.name2 == 'convnext_smooth':
@@ -268,8 +269,9 @@ class JointPlot:
                     accuracy_name2 = np.mean((self.name2_data >= label_data - 10) & (self.name2_data <= label_data + 10)) * 100
                     mae_name2 = np.mean(np.abs(self.name2_data - label_data))
                     label_name = self.name2.upper() + "-S"
-                    sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c2, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}, Accuracy: {accuracy_name2:.2f}%, MAE: {mae_name2:.2f}'))
-                    # sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c2, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}'))
+                    label_name = 'YOLO-S C.'
+                    # sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c2, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}, Accuracy: {accuracy_name2:.2f}%, MAE: {mae_name2:.2f}'))
+                    sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c2, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}'))
 
                 if self.name3_data is not None :
                     if self.name3 == 'convnext' or self.name3 == 'convnext_apriltag' or self.name3 == 'convnext_smooth':
@@ -279,8 +281,9 @@ class JointPlot:
                     accuracy_name3 = np.mean((self.name3_data >= label_data - 10) & (self.name3_data <= label_data + 10)) * 100
                     mae_name3 = np.mean(np.abs(self.name3_data - label_data))
                     label_name = self.name3.upper() + "V1"
-                    sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c3, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}, Accuracy: {accuracy_name3:.2f}%, MAE: {mae_name3:.2f}'))
-                    # sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c3, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}'))
+                    label_name = 'ConvNeXtV1'
+                    # sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c3, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}, Accuracy: {accuracy_name3:.2f}%, MAE: {mae_name3:.2f}'))
+                    sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c3, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}'))
 
                 if self.name4_data is not None:
                     if self.name4 == 'convnext' or self.name4 == 'convnext_apriltag' or self.name4 == 'convnext_smooth':
@@ -290,8 +293,9 @@ class JointPlot:
                     accuracy_name4 = np.mean((self.name4_data >= label_data - 10) & (self.name4_data <= label_data + 10)) * 100
                     mae_name4 = np.mean(np.abs(self.name4_data - label_data))
                     label_name = self.name4.upper()
-                    sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c4, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}, Accuracy: {accuracy_name4:.2f}%, MAE: {mae_name4:.2f}'))
-                    # sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c4, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}'))
+                    label_name = 'Ens. Average'
+                    # sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c4, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}, Accuracy: {accuracy_name4:.2f}%, MAE: {mae_name4:.2f}'))
+                    sorted_handles_labels.append((MulticolorPatch(['darkslategray', self.c4, 'darkslategray'], [0.2, 1, 0.2]), f'{label_name}'))
 
             if self.changed_index is not None:
 
@@ -303,9 +307,9 @@ class JointPlot:
 
             # ADD THE GREEN DOT TO THE LEGEND
             # Create a custom legend handler for the green dot
-            # green_dot = mlines.Line2D([], [], color=self.change_color, marker='o', linestyle='None', markersize=, label='Spike extrema')
-            # # Append the green dot to the sorted_handles_labels
-            # sorted_handles_labels.append((green_dot, 'Spike extrema'))
+            green_dot = mlines.Line2D([], [], color=self.change_color, marker='o', linestyle='None', markersize=8, label='Spike extrema')
+            # Append the green dot to the sorted_handles_labels
+            sorted_handles_labels.append((green_dot, 'Spike extrema'))
 
 
             sorted_handles_labels = sorted(
@@ -451,7 +455,10 @@ def _retreive_data(file_path: str, name1: str = 'scada', name2: str = 'convnextv
 
                     if name4 is not None:
                         if name4 not in f[key].keys():
-                            name4_data = np.append(name4_data, np.array([0.0]))
+                            if name4.lower() == 'average':
+                                name4_data = np.append(name4_data, (f[key][name2]['percent'][...] + f[key][name3]['percent'][...])/2)
+                            else:
+                                name4_data = np.append(name4_data, np.array([0.0]))
                         else:
                             name4_data = np.append(name4_data, f[key][name4]['percent'][...])
                     else:
@@ -543,7 +550,7 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
     if delta:
         fig, axes = plt.subplots(2, 1, figsize=(15, 10))
     else:
-        fig, axes = plt.subplots(1, 1, figsize=(20, 5), sharey=True)
+        fig, axes = plt.subplots(1, 1, figsize=(20,5), sharey=True)
 
     if iou:
         import cv2
@@ -582,6 +589,8 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
     else:
         # We then load the data from the file path
         label_data, name1_data, name2_data, name3_data, name4_data, x_axis, changed_index = _retreive_data(file_path, name1=name1, name2=name2, name3=name3, name4=name4, use_label=use_label, label_as=label_as)
+        # start_idx = 20
+        # end_idx = 45
         start_idx = 0
         end_idx = len(name1_data)
         label_data = {k: v[start_idx:end_idx] for k, v in label_data.items()}
@@ -613,7 +622,7 @@ def main(file_path:str, name:str="Recording", name1='yolo', name2='convnextv2', 
         if delta:
             JointPlot(x_axis_data, label_data, name1_data, name2_data, name3_data, name4_data, name1=name1, name2=name2, name3=name3, name4=name4, marginal_x=False, marginal_y=True, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes[0])
         else:
-            JointPlot(x_axis_data, label_data, name1_data, name2_data, name3_data, name4_data, name1=name1, name2=name2, name3=name3, name4=name4, marginal_x=False, marginal_y=True, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes)
+            JointPlot(x_axis_data, label_data, name1_data, name2_data, name3_data, name4_data, name1=name1, name2=name2, name3=name3, name4=name4, marginal_x=False, marginal_y=False, use_label=use_label, label_as=label_as, with_threshold=with_threshold, changed_index=changed_index).plot(axes)
 
         _print_summary_statistics(name1, name2, name3, name4, name1_data, name2_data, name3_data, name4_data, label_data_dict=label_data, label_as=label_as)
         
@@ -646,12 +655,12 @@ if __name__ == '__main__':
     # file_path = "data/predictions/recording_vertical_all_frames_processed_combined_processed.hdf5"
 
     # file_path = ["data/predictions/new_run/recording_combined_all_frames_processed.hdf5"]
-    # file_path = ["D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox_processed.hdf5"]
+    file_path = ["D:/HCAI/msc/strawml/data/interim/sensors_with_strawbbox_processed.hdf5"]
     # file_path = 'data/noisy_datasets/noisy_1.hdf5'
     # file_path = ['data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5', 'data/predictions/new_run/recording_rotated_all_frames_processed_combined.hdf5']
     # file_path = ['data/predictions/new_run/recording_rotated_all_frames_processed_combined.hdf5']
-    file_path = ['data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5']
+    # file_path = ['data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5']
     # file_path = ["data/predictions/new_run/sensors_with_strawbbox.hdf5"]
 
 
-    main(file_path, name="sensors", name1='scada', name2="convnext", name3='convnext_apriltag', name4=None, time_step=5, delta=False, use_label=True, label_as=['straw_percent_fullness', 'straw_percent_bbox'], with_threshold=True, iou=False)
+    main(file_path, name="sensors", name1='scada', name2="yolo", name3=None, name4=None, time_step=1, delta=False, use_label=True, label_as=['straw_percent_fullness', 'straw_percent_bbox'], with_threshold=True, iou=False)
