@@ -1091,6 +1091,21 @@ class AsyncStreamThread:
                     self.recent_value = value
                 await asyncio.sleep(0.02)
     
+    def write_scada_data(self, predicted_value: float):
+        """Write the prediction to the OPCUA server.
+        
+        NOTE: This function might need to be modified to match the server's expected data type.
+              Additionally, it is unnecessary to connect to the server every time we want to write a value, this can be implemented better.
+        """
+        try:
+            with Client(self.url) as client:
+                print(f'Connected to {self.url}!')
+                sensor_node = client.get_node(self.sensor_node_id)
+                # Write the prediction to the server
+                sensor_node.set_value(predicted_value)
+        except Exception as e:
+            print(f"Error writing to server: {e}")
+    
     def grab_keys(self):
         data_path = 'data/opcua_server.txt'
         txt_file = open(data_path, 'r')

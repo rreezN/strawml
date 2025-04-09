@@ -2,6 +2,7 @@ from __init__ import *
 # Misc.
 import os
 import cv2
+import csv
 import time
 import h5py
 import json
@@ -16,6 +17,7 @@ import numpy as np
 from tqdm import tqdm
 import pupil_apriltags
 from collections import deque
+from datetime import datetime
 from pupil_apriltags import Detector
 from typing import Tuple, Optional, Any
 from argparse import ArgumentParser, Namespace
@@ -305,7 +307,7 @@ class RTSPStream(AprilDetector):
 
     NOTE Threading is necessary here because we are dealing with an RTSP stream.
     """
-    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, smoothing:bool=True, mode: str | None = None, pull_opcua: bool = False) -> None:
+    def __init__(self, detector, ids, credentials_path, od_model_name=None, object_detect=True, yolo_threshold=0.2, device="cuda", window=True, make_cutout=False, use_cutout=False, detect_april=False, yolo_straw=False, yolo_straw_model="", with_predictor: bool = False, model_load_path: str = "models/vit_regressor/", regressor: bool = True, predictor_model: str = "vit", edges=True, smoothing:bool=True, mode: str | None = None, pull_opcua: bool = False, write_opcua: bool = False, write_csv: bool = False) -> None:
         super().__init__(detector, ids, window, od_model_name, object_detect, yolo_threshold, device, yolo_straw=yolo_straw, yolo_straw_model=yolo_straw_model, with_predictor=with_predictor, model_load_path=model_load_path, regressor=regressor, predictor_model=predictor_model, edges=edges)
         self.scada_smoothing_queue = deque(maxlen=5)
         self.yolo_smoothing_queue = deque(maxlen=5)
@@ -326,6 +328,8 @@ class RTSPStream(AprilDetector):
         self.last_save_timestamp = 0
         self.mode = mode
         self.pull_opcua = pull_opcua
+        self.write_opcua = write_opcua
+        self.write_csv = write_csv
         self.prediction_dict = {}
         
     def create_capture(self, credentials_path: str) -> cv2.VideoCapture:
@@ -470,6 +474,27 @@ class RTSPStream(AprilDetector):
             cv2.line(frame_drawn, line_start, line_end, (32,165,218), 2)
             cv2.putText(frame_drawn, f"{sensor_scada_data:.2f}%", (int(line_end[0])+10, int(line_end[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (32,165,218), 2, cv2.LINE_AA)
 
+        # Write to OPCUA if enabled
+        if self.write_opcua and self.scada_thread is not None:
+            try:
+                if self.yolo_straw:
+                    if self.smoothing:
+                        predicted_value = list(self.prediction_dict["yolo_smooth"].keys())[0]
+                    else:
+                        predicted_value = list(self.prediction_dict["yolo"].keys())[0]
+                elif self.with_predictor:
+                    if self.smoothing:
+                        predicted_value = list(self.prediction_dict["convnext_smooth"].keys())[0]
+                    else:
+                        predicted_value = list(self.prediction_dict["convnext"].keys())[0]
+                self.scada_thread.write_scada_data(predicted_value)
+            except Exception as e:
+                print(f'Error while trying to write scada data: {e}')
+        
+        # Write to CSV if enabled
+        if self.write_csv:
+            self.log_prediction()
+        
         # Update FPS and resource usage information
         self._update_information(frame_time)
 
@@ -479,6 +504,35 @@ class RTSPStream(AprilDetector):
         # Clean up resources
         torch.cuda.empty_cache()
 
+    def log_prediction(self, csv_path: str = "data/logs/predictions.csv") -> None:
+        """Log predictions to a CSV file."""
+        file_exists = os.path.isfile(csv_path)
+        
+        timestamp = datetime.now().isoformat()
+        model = "yolo" if self.yolo_straw else "convnext"
+        if model == "yolo":
+            if self.smoothing:
+                prediction = list(self.prediction_dict["yolo_smooth"].keys())[0]
+            else:
+                prediction = list(self.prediction_dict["yolo"].keys())[0]
+        else:
+            if self.smoothing:
+                prediction = list(self.prediction_dict["convnext_smooth"].keys())[0]
+            else:
+                prediction = list(self.prediction_dict["convnext"].keys())[0]
+        
+        if self.pull_opcua and self.scada_thread is not None:
+            scada_reading = list(self.prediction_dict["scada"].keys())[0]
+        else:
+            scada_reading = None
+        
+        with open(csv_path, mode='a', newline='') as csv_file:
+            writer = csv.writer(csv_file)
+            if not file_exists:
+                # Write header if file does not exist
+                writer.writerow(['timestamp', 'model', 'prediction', 'scada_reading'])
+            write.writerow([timestamp, model, prediction, scada_reading])
+    
     def _retrieve_scada_data(self, sensor_scada_data, time_stamp = None) -> None:
         # Get scada
         if self.smoothing:
@@ -810,6 +864,8 @@ def get_args() -> Namespace:
     parser.add_argument('--device', type=str, default='cuda', choices=['cpu', 'cuda'], help='The device to use for predictions.')
     parser.add_argument('--smoothing', action='store_true', help='Smooth the predictions.')
     parser.add_argument('--pull_opcua', action='store_true', help='Pull data from OPC UA server.')
+    parser.add_argument('--write_opcua', action='store_true', help='Write data to OPC UA server.')
+    parser.add_argument('--write_csv', action='store_true', help='Write data to CSV file.')
     return parser.parse_args()
 
 
@@ -867,7 +923,9 @@ def main(args: Namespace) -> None:
                device=args.device,
                smoothing=args.smoothing,
                mode='stream', # Only used when a single model is used for predictions
-               pull_opcua=args.pull_opcua
+               pull_opcua=args.pull_opcua,
+               write_opcua=args.write_opcua,
+               write_csv=args.write_csv,
             )()
 
 
