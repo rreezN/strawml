@@ -300,27 +300,56 @@ def _plot_stats(stats):
     data = {'name': [], 'model': [], 'processor': [], 'fps': [],  'load_time': [], 'cutout_time':[], 'inference_time': [], 'postprocess_time': [], 'total_time': []}
     names = []
     for key in keys:
-        model = key.split('_')[0]
+        # if apriltag in key, add apriltag to the name
+        model = key.split('_')
+        print(model)
+
+        if 'apriltag' in model:
+            model = model[0] + "_" + model[1]
+        else:
+            model = model[0]
         if key == 'conv_2060S':
-            names += ['ConvNeXt V2 (RTX 2060 Super)']
+            names += ['ConvNeXt (RTX 2060 Super)']
         elif key == 'yolo_2060S':
             names += ['YOLO (RTX 2060 Super)']
+        elif key == 'conv_apriltag_2060S':
+            names += ['ConvNeXt w. AprilTags (RTX 2060 Super)']
+            
         elif key == 'conv_3050':
-            names += ['ConvNeXt V2 (RTX 3050)']
+            names += ['ConvNeXt (RTX 3050)']
         elif key == 'yolo_3050':
             names += ['YOLO (RTX 3050)']
+        elif key == 'conv_apriltag_3050':
+            names += ['ConvNeXt w. AprilTags (RTX 3050)']
+        
+        elif key == 'conv_4070S':
+            names += ['ConvNeXt (RTX 4070 Super)']
+        elif key == 'yolo_4070S':
+            names += ['YOLO (RTX 4070 Super)']
+        elif key == 'conv_apriltag_4070S':
+            names += ['ConvNeXt w. AprilTags (RTX 4070 Super)']
+            
         elif key == 'conv_i5_12400F':
             names += ['ConvNeXt V2 (Intel i5 12400F)']
         elif key == 'yolo_i5_12400F':
             names += ['YOLO (Intel i5 12400F)']
+        elif key == 'conv_apriltag_i5_12400F':
+            names += ['ConvNeXt w. AprilTags (Intel i5 12400F)']
+        
         elif key == 'conv_i5_5300U':
             names += ['ConvNeXt V2 (Intel i5 5300U)']
         elif key == 'yolo_i5_5300U':
             names += ['YOLO (Intel i5 5300U)']
+        elif key == 'conv_apriltag_i5_5300U':
+            names += ['ConvNeXt w. AprilTags (Intel i5 5300U)']
+        
         elif key == 'conv_ryzen5_3600':
             names += ['ConvNeXt V2 (Ryzen 5 3600)']
         elif key == 'yolo_ryzen5_3600':
             names += ['YOLO (Ryzen 5 3600)']
+        elif key == 'conv_apriltag_ryzen5':
+            names += ['ConvNeXt w. AprilTags (Ryzen 5 3600)']
+        
         data['name'].append(names[-1])
         data['model'].append(model)
         data['processor'].append(names[-1].split("(")[-1].split(")")[0])
@@ -339,68 +368,75 @@ def _plot_stats(stats):
     label_size = 18
     text_size = 16
 
-    # make up some fake data
-    pos_fps = np.array(data['fps'])[np.where(np.array(data['model']) == 'conv')]
-    pos_prep_time = np.array([x for sublist in data['cutout_time'] for x in (sublist if isinstance(sublist, list) else [sublist]) if not np.isnan(x)])
-    pos_load_time = np.array(data['load_time'])[np.where(np.array(data['model']) == 'conv')]
-    pos_inference_time = np.array(data['inference_time'])[np.where(np.array(data['model']) == 'conv')]
-    pos_postprocess_time = np.array(data['postprocess_time'])[np.where(np.array(data['model']) == 'conv')]
+    # Assume data is already defined (e.g., from a file or other source)
 
-    neg_fps = np.array(data['fps'])[np.where(np.array(data['model']) == 'yolo')]
-    neg_load_time = np.array(data['load_time'])[np.where(np.array(data['model']) == 'yolo')]
-    neg_inference_time = np.array(data['inference_time'])[np.where(np.array(data['model']) == 'yolo')]
-    neg_postprocess_time = np.array(data['postprocess_time'])[np.where(np.array(data['model']) == 'yolo')]
-    genes = np.array(data['processor'])[np.where(np.array(data['model']) == 'yolo')]
+    # === 1. Extract values for each group ===
 
-    # # first plot fps
-    # with sns.axes_style("white"):
-    #     sns.set_style("ticks")
-    #     sns.set_context("talk")
+    # For CONV (existing “conv” dataset)
+    conv_idx = np.where(np.array(data['model']) == 'conv')
+    pos_fps             = np.array(data['fps'])[conv_idx]
+    pos_load_time       = np.array(data['load_time'])[conv_idx]
+    pos_inference_time  = np.array(data['inference_time'])[conv_idx]
+    pos_postprocess_time= np.array(data['postprocess_time'])[conv_idx]
+    # Note: Here we use a list comprehension similar to your original code;
+    # we assume the ordering of `data['cutout_time']` matches the ordering of models.
+    pos_prep_time = np.array([
+        x for i, sublist in enumerate(data['cutout_time']) 
+        if data['model'][i] == 'conv'
+        for x in (sublist if isinstance(sublist, list) else [sublist])
+        if not np.isnan(x)
+    ])
 
-    #     # plot details
-    #     bar_width = 0.35
-    #     epsilon = .015
-    #     line_width = 1
-    #     opacity = 0.7
-    #     pos_bar_positions = np.arange(len(pos_fps))
-    #     neg_bar_positions = pos_bar_positions + bar_width
+    # For YOLO (existing “yolo” dataset)
+    yolo_idx = np.where(np.array(data['model']) == 'yolo')
+    neg_fps             = np.array(data['fps'])[yolo_idx]
+    neg_load_time       = np.array(data['load_time'])[yolo_idx]
+    neg_inference_time  = np.array(data['inference_time'])[yolo_idx]
+    neg_postprocess_time= np.array(data['postprocess_time'])[yolo_idx]
+    # Using processors from YOLO as x-tick labels (assumed common across groups)
+    genes = np.array(data['processor'])[yolo_idx]
 
-    #     # make bar plots
-    #     hpv_pos_fps_bar = plt.bar(pos_bar_positions, pos_fps, bar_width,
-    #                             color='#ED0020',
-    #                             label='CONV FPS')
-    #     hpv_neg_fps_bar = plt.bar(neg_bar_positions, neg_fps, bar_width,
-    #                             color='#0000DD',
-    #                             label='YOLO FPS')
-        
-    #     plt.xticks((neg_bar_positions+pos_bar_positions)/2, genes, rotation=45)
-    #     plt.legend(bbox_to_anchor=(1.1, 1.05))
-    #     # plt.tight_layout()
-    #     plt.ylabel('FPS')
-    #     plt.xlabel('Processor')
-    #     sns.despine()
-    #     plt.grid(axis='y')
-    #     plt.show()  
+    # For CONV AprilTag (new “conv_apriltag” dataset)
+    apriltag_idx = np.where(np.array(data['model']) == 'conv_apriltag')
+    apriltag_fps             = np.array(data['fps'])[apriltag_idx]
+    apriltag_load_time       = np.array(data['load_time'])[apriltag_idx]
+    apriltag_inference_time  = np.array(data['inference_time'])[apriltag_idx]
+    apriltag_postprocess_time= np.array(data['postprocess_time'])[apriltag_idx]
+    apriltag_prep_time = np.array([
+        x for i, sublist in enumerate(data['cutout_time']) 
+        if data['model'][i] == 'conv_apriltag'
+        for x in (sublist if isinstance(sublist, list) else [sublist])
+        if not np.isnan(x)
+    ])
+    apriltag_prep_time += np.array(data['total_time'])[apriltag_idx] - (apriltag_load_time + apriltag_inference_time + apriltag_postprocess_time + apriltag_prep_time)
 
-    
+    # === 2. Set up bar positions for three groups ===
+    # (We assume that the length/order of entries is the same across groups.)
+    n_groups = len(pos_load_time)  # number of x-tick categories (processors)
+    indices = np.arange(n_groups)
+
+    # Adjust the bar_width if needed (here we use a slightly smaller width so they don't overlap)
+    bar_width = 0.25  
+    epsilon = 0.015     # small gap to show borders
+    line_width = 1
+    opacity = 0.7
+    text_size = 12      # adjust as desired
+
+    # Define positions for each group:
+    conv_positions     = indices - bar_width   # left group
+    apriltag_positions = indices               # middle group
+    yolo_positions     = indices + bar_width   # right group
+
+    # === 3. Create the plot with three sets of bars ===
     with sns.axes_style("white"):
         sns.set_style("ticks")
         sns.set_context("talk")
         
-        # plot details
-        bar_width = 0.35
-        epsilon = .015
-        line_width = 1
-        opacity = 0.7
-        pos_bar_positions = np.arange(len(pos_load_time))
-        neg_bar_positions = pos_bar_positions + bar_width
-
-        # make bar plots
-        hpv_pos_mut_bar = plt.bar(pos_bar_positions, pos_load_time, bar_width,
+        # --- Plot CONV bars (existing) ---
+        conv_load_bar = plt.bar(conv_positions, pos_load_time, bar_width,
                                 color='indianred',
                                 label='CONV load time')
-        
-        hpv_pos_prep = plt.bar(pos_bar_positions, pos_prep_time, bar_width-epsilon,
+        conv_prep_bar = plt.bar(conv_positions, pos_prep_time, bar_width-epsilon,
                                 bottom=pos_load_time,
                                 alpha=opacity,
                                 color='white',
@@ -408,8 +444,7 @@ def _plot_stats(stats):
                                 linewidth=line_width,
                                 hatch='X',
                                 label='CONV preprocess time')
-
-        hpv_pos_cna_bar = plt.bar(pos_bar_positions, pos_inference_time, bar_width-epsilon,
+        conv_inference_bar = plt.bar(conv_positions, pos_inference_time, bar_width-epsilon,
                                 bottom=pos_load_time + pos_prep_time,
                                 alpha=opacity,
                                 color='white',
@@ -417,58 +452,200 @@ def _plot_stats(stats):
                                 linewidth=line_width,
                                 hatch='//',
                                 label='CONV inference time')
-
-        hpv_pos_both_bar = plt.bar(pos_bar_positions, pos_postprocess_time, bar_width-epsilon,
-                                bottom=pos_inference_time + pos_prep_time + pos_load_time,
+        conv_post_bar = plt.bar(conv_positions, pos_postprocess_time, bar_width-epsilon,
+                                bottom=pos_load_time + pos_prep_time + pos_inference_time,
                                 alpha=opacity,
                                 color='white',
                                 edgecolor='indianred',
                                 linewidth=line_width,
                                 hatch='0',
                                 label='CONV postprocess time')
-
-        hpv_neg_mut_bar = plt.bar(neg_bar_positions, neg_load_time, bar_width,
+        
+        # --- Plot CONV AprilTag bars (new dataset) ---
+        # Using a different color (e.g., 'darkorange') to differentiate
+        apriltag_load_bar = plt.bar(apriltag_positions, apriltag_load_time, bar_width,
+                                    color='darkorange',
+                                    label='CONV AprilTag load time')
+        apriltag_prep_bar = plt.bar(apriltag_positions, apriltag_prep_time, bar_width-epsilon,
+                                    bottom=apriltag_load_time,
+                                    alpha=opacity,
+                                    color='white',
+                                    edgecolor='darkorange',
+                                    linewidth=line_width,
+                                    hatch='X',
+                                    label='CONV AprilTag preprocess time')
+        apriltag_inference_bar = plt.bar(apriltag_positions, apriltag_inference_time, bar_width-epsilon,
+                                        bottom=apriltag_load_time + apriltag_prep_time,
+                                        alpha=opacity,
+                                        color='white',
+                                        edgecolor='darkorange',
+                                        linewidth=line_width,
+                                        hatch='//',
+                                        label='CONV AprilTag inference time')
+        apriltag_post_bar = plt.bar(apriltag_positions, apriltag_postprocess_time, bar_width-epsilon,
+                                    bottom=apriltag_load_time + apriltag_prep_time + apriltag_inference_time,
+                                    alpha=opacity,
+                                    color='white',
+                                    edgecolor='darkorange',
+                                    linewidth=line_width,
+                                    hatch='0',
+                                    label='CONV AprilTag postprocess time')
+        
+        # --- Plot YOLO bars (existing) ---
+        yolo_load_bar = plt.bar(yolo_positions, neg_load_time, bar_width,
                                 color='royalblue',
                                 label='YOLO load time')
-        hpv_neg_cna_bar = plt.bar(neg_bar_positions, neg_inference_time, bar_width-epsilon,
-                                bottom=neg_load_time,
-                                color="white",
-                                hatch='//',
-                                edgecolor='royalblue',
-                                ecolor="royalblue",
-                                linewidth=line_width,
-                                label='YOLO inference time')
-        hpv_neg_both_bar = plt.bar(neg_bar_positions, neg_postprocess_time, bar_width-epsilon,
-                                bottom=neg_inference_time+neg_load_time,
+        yolo_inference_bar = plt.bar(yolo_positions, neg_inference_time, bar_width-epsilon,
+                                    bottom=neg_load_time,
+                                    color="white",
+                                    hatch='//',
+                                    edgecolor='royalblue',
+                                    linewidth=line_width,
+                                    label='YOLO inference time')
+        yolo_post_bar = plt.bar(yolo_positions, neg_postprocess_time, bar_width-epsilon,
+                                bottom=neg_load_time + neg_inference_time,
                                 color="white",
                                 hatch='0',
-                                edgecolor='royalblue',
-                                ecolor="royalblue",
+                                edgecolor="royalblue",
                                 linewidth=line_width,
                                 label='YOLO postprocess time')
         
-        # now we plot the total time above the bars for each processor and model type
-        for i in range(len(pos_load_time)):
-            # conv and yolo time values
-            conv_time = pos_load_time[i] + pos_prep_time[i] +pos_inference_time[i] + pos_postprocess_time[i]
-            yolo_time = neg_load_time[i] + neg_inference_time[i] + neg_postprocess_time[i]
-            # slightly above the bar and to the left for conv and to the right for yolo
-            dx = (neg_bar_positions[i] - pos_bar_positions[i])/4
-            # dx = 0
-            plt.text(pos_bar_positions[i]-dx, conv_time, f"{conv_time:.2f}", fontsize=text_size)
-            plt.text(neg_bar_positions[i]-dx, yolo_time, f"{yolo_time:.2f}", fontsize=text_size)
+        # Assume conv_positions, apriltag_positions, and yolo_positions are arrays 
+        # containing the x-coordinate (center) for each bar in each group.
+        for i in range(n_groups):
+            # Compute total times for each group
+            conv_total = pos_load_time[i] + pos_prep_time[i] + pos_inference_time[i] + pos_postprocess_time[i]
+            apriltag_total = apriltag_load_time[i] + apriltag_prep_time[i] + apriltag_inference_time[i] + apriltag_postprocess_time[i]
+            yolo_total = neg_load_time[i] + neg_inference_time[i] + neg_postprocess_time[i]
+            
+            # Compute offsets based on the spacing between groups
+            dx_left = (apriltag_positions[i] - conv_positions[i]) / 8
+            dx_right = (yolo_positions[i] - apriltag_positions[i]) / 8
+            
+            # Place the text labels
+            plt.text(conv_positions[i] - dx_left, conv_total, f"{conv_total:.2f}",
+                    ha='center', va='bottom', fontsize=text_size)
+            plt.text(apriltag_positions[i], apriltag_total, f"{apriltag_total:.2f}",
+                    ha='center', va='bottom', fontsize=text_size)
+            plt.text(yolo_positions[i] - dx_right, yolo_total, f"{yolo_total:.2f}",
+                    ha='center', va='bottom', fontsize=text_size)
 
-
-        plt.xticks((neg_bar_positions+pos_bar_positions)/2, genes, rotation=45)
-        plt.legend(loc='upper center', bbox_to_anchor=(0.3, 1.07),
-                fancybox=True, shadow=True, ncol=2, fontsize=text_size)        # plt.tight_layout()
-        plt.ylabel('Time (s)', fontsize=text_size)
-        plt.xlabel('Processor', fontsize=text_size)
-        # plt.yscale('log')
-
+        
+        # --- Set x-ticks (using the middle positions) and labels ---
+        plt.xticks(apriltag_positions, genes, rotation=45)
+        
+        # Adjust legend to show only one entry per type (if needed)
+        plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.2),
+                fancybox=True, shadow=True, ncol=3, fontsize=text_size)
+        
+        plt.ylabel('Time (s)', fontsize=label_size)
+        plt.xlabel('Processor', fontsize=label_size)
         sns.despine()
         plt.grid(axis='y')
-        plt.show()  
+        plt.tight_layout()
+        plt.show()
+
+
+
+    # # make up some fake data
+    # pos_fps = np.array(data['fps'])[np.where(np.array(data['model']) == 'conv')]
+    # pos_prep_time = np.array([x for sublist in data['cutout_time'] for x in (sublist if isinstance(sublist, list) else [sublist]) if not np.isnan(x)])
+    # pos_load_time = np.array(data['load_time'])[np.where(np.array(data['model']) == 'conv')]
+    # pos_inference_time = np.array(data['inference_time'])[np.where(np.array(data['model']) == 'conv')]
+    # pos_postprocess_time = np.array(data['postprocess_time'])[np.where(np.array(data['model']) == 'conv')]
+
+    # neg_fps = np.array(data['fps'])[np.where(np.array(data['model']) == 'yolo')]
+    # neg_load_time = np.array(data['load_time'])[np.where(np.array(data['model']) == 'yolo')]
+    # neg_inference_time = np.array(data['inference_time'])[np.where(np.array(data['model']) == 'yolo')]
+    # neg_postprocess_time = np.array(data['postprocess_time'])[np.where(np.array(data['model']) == 'yolo')]
+    # genes = np.array(data['processor'])[np.where(np.array(data['model']) == 'yolo')]
+    
+    # with sns.axes_style("white"):
+    #     sns.set_style("ticks")
+    #     sns.set_context("talk")
+        
+    #     # plot details
+    #     bar_width = 0.35
+    #     epsilon = .015
+    #     line_width = 1
+    #     opacity = 0.7
+    #     pos_bar_positions = np.arange(len(pos_load_time))
+    #     neg_bar_positions = pos_bar_positions + bar_width
+
+    #     # make bar plots
+    #     hpv_pos_mut_bar = plt.bar(pos_bar_positions, pos_load_time, bar_width,
+    #                             color='indianred',
+    #                             label='CONV load time')
+        
+    #     hpv_pos_prep = plt.bar(pos_bar_positions, pos_prep_time, bar_width-epsilon,
+    #                             bottom=pos_load_time,
+    #                             alpha=opacity,
+    #                             color='white',
+    #                             edgecolor='indianred',
+    #                             linewidth=line_width,
+    #                             hatch='X',
+    #                             label='CONV preprocess time')
+
+    #     hpv_pos_cna_bar = plt.bar(pos_bar_positions, pos_inference_time, bar_width-epsilon,
+    #                             bottom=pos_load_time + pos_prep_time,
+    #                             alpha=opacity,
+    #                             color='white',
+    #                             edgecolor='indianred',
+    #                             linewidth=line_width,
+    #                             hatch='//',
+    #                             label='CONV inference time')
+
+    #     hpv_pos_both_bar = plt.bar(pos_bar_positions, pos_postprocess_time, bar_width-epsilon,
+    #                             bottom=pos_inference_time + pos_prep_time + pos_load_time,
+    #                             alpha=opacity,
+    #                             color='white',
+    #                             edgecolor='indianred',
+    #                             linewidth=line_width,
+    #                             hatch='0',
+    #                             label='CONV postprocess time')
+
+    #     hpv_neg_mut_bar = plt.bar(neg_bar_positions, neg_load_time, bar_width,
+    #                             color='royalblue',
+    #                             label='YOLO load time')
+    #     hpv_neg_cna_bar = plt.bar(neg_bar_positions, neg_inference_time, bar_width-epsilon,
+    #                             bottom=neg_load_time,
+    #                             color="white",
+    #                             hatch='//',
+    #                             edgecolor='royalblue',
+    #                             ecolor="royalblue",
+    #                             linewidth=line_width,
+    #                             label='YOLO inference time')
+    #     hpv_neg_both_bar = plt.bar(neg_bar_positions, neg_postprocess_time, bar_width-epsilon,
+    #                             bottom=neg_inference_time+neg_load_time,
+    #                             color="white",
+    #                             hatch='0',
+    #                             edgecolor='royalblue',
+    #                             ecolor="royalblue",
+    #                             linewidth=line_width,
+    #                             label='YOLO postprocess time')
+        
+    #     # now we plot the total time above the bars for each processor and model type
+    #     for i in range(len(pos_load_time)):
+    #         # conv and yolo time values
+    #         conv_time = pos_load_time[i] + pos_prep_time[i] +pos_inference_time[i] + pos_postprocess_time[i]
+    #         yolo_time = neg_load_time[i] + neg_inference_time[i] + neg_postprocess_time[i]
+    #         # slightly above the bar and to the left for conv and to the right for yolo
+    #         dx = (neg_bar_positions[i] - pos_bar_positions[i])/4
+    #         # dx = 0
+    #         plt.text(pos_bar_positions[i]-dx, conv_time, f"{conv_time:.2f}", fontsize=text_size)
+    #         plt.text(neg_bar_positions[i]-dx, yolo_time, f"{yolo_time:.2f}", fontsize=text_size)
+
+
+    #     plt.xticks((neg_bar_positions+pos_bar_positions)/2, genes, rotation=45)
+    #     plt.legend(loc='upper center', bbox_to_anchor=(0.3, 1.07),
+    #             fancybox=True, shadow=True, ncol=2, fontsize=text_size)        # plt.tight_layout()
+    #     plt.ylabel('Time (s)', fontsize=text_size)
+    #     plt.xlabel('Processor', fontsize=text_size)
+    #     # plt.yscale('log')
+
+    #     sns.despine()
+    #     plt.grid(axis='y')
+    #     plt.show()  
 
 
 def _run_fps_metrics(data_dir: str = 'data/fps/'):
@@ -498,7 +675,7 @@ if __name__ == '__main__':
     # data_dir = 'data/train_data/yolo_chute/'
     data_dir = 'data/noisy_datasets/'
     output = 'data/robustness_results_new.json'
-    _run_extraction(data_dir, output)
+    # _run_extraction(data_dir, output)
     # _run_plotting(output)
     # _run_model_metrics(data_dir)
-    # _run_fps_metrics()
+    _run_fps_metrics()
