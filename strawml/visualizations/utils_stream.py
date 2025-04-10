@@ -1102,6 +1102,8 @@ class AsyncStreamThread:
                 print(f'Connected to {self.url}!')
                 sensor_node = client.get_node(self.sensor_node_id)
                 # Write the prediction to the server
+                if predicted_value == np.nan:
+                    predicted_value = 100
                 sensor_node.set_value(predicted_value)
         except Exception as e:
             print(f"Error writing to server: {e}")
