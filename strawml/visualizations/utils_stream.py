@@ -199,11 +199,11 @@ class AprilDetectorHelpers:
             The cropped (or original) frame.
         """
         if results is None:
-            return frame
+            return None
         
         bbox_chute = results[1][0].flatten().cpu().detach().numpy()
         if len(bbox_chute) != 8:  # Ensure bbox has 8 coordinates
-            return frame
+            return None
 
         return cc.rotate_and_crop_to_bbox(frame, bbox_chute)[0]
     
@@ -242,7 +242,7 @@ class AprilDetectorHelpers:
         """
         # Convert frame for visualization
         vis_frame = frame_data
-        vis_frame = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
+        # vis_frame = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
         vis_frame = cv2.resize(vis_frame, (0, 0), fx=0.6, fy=0.6)
         cv2.imshow("Frame", vis_frame)
 
@@ -377,6 +377,7 @@ class AprilDetectorHelpers:
         """
         tag_ids = np.array([int(tag.tag_id) for tag in tags])
         if len(tag_ids) == 0:
+            print("No tags detected in the frame.")
             self._reset_tags()
             return
         accumulated_error = 0
@@ -492,6 +493,9 @@ class AprilDetectorHelpers:
         else:
             frame_data = cutout
 
+        if frame_data is None:
+            return None
+
         if torch.from_numpy(frame_data).numel() == 0:
             return None
         
@@ -512,7 +516,7 @@ class AprilDetectorHelpers:
         #     self._visualize_frame(frame_data, edges)
 
         # Stack edges with the frame if required
-        # cutout_image = self._combine_with_edges(frame_data, edges)
+        frame_data = self._combine_with_edges(frame_data, edges)
 
         # Resize and add batch dimension
         cutout_image = self.ADI.resize(frame_data).unsqueeze(0)
@@ -625,7 +629,7 @@ class AprilDetectorHelpers:
         chute_numbers = self.ADI.chute_numbers.copy()
         # make sure there are chute numbers to work with, otherwise we return
         if not len(chute_numbers) >= 2:
-            return None, None
+            return np.nan, np.nan
 
         # First we divide the straw level by 10 to get it on the same scale as the tag ids
         straw_level = straw_level / 10
@@ -648,7 +652,7 @@ class AprilDetectorHelpers:
         tag_over_list = [key for key, _ in chute_numbers.items() if key >= tag_over]
 
         if not tag_under_list or not tag_over_list:
-            return None, None
+            return np.nan, np.nan
 
         tag_under_list = sorted(tag_under_list, reverse=True)
         tag_over_list = sorted(tag_over_list)
@@ -661,7 +665,7 @@ class AprilDetectorHelpers:
         # get the pixel value of the straw level
         excess = straw_level - tag_under_closest
         if excess > 1:
-            return None, None
+            return np.nan, np.nan
         # get the distance between the two closest tags
         x_under, y_under = chute_numbers[tag_under_closest]
         x_over, y_over = chute_numbers[tag_over_closest]
@@ -1086,6 +1090,21 @@ class AsyncStreamThread:
                 with self.lock:
                     self.recent_value = value
                 await asyncio.sleep(0.02)
+    
+    def write_scada_data(self, predicted_value: float):
+        """Write the prediction to the OPCUA server.
+        
+        NOTE: This function might need to be modified to match the server's expected data type.
+              Additionally, it is unnecessary to connect to the server every time we want to write a value, this can be implemented better.
+        """
+        try:
+            with Client(self.url) as client:
+                print(f'Connected to {self.url}!')
+                sensor_node = client.get_node(self.sensor_node_id)
+                # Write the prediction to the server
+                sensor_node.set_value(predicted_value)
+        except Exception as e:
+            print(f"Error writing to server: {e}")
     
     def grab_keys(self):
         data_path = 'data/opcua_server.txt'

@@ -78,32 +78,32 @@ import cv2
 #         else:
 #             print(f"Key {key} not found in rotated or vertical datasets")
 
-typoo = 'rotated'
-large_data_file = f"data/predictions/new_run/recording_{typoo}_all_frames_processed.hdf5"
-main_file = f"data/predictions/new_run/recording_{typoo}_all_frames_processed_combined.hdf5"
+# typoo = 'rotated'
+# large_data_file = f"data/predictions/new_run/recording_{typoo}_all_frames_processed.hdf5"
+# main_file = f"data/predictions/new_run/recording_{typoo}_all_frames_processed_combined.hdf5"
 
-with h5py.File(large_data_file, 'r') as f:
-    with h5py.File(main_file, 'r+') as main_f:
+# with h5py.File(large_data_file, 'r') as f:
+#     with h5py.File(main_file, 'r+') as main_f:
 
-        pbar = tqdm(main_f.keys())
-        pbar.set_description(f"Processing {large_data_file}")
-        for key in pbar:
-            # Go through and check if yolo, yolo_smooth, convnext and convnext_smooth are in the main file
-            if key in f.keys():
-                if 'yolo' in main_f[key].keys():
-                    del main_f[key]['yolo']
-                if 'yolo_smooth' in main_f[key].keys():
-                    del main_f[key]['yolo_smooth']
-                if 'convnext' in main_f[key].keys():
-                    del main_f[key]['convnext']
-                if 'convnext_smooth' in main_f[key].keys():
-                    del main_f[key]['convnext_smooth']
-                main_f.copy(f[key]['yolo'], main_f[key], 'yolo')
-                main_f.copy(f[key]['yolo_smooth'], main_f[key], 'yolo_smooth')
-                main_f.copy(f[key]['convnext'], main_f[key], 'convnext')
-                main_f.copy(f[key]['convnext_smooth'], main_f[key], 'convnext_smooth')
-            else:
-                print(f"Key {key} not found in the dataset")
+#         pbar = tqdm(main_f.keys())
+#         pbar.set_description(f"Processing {large_data_file}")
+#         for key in pbar:
+#             # Go through and check if yolo, yolo_smooth, convnext and convnext_smooth are in the main file
+#             if key in f.keys():
+#                 if 'yolo' in main_f[key].keys():
+#                     del main_f[key]['yolo']
+#                 if 'yolo_smooth' in main_f[key].keys():
+#                     del main_f[key]['yolo_smooth']
+#                 if 'convnext' in main_f[key].keys():
+#                     del main_f[key]['convnext']
+#                 if 'convnext_smooth' in main_f[key].keys():
+#                     del main_f[key]['convnext_smooth']
+#                 main_f.copy(f[key]['yolo'], main_f[key], 'yolo')
+#                 main_f.copy(f[key]['yolo_smooth'], main_f[key], 'yolo_smooth')
+#                 main_f.copy(f[key]['convnext'], main_f[key], 'convnext')
+#                 main_f.copy(f[key]['convnext_smooth'], main_f[key], 'convnext_smooth')
+#             else:
+#                 print(f"Key {key} not found in the dataset")
 
                     
 
@@ -143,3 +143,77 @@ with h5py.File(large_data_file, 'r') as f:
 #     cam_image = show_cam_on_image(img, grayscale_cam, use_rgb=True)
 #     plt.imshow(cam_image)
 #     plt.show()
+
+
+import h5py
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+from matplotlib.widgets import Cursor
+from tqdm import tqdm
+import cv2 
+# Load data
+data_path = 'data/predictions/new_run/recording_vertical_all_frames_processed_combined.hdf5'
+hf = h5py.File(data_path, 'r')
+
+timestamps = list(hf.keys())
+if "frame" == timestamps[0].split("_")[0]:
+    timestamps = sorted(timestamps, key=lambda x: int(x.split('_')[1]))
+else:
+    timestamps = sorted(timestamps, key=lambda x: float(x))
+
+# Extract values for plotting
+values = [hf[t]['yolo_clipped_2.5']['percent'][()] for t in timestamps]
+
+# Initialize figure and axis
+fig, (ax_img, ax_plot) = plt.subplots(2, 1, figsize=(10, 10))
+# Plot the predictions
+time_indices = np.arange(len(values))
+ax_plot.plot(time_indices, values, marker='o', linestyle='-', label='Predictions')
+current_point, = ax_plot.plot([], [], 'ro', markersize=10)  # Indicator for the current frame
+ax_plot.set_xlabel("Frame Index")
+ax_plot.set_ylabel("Prediction Value")
+ax_plot.legend()
+
+# Display first image
+img_display = ax_img.imshow(np.zeros((1440, 2560)), cmap='gray')  # Placeholder image
+ax_img.axis("off")
+
+# State tracking
+index = 0
+
+def update_display():
+    """ Update the image and plot marker based on the current index. """
+    global index
+    key = timestamps[index]
+    image_data = hf[key]['image'][...]
+    print(key)
+    image_array = np.frombuffer(image_data, np.uint8)
+    # Decode the image
+    image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+    img_display.set_data(image)
+    
+    # Update plot indicator
+    current_point.set_data(index, values[index])
+    
+    fig.canvas.draw_idle()
+
+# Key event handler
+def on_key(event):
+    global index
+    if event.key == "right" and index < len(timestamps) - 1:
+        index += 1
+    elif event.key == "left" and index > 0:
+        index -= 1
+    update_display()
+
+# Connect event
+global cid
+cid = fig.canvas.mpl_connect("key_press_event", on_key)
+
+# Initial display
+update_display()
+plt.show()
+
+# Close file after execution
+hf.close()
